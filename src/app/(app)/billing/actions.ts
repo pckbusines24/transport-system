@@ -6,7 +6,7 @@ import { withTenant, type Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { assertDateInFy } from "@/lib/fy-guard";
-import { computeInvoice, parseBulkLrNumbers } from "@/lib/calc/invoice";
+import { computeInvoice, parseBulkLrNumbers, roundInvoiceNet } from "@/lib/calc/invoice";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { consumeAdvances, partyAdvanceBalance, restoreAdvanceUses } from "@/lib/party-advance";
 import { gstSplit, stateCodeFromGstin } from "@/lib/calc/gst";
@@ -381,7 +381,13 @@ async function postInvoiceLedger(
     partyId: string;
   },
   charges: { chargeType: string; description?: string | null; amount: number }[],
-  totals: { netTotal: number; cgstAmt: number; sgstAmt: number; igstAmt: number },
+  totals: {
+    netTotal: number;
+    cgstAmt: number;
+    sgstAmt: number;
+    igstAmt: number;
+    roundOff: number;
+  },
   tcsAmt: number
 ): Promise<void> {
   await reverseLedger(tx, "INVOICE", invoice.id);
@@ -439,8 +445,11 @@ async function postInvoiceLedger(
   // head (Detention, ODC, ...) lands in that shared ledger.
   const billedCharges = charges.filter((c) => round2(c.amount) > 0);
   // a bill whose charges alone exceed its pre-tax value (heavy credit
-  // lines) cannot be split without unbalancing it — one freight credit
-  const preTax = round2(totals.netTotal - gstTotal - tcsAmt);
+  // lines) cannot be split without unbalancing it — one freight credit.
+  // netTotal is the ROUNDED payable; back the round-off out to get the true
+  // pre-tax value (the round-off gets its own leg below)
+  const roundOff = round2(totals.roundOff);
+  const preTax = round2(totals.netTotal - gstTotal - tcsAmt - roundOff);
   const splittable = round2(billedCharges.reduce((s, c) => s + c.amount, 0)) < preTax - 0.009;
   let chargesTotal = 0;
   for (const c of splittable ? billedCharges : []) {
@@ -465,6 +474,18 @@ async function postInvoiceLedger(
       side: "CREDIT",
       amount: freight,
       narration: `Freight income — invoice ${invoice.invoiceNo}`,
+    });
+  }
+  // the rounding paise get their own leg so the voucher balances to the
+  // rounded party debit: rounded UP → extra income, rounded DOWN → a debit
+  if (Math.abs(roundOff) > 0.004) {
+    const roHeadId = await ensureAccountHead(tx, session, "Round Off", "INCOME");
+    entries.push({
+      ...common,
+      accountHeadId: roHeadId,
+      side: roundOff > 0 ? "CREDIT" : "DEBIT",
+      amount: Math.abs(roundOff),
+      narration: `Round off — invoice ${invoice.invoiceNo}`,
     });
   }
   await postLedger(tx, session, entries);
@@ -532,6 +553,7 @@ export async function resyncInvoicesForLr(
         tdsAmt: totals.tdsAmt,
         total: totals.total,
         grandTotal: totals.grandTotal,
+        roundOff: totals.roundOff,
         netTotal: totals.netTotal,
         balance: totals.balance,
         totalWt: round2(totalWt),
@@ -670,6 +692,7 @@ export async function saveInvoice(
         sgstAmt: number;
         igstAmt: number;
         tdsAmt: number;
+        roundOff: number;
         netTotal: number;
         balance: number;
       };
@@ -712,6 +735,7 @@ export async function saveInvoice(
         );
         tcsAmt = round2((preTcs * data.tcsPct) / 100);
         const grandTotal = round2(preTcs + tcsAmt);
+        const { netTotal, roundOff } = roundInvoiceNet(grandTotal);
         totals = {
           total: round2(computedLines.reduce((s, l) => s + l.total, 0)),
           grandTotal,
@@ -719,8 +743,9 @@ export async function saveInvoice(
           sgstAmt,
           igstAmt,
           tdsAmt: 0,
-          netTotal: grandTotal,
-          balance: round2(grandTotal - data.advance),
+          roundOff,
+          netTotal,
+          balance: round2(netTotal - data.advance),
         };
       } else {
         const baseAmounts =
@@ -815,6 +840,7 @@ export async function saveInvoice(
         tdsAmt: totals.tdsAmt,
         total: totals.total,
         grandTotal: totals.grandTotal,
+        roundOff: totals.roundOff,
         netTotal: totals.netTotal,
         advance: data.advance,
         balance: totals.balance,

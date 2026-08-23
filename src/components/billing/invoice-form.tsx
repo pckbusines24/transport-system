@@ -4,8 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { InvoiceKind } from "@prisma/client";
-import { formatDate, formatMoney, parseDdMmYyyy, toNum } from "@/lib/utils";
-import { computeInvoice } from "@/lib/calc/invoice";
+import { compareLrNo, formatDate, formatMoney, parseDdMmYyyy, toNum } from "@/lib/utils";
+import { computeInvoice, roundInvoiceNet } from "@/lib/calc/invoice";
 import { gstSplit } from "@/lib/calc/gst";
 import { round2 } from "@/lib/calc/tds";
 import { Button } from "@/components/ui/button";
@@ -475,7 +475,11 @@ export function InvoiceForm({
   );
 
   // ---------------------------------------------------------------- totals (mirror of server calc)
-  const selectedLrs = pendingLrs.filter((l) => selectedLrIds.has(l.id));
+  // always LR-number order, never tick order — the S.No column stays
+  // 10002 → 1, 10003 → 2, ... and an edit cannot reshuffle the lines
+  const selectedLrs = pendingLrs
+    .filter((l) => selectedLrIds.has(l.id))
+    .sort((a, b) => compareLrNo(a.lrNo, b.lrNo));
 
   let totals: {
     total: number;
@@ -484,6 +488,7 @@ export function InvoiceForm({
     sgstAmt: number;
     igstAmt: number;
     tdsAmt: number;
+    roundOff: number;
     netTotal: number;
     balance: number;
   };
@@ -508,6 +513,7 @@ export function InvoiceForm({
     const preTcs = round2(totTaxable + cgstAmt + sgstAmt + igstAmt + freightExtra + othersExtra);
     tcsAmt = round2((preTcs * tcsPct) / 100);
     const grandTotal = round2(preTcs + tcsAmt);
+    const { netTotal, roundOff } = roundInvoiceNet(grandTotal);
     totals = {
       total: round2(computed.reduce((s, l) => s + l.total, 0)),
       grandTotal,
@@ -515,8 +521,9 @@ export function InvoiceForm({
       sgstAmt,
       igstAmt,
       tdsAmt: 0,
-      netTotal: grandTotal,
-      balance: round2(grandTotal - advance),
+      roundOff,
+      netTotal,
+      balance: round2(netTotal - advance),
     };
   } else {
     totals = computeInvoice({
@@ -578,7 +585,8 @@ export function InvoiceForm({
         subject,
         gstApplicable,
         gstPct,
-        lrIds: withLrs ? Array.from(selectedLrIds) : [],
+        // sorted LR order — the saved invoiceLr rows keep the printed S.No order
+        lrIds: withLrs ? selectedLrs.map((l) => l.id) : [],
         charges: withLrs
           ? charges
               .filter((c) => c.chargeType.trim() || c.amount !== 0)
@@ -707,6 +715,7 @@ export function InvoiceForm({
       cgstAmt: totals.cgstAmt,
       sgstAmt: totals.sgstAmt,
       igstAmt: totals.igstAmt,
+      roundOff: totals.roundOff,
       netTotal: totals.netTotal,
       advance,
       balance: totals.balance,
@@ -1413,6 +1422,14 @@ export function InvoiceForm({
               <div className="flex justify-between">
                 <span className="text-muted-foreground">TDS @ {tdsPct}% (info)</span>
                 <span>{formatMoney(totals.tdsAmt)}</span>
+              </div>
+            )}
+            {totals.roundOff !== 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Round Off</span>
+                <span>
+                  {(totals.roundOff > 0 ? "+" : "−") + formatMoney(Math.abs(totals.roundOff))}
+                </span>
               </div>
             )}
             <div className="flex justify-between font-semibold">

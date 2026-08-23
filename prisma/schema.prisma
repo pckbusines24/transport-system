@@ -1090,6 +1090,8 @@ model Invoice {
   tdsAmt        Decimal     @default(0) @db.Decimal(12, 2)
   total         Decimal     @default(0) @db.Decimal(14, 2)
   grandTotal    Decimal     @default(0) @db.Decimal(14, 2)
+  // paise absorbed rounding netTotal to the whole rupee (print & ledger agree)
+  roundOff      Decimal     @default(0) @db.Decimal(12, 2)
   netTotal      Decimal     @default(0) @db.Decimal(14, 2)
   advance       Decimal     @default(0) @db.Decimal(14, 2)
   balance       Decimal     @default(0) @db.Decimal(14, 2)

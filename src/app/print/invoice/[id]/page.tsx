@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatDate, formatMoney, toNum } from "@/lib/utils";
+import { compareLrNo, formatDate, formatMoney, toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 import { gstSplit, stateCodeFromGstin } from "@/lib/calc/gst";
 import { firmImageUrl } from "@/lib/branding";
@@ -115,27 +115,31 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
       stateCode: partyState.code,
       vendorCode: party?.vendorCode ?? "",
     },
-    lrs: invoice.lrs.map(({ lr }) => ({
-      id: lr.id,
-      lrNo: lr.lrNo,
-      lrDate: formatDate(lr.lrDate),
-      source: cityName(lr.sourceCityId),
-      dest: cityName(lr.destCityId),
-      obdNo: lr.obdNo ?? "",
-      // PO / gate entry come from the POD entry, falling back to the LR fields
-      poNumber: lr.pods[0]?.poNumber || lr.poNumber || "",
-      gateEntryNo: lr.pods[0]?.gateEntryNo || lr.gateEntryNo || "",
-      invoiceNo: lr.invoiceNo ?? "",
-      vehicle: vehicleNo(lr.vehicleId) || lr.vehicleText || "",
-      material: lr.items.map((i) => i.productName).filter(Boolean).join(", "),
-      consignee: partyName(lr.consigneeId),
-      unloadDate: lr.pods[0]?.unloadDate ? formatDate(lr.pods[0].unloadDate) : "",
-      qty: lr.items.reduce((s, i) => s + toNum(i.qty), 0),
-      actualWt: lr.items.reduce((s, i) => s + toNum(i.actualWt), 0),
-      chargeWt: lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0),
-      rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(i.rate))) : 0,
-      amount: toNum(lr.total),
-    })),
+    // S.No follows the LR number, not the order the LRs were attached — an
+    // edited bill prints 10002, 10003, 10004 in the same seats every time
+    lrs: [...invoice.lrs]
+      .sort((a, b) => compareLrNo(a.lr.lrNo, b.lr.lrNo))
+      .map(({ lr }) => ({
+        id: lr.id,
+        lrNo: lr.lrNo,
+        lrDate: formatDate(lr.lrDate),
+        source: cityName(lr.sourceCityId),
+        dest: cityName(lr.destCityId),
+        obdNo: lr.obdNo ?? "",
+        // PO / gate entry come from the POD entry, falling back to the LR fields
+        poNumber: lr.pods[0]?.poNumber || lr.poNumber || "",
+        gateEntryNo: lr.pods[0]?.gateEntryNo || lr.gateEntryNo || "",
+        invoiceNo: lr.invoiceNo ?? "",
+        vehicle: vehicleNo(lr.vehicleId) || lr.vehicleText || "",
+        material: lr.items.map((i) => i.productName).filter(Boolean).join(", "),
+        consignee: partyName(lr.consigneeId),
+        unloadDate: lr.pods[0]?.unloadDate ? formatDate(lr.pods[0].unloadDate) : "",
+        qty: lr.items.reduce((s, i) => s + toNum(i.qty), 0),
+        actualWt: lr.items.reduce((s, i) => s + toNum(i.actualWt), 0),
+        chargeWt: lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0),
+        rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(i.rate))) : 0,
+        amount: toNum(lr.total),
+      })),
     charges: invoice.charges.map((c) => ({
       label: [c.chargeType, c.description].filter(Boolean).join(" — "),
       relatedLrs: c.relatedLrs ?? "",
@@ -147,6 +151,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
       cgstAmt: toNum(invoice.cgstAmt),
       sgstAmt: toNum(invoice.sgstAmt),
       igstAmt: toNum(invoice.igstAmt),
+      roundOff: toNum(invoice.roundOff),
       netTotal: toNum(invoice.netTotal),
       advance: toNum(invoice.advance),
       balance: toNum(invoice.balance),
@@ -346,6 +351,9 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                       ...(toNum(invoice.othersExtra) !== 0
                         ? ([["Others (extra)", toNum(invoice.othersExtra)]] as [string, number][])
                         : []),
+                      ...(toNum(invoice.roundOff) !== 0
+                        ? ([["Round Off", toNum(invoice.roundOff)]] as [string, number][])
+                        : []),
                       ["Grand Total", toNum(invoice.netTotal)],
                       ["Less: Advance", toNum(invoice.advance)],
                       ["Balance", toNum(invoice.balance)],
@@ -358,6 +366,9 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                             ["SGST", toNum(invoice.sgstAmt)],
                             ["IGST", toNum(invoice.igstAmt)],
                           ] as [string, number][])
+                        : []),
+                      ...(toNum(invoice.roundOff) !== 0
+                        ? ([["Round Off", toNum(invoice.roundOff)]] as [string, number][])
                         : []),
                       ["Net Total", toNum(invoice.netTotal)],
                       ["Less: Advance", toNum(invoice.advance)],

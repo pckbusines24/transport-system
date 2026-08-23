@@ -120,7 +120,32 @@ describe("invoice compute", () => {
     expect(t.sgstAmt).toBe(1548);
     expect(t.netTotal).toBe(25800 + 3096);
     expect(t.tdsAmt).toBe(258);
+    expect(t.roundOff).toBe(0);
     expect(t.balance).toBe(t.netTotal - 5000);
+  });
+  it("rounds the net total to the whole rupee with an explicit round off", () => {
+    const t = computeInvoice({
+      lrAmounts: [1000.4],
+      extraCharges: [],
+      gstApplicable: false,
+      gstPct: 0,
+      tdsPct: 0,
+      advance: 0,
+    });
+    expect(t.grandTotal).toBe(1000.4);
+    expect(t.netTotal).toBe(1000);
+    expect(t.roundOff).toBe(-0.4);
+    expect(t.balance).toBe(1000);
+    const up = computeInvoice({
+      lrAmounts: [1000.5],
+      extraCharges: [],
+      gstApplicable: false,
+      gstPct: 0,
+      tdsPct: 0,
+      advance: 0,
+    });
+    expect(up.netTotal).toBe(1001);
+    expect(up.roundOff).toBe(0.5);
   });
   it("bulk LR parsing", () => {
     expect(parseBulkLrNumbers("1001, 1002\n1003 1004;1001")).toEqual([

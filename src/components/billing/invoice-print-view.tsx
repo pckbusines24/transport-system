@@ -75,6 +75,8 @@ export interface InvoiceViewData {
     cgstAmt: number;
     sgstAmt: number;
     igstAmt: number;
+    /** stored whole-rupee rounding (0 on bills saved before the column existed) */
+    roundOff: number;
     netTotal: number;
     advance: number;
     balance: number;
@@ -164,9 +166,15 @@ export function InvoicePrintView({
 }) {
   const { firm, party, totals } = data;
   const chargesTotal = data.charges.reduce((s, c) => s + c.amount, 0);
-  // display-only round off to the nearest rupee; stored accounting values unchanged
-  const grandRounded = Math.round(totals.balance);
-  const roundOff = Math.round((grandRounded - totals.balance) * 100) / 100;
+  // the round off is REAL now — stored on the bill and posted to the ledger,
+  // so the print shows the saved figures. Bills saved before the column
+  // existed carry roundOff 0 with a fractional balance; those keep the old
+  // display-only rounding so their prints don't change until re-saved.
+  const legacy = Math.abs(totals.roundOff) < 0.005 && Math.round(totals.balance) !== totals.balance;
+  const grandRounded = legacy ? Math.round(totals.balance) : totals.balance;
+  const roundOff = legacy
+    ? Math.round((grandRounded - totals.balance) * 100) / 100
+    : totals.roundOff;
   const totalChargeWt = Math.round(data.lrs.reduce((s, l) => s + l.chargeWt, 0) * 1000) / 1000;
   const totalActualWt = Math.round(data.lrs.reduce((s, l) => s + l.actualWt, 0) * 1000) / 1000;
 

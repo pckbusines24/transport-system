@@ -19,8 +19,20 @@ export interface InvoiceTotals {
   sgstAmt: number;
   igstAmt: number;
   tdsAmt: number;
+  /** whole-rupee difference absorbed to round the bill: netTotal − (grandTotal + GST) */
+  roundOff: number;
   netTotal: number;
   balance: number;
+}
+
+/**
+ * The printed bill has always rounded the payable to the whole rupee; the
+ * stored/posted figures now do the same, with the paise carried explicitly as
+ * `roundOff` so the ledger and the print agree to the rupee.
+ */
+export function roundInvoiceNet(netRaw: number): { netTotal: number; roundOff: number } {
+  const netTotal = Math.round(netRaw);
+  return { netTotal, roundOff: round2(netTotal - netRaw) };
 }
 
 export function computeInvoice(i: InvoiceComputeInput): InvoiceTotals {
@@ -35,7 +47,9 @@ export function computeInvoice(i: InvoiceComputeInput): InvoiceTotals {
       })
     : { cgst: 0, sgst: 0, igst: 0 };
   const tdsAmt = round2((grandTotal * i.tdsPct) / 100);
-  const netTotal = round2(grandTotal + gst.cgst + gst.sgst + gst.igst);
+  const { netTotal, roundOff } = roundInvoiceNet(
+    round2(grandTotal + gst.cgst + gst.sgst + gst.igst)
+  );
   const balance = round2(netTotal - i.advance);
   return {
     total,
@@ -44,6 +58,7 @@ export function computeInvoice(i: InvoiceComputeInput): InvoiceTotals {
     sgstAmt: gst.sgst,
     igstAmt: gst.igst,
     tdsAmt,
+    roundOff,
     netTotal,
     balance,
   };

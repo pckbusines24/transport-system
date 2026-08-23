@@ -36,6 +36,19 @@ export function formatMoney(n: number | string | null | undefined): string {
   return v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Numeric-aware LR/C.Note number ordering: "10002" < "10010" < "9001A".
+ * Plain string sort put 10010 before 9001; the bill's S.No column follows
+ * this order everywhere (entry grid, preview, print) so an edit never
+ * reshuffles the lines.
+ */
+export function compareLrNo(a: string, b: string): number {
+  const na = parseInt(a.replace(/\D/g, ""), 10);
+  const nb = parseInt(b.replace(/\D/g, ""), 10);
+  if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 export function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
   // handles strings, numbers AND Prisma Decimal objects (via toString)
