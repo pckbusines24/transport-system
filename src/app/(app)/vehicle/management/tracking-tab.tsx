@@ -10,7 +10,7 @@ const RETENTION_DAYS = 120;
 
 export async function VehicleTrackingTab() {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "vehicle", "view");
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());

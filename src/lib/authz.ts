@@ -1,6 +1,6 @@
 import { Session } from "./session";
 import { getPermissionRow } from "./cached-auth";
-import { ROLE_DEFAULTS, type Action } from "./permissions";
+import { MODULE_FALLBACK, ROLE_DEFAULTS, type Action } from "./permissions";
 
 export type { Action };
 
@@ -12,6 +12,9 @@ export type { Action };
  *  2. Per-user override (UserPermission row) — most specific wins.
  *  3. Per-tenant role matrix (RolePermission, edited from Settings -> Role
  *     Permissions).
+ *  3b. Modules split out of an older bucket (Courier out of Broker, Finance
+ *      out of Vouchers, Tyre out of Vehicle & Driver, ...) inherit the
+ *      bucket's row until their own is set — nobody loses access on deploy.
  *  4. Hard-coded role defaults.
  */
 export async function authorize(
@@ -23,7 +26,15 @@ export async function authorize(
 
   // cached (5 min TTL + tag revalidated by the permission screens) — this
   // used to be its own DB transaction on every authorized page view
-  const row = await getPermissionRow(session.tenantId, session.userId, session.role, module);
+  let row = await getPermissionRow(session.tenantId, session.userId, session.role, module);
+  if (!row && MODULE_FALLBACK[module]) {
+    row = await getPermissionRow(
+      session.tenantId,
+      session.userId,
+      session.role,
+      MODULE_FALLBACK[module]
+    );
+  }
   let allowed: boolean;
   if (row) {
     const map: Record<Action, boolean> = {

@@ -27,7 +27,7 @@ export default async function OfficeManagementPage({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "vouchers", "view");
+  await authorize(session, "office", "view");
 
   const tab = TABS.some((t) => t.value === searchParams.tab)
     ? (searchParams.tab as string)

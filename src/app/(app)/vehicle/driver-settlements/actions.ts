@@ -39,7 +39,7 @@ export async function saveDriverSettlement(
   const parsed = manualSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "create");
+  await authorize(session, "driver", "create");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const created = await tx.driverSettlement.create({
@@ -240,7 +240,7 @@ export async function deleteDriverSettlement(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete settlement rows" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "driver", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driverSettlement.findFirstOrThrow({ where: { id, deletedAt: null } });
@@ -418,7 +418,7 @@ export async function updateDriverSettlement(
   const parsed = editSettlementSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "driver", "edit");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driverSettlement.findFirst({

@@ -22,7 +22,7 @@ export async function VehicleExpensesTab({
   };
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "vehicle", "view");
 
   const { vouchers, vehicles, heads, parties, banks } = await withTenant(
     session.tenantId,

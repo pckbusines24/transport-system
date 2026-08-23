@@ -63,7 +63,7 @@ export async function saveDriverShortage(
   const parsed = shortageSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "create");
+  await authorize(session, "driver", "create");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const created = await tx.driverShortage.create({
@@ -172,7 +172,7 @@ export async function processDriverSalary(
   const parsed = salarySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", d.id ? "edit" : "create");
+  await authorize(session, "driver", d.id ? "edit" : "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -667,7 +667,7 @@ export async function deleteDriverSalary(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete salary records" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "driver", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driverSalary.findFirstOrThrow({

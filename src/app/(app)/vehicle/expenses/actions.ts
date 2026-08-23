@@ -88,7 +88,7 @@ export async function saveVehicleExpenseTxn(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", d.id ? "edit" : "create");
+  await authorize(session, "vehicle", d.id ? "edit" : "create");
   if (d.attachmentPath && !d.attachmentPath.startsWith(`${session.tenantId}/`)) {
     return { ok: false, error: "Invalid attachment path" };
   }
@@ -472,7 +472,7 @@ export async function deleteVehicleExpenseTxn(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete vehicle expenses" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "vehicle", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.vehicleExpenseVoucher.findFirstOrThrow({

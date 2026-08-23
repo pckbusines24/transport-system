@@ -10,7 +10,7 @@ export async function DriverInfoTab({
   searchParams: { q?: string; vehicle?: string; status?: string };
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "driver", "view");
 
   const { drivers, vehicles, driverLedgers, advances, settlements } = await withTenant(
     session.tenantId,

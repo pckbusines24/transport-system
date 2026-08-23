@@ -69,7 +69,7 @@ export async function saveOfficeTransaction(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "vouchers", d.id ? "edit" : "create");
+  await authorize(session, "office", d.id ? "edit" : "create");
   if (d.attachmentPath && !d.attachmentPath.startsWith(`${session.tenantId}/`)) {
     return { ok: false, error: "Invalid attachment path" };
   }
@@ -360,7 +360,7 @@ export async function deleteOfficeTransaction(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete office transactions" };
   }
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "office", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.officeTransaction.findFirstOrThrow({

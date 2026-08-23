@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function EmiDuePage() {
   const session = requireSession();
-  await authorize(session, "vouchers", "view");
+  await authorize(session, "finance", "view");
 
   const { loans } = await getFinanceData();
   const bankOptions = await withTenant(session.tenantId, (tx) =>

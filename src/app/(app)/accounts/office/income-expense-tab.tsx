@@ -16,7 +16,7 @@ export async function OfficeIncomeExpenseTab({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "vouchers", "view");
+  await authorize(session, "office", "view");
   const { date_from, date_to, type, head, party, mode, q } = searchParams;
 
   const { txns, heads, parties, banks, expPos, incPos } = await withTenant(session.tenantId, async (tx) => {

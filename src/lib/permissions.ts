@@ -27,15 +27,41 @@ export const MODULES: { key: string; label: string }[] = [
   { key: "billing", label: "Billing" },
   { key: "hireslip", label: "Hire Slip" },
   { key: "broker", label: "Broker" },
-  { key: "trips", label: "Trips" },
-  { key: "maintenance", label: "Vehicle & Driver" },
+  { key: "courier", label: "Courier Dispatch" },
+  { key: "trips", label: "Trip Management" },
+  { key: "maintenance", label: "Vehicle & Driver (common)" },
+  { key: "vehicle", label: "Vehicle Management" },
+  { key: "driver", label: "Driver Management" },
+  { key: "work", label: "Extra Work" },
+  { key: "tyre", label: "Tyre Management" },
+  { key: "adblue", label: "AdBlue / Urea Stock" },
   { key: "vouchers", label: "Accounts / Vouchers" },
+  { key: "office", label: "Office Management" },
+  { key: "finance", label: "Finance & Loan" },
   { key: "reports", label: "Reports" },
   { key: "tally", label: "Tally Export" },
   { key: "summary", label: "Summary" },
   { key: "masters", label: "Masters" },
   { key: "settings", label: "Settings" },
 ];
+
+/**
+ * Modules split OUT of an older bucket inherit the bucket's saved
+ * permissions until their own row is set (see authorize) — deploying the
+ * split changes nobody's access. "trips" existed before but was gated by
+ * "maintenance" on the entry page, so it inherits from there too.
+ */
+export const MODULE_FALLBACK: Record<string, string> = {
+  courier: "broker",
+  trips: "maintenance",
+  vehicle: "maintenance",
+  driver: "maintenance",
+  work: "maintenance",
+  tyre: "maintenance",
+  adblue: "maintenance",
+  office: "vouchers",
+  finance: "vouchers",
+};
 
 export type RoleKey = "OWNER" | "ADMIN" | "OPERATOR" | "ACCOUNTANT" | "VIEWER";
 

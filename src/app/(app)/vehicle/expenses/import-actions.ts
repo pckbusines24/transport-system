@@ -32,7 +32,7 @@ export async function downloadVehicleExpenseTemplate(): Promise<
   { ok: true; base64: string } | { ok: false; error: string }
 > {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "vehicle", "view");
   try {
     const { heads, vehicles, banks, suppliers } = await withTenant(
       session.tenantId,
@@ -168,7 +168,7 @@ function parseAnyDate(v: string): string | null {
 
 export async function importVehicleExpenses(fd: FormData): Promise<ImportSummary> {
   const session = requireSession();
-  await authorize(session, "maintenance", "create");
+  await authorize(session, "vehicle", "create");
 
   const { heads, vehicles, banks, suppliers, existing } = await withTenant(
     session.tenantId,

@@ -27,7 +27,7 @@ export default async function TyresPage({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "tyre", "view");
 
   const page = parsePage(searchParams.page);
   const { tyres, total, tyreNames, vehicles } = await withTenant(session.tenantId, async (tx) => {

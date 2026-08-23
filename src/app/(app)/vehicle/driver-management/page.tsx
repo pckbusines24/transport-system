@@ -43,7 +43,7 @@ export default async function DriverManagementPage({
   };
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "driver", "view");
 
   const tab = TABS.some((t) => t.value === searchParams.tab)
     ? (searchParams.tab as string)

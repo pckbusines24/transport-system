@@ -28,7 +28,7 @@ const COLUMNS: ReportColumn[] = [
  */
 export async function VehicleFinanceTab() {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "vehicle", "view");
 
   const { loans } = await getFinanceData();
   const financed = loans.filter((l) => l.vehicleId);

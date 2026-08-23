@@ -33,7 +33,7 @@ export async function saveVehicleWithdrawal(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const d = parsed.data;
-  await authorize(session, "maintenance", "create");
+  await authorize(session, "vehicle", "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -108,7 +108,7 @@ export async function deleteVehicleWithdrawal(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "vehicle", "delete");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const before = await tx.vehicleWithdrawal.findFirst({

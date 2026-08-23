@@ -81,7 +81,7 @@ export async function saveStaffProfile(
   input: unknown
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "edit");
+  await authorize(session, "office", "edit");
   const parsed = profileSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
@@ -128,7 +128,7 @@ export async function saveStaffAdvance(
   input: unknown
 ): Promise<{ ok: true; advanceNo: string } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "create");
+  await authorize(session, "office", "create");
   const parsed = advanceSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
@@ -202,7 +202,7 @@ export async function saveStaffLoan(
   input: unknown
 ): Promise<{ ok: true; loanNo: string } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "create");
+  await authorize(session, "office", "create");
   const parsed = loanSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
@@ -310,7 +310,7 @@ export async function processStaffSalary(
   input: unknown
 ): Promise<{ ok: true; id: string; netSalary: number } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "create");
+  await authorize(session, "office", "create");
   const parsed = salarySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
@@ -571,7 +571,7 @@ export async function payStaffSalary(input: {
   paymentHeadId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "edit");
+  await authorize(session, "office", "edit");
   if (!input.paymentDate || !input.paymentHeadId) {
     return { ok: false, error: "Payment date and bank/cash head are required" };
   }
@@ -724,7 +724,7 @@ export async function deleteStaffAdvance(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "office", "delete");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const adv = await tx.staffAdvance.findFirst({
@@ -765,7 +765,7 @@ export async function deleteStaffLoan(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "office", "delete");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const loan = await tx.staffLoan.findFirst({
@@ -796,7 +796,7 @@ export async function deleteStaffSalary(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "office", "delete");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const s = await tx.staffSalary.findFirst({
@@ -906,7 +906,7 @@ export async function getStaffDetails(
   const session = requireSession();
   // salary history, advances, loans and the party ledger are sensitive —
   // gated like every other read in this module
-  await authorize(session, "vouchers", "view");
+  await authorize(session, "office", "view");
   return withTenant(session.tenantId, async (tx) => {
     const party = await tx.party.findFirst({ where: { id: partyId } });
     if (!party) return { ok: false as const, error: "Staff not found" };

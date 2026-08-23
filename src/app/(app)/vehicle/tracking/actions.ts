@@ -36,7 +36,7 @@ export async function updateVehicleTracking(
   const parsed = patchSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "vehicle", "edit");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {

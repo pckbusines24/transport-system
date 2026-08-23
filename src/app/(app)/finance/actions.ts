@@ -68,7 +68,7 @@ export async function saveLoan(
   const parsed = loanSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "vouchers", d.id ? "edit" : "create");
+  await authorize(session, "finance", d.id ? "edit" : "create");
 
   if (d.loanType === "VEHICLE" && !d.vehicleId) {
     return { ok: false, error: "Vehicle is required for a vehicle loan." };
@@ -224,7 +224,7 @@ export async function deleteLoan(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete loans" };
   }
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "finance", "delete");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const before = await tx.loan.findFirstOrThrow({
@@ -287,7 +287,7 @@ export async function payLoanEmi(
   const parsed = emiSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "vouchers", "create");
+  await authorize(session, "finance", "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -514,7 +514,7 @@ export async function deleteLoanEmi(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete an instalment" };
   }
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "finance", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.loanEmi.findFirstOrThrow({
@@ -616,7 +616,7 @@ export async function saveFinanceTxn(
   const parsed = financeTxnSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "vouchers", d.id ? "edit" : "create");
+  await authorize(session, "finance", d.id ? "edit" : "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -763,7 +763,7 @@ export async function deleteFinanceTxn(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete these entries" };
   }
-  await authorize(session, "vouchers", "delete");
+  await authorize(session, "finance", "delete");
   try {
     await withTenant(session.tenantId, async (tx: Tx) => {
       const before = await tx.financeTxn.findFirstOrThrow({

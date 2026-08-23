@@ -39,7 +39,7 @@ export async function saveDriverAdvance(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", d.id ? "edit" : "create");
+  await authorize(session, "driver", d.id ? "edit" : "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -169,7 +169,7 @@ export async function deleteDriverAdvance(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete driver advances" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "driver", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driverAdvance.findFirstOrThrow({

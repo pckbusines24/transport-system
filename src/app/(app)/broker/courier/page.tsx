@@ -15,7 +15,7 @@ export default async function CourierDispatchPage({
   searchParams: { date_from?: string; date_to?: string; q?: string; vehicle?: string };
 }) {
   const session = requireSession();
-  await authorize(session, "broker", "view");
+  await authorize(session, "courier", "view");
   const { date_from, date_to, q, vehicle } = searchParams;
 
   const dispatches = await withTenant(session.tenantId, (tx) => {

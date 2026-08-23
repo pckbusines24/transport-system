@@ -59,7 +59,7 @@ export async function saveDriver(
   const parsed = driverSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", d.id ? "edit" : "create");
+  await authorize(session, "driver", d.id ? "edit" : "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -205,7 +205,7 @@ export async function transferDriver(
   const parsed = transferSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "driver", "edit");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const driver = await tx.driver.findFirstOrThrow({ where: { id: d.driverId, deletedAt: null } });
@@ -260,7 +260,7 @@ export async function exitDriver(
   const parsed = exitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "driver", "edit");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const exitDate = toDate(d.exitDate);
@@ -296,7 +296,7 @@ export async function reactivateDriver(
   driverId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "driver", "edit");
   try {
     await withTenant(session.tenantId, async (tx) => {
       await tx.driver.update({
@@ -322,7 +322,7 @@ export async function deleteDriver(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete drivers" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "driver", "delete");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driver.findFirst({ where: { id: driverId, deletedAt: null } });

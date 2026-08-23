@@ -25,7 +25,7 @@ export default async function AdbluePage({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "adblue", "view");
 
   const page = parsePage(searchParams.page);
   // status is derived per-row from settlement data (payment vouchers), so it

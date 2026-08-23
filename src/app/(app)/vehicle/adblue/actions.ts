@@ -62,7 +62,7 @@ export async function saveAdblueTxn(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", d.id ? "edit" : "create");
+  await authorize(session, "adblue", d.id ? "edit" : "create");
   if (d.type === "ISSUE" && !d.vehicleId) {
     return { ok: false, error: "Vehicle is required for an issue entry." };
   }
@@ -217,7 +217,7 @@ export async function deleteAdblueTxn(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete AdBlue entries" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "adblue", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.adblueTxn.findFirstOrThrow({

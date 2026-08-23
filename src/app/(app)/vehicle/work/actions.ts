@@ -36,7 +36,7 @@ export async function saveVehicleWork(
   const parsed = workSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", d.id ? "edit" : "create");
+  await authorize(session, "work", d.id ? "edit" : "create");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const vehicle = await tx.vehicle.findFirst({ where: { id: d.vehicleId } });
@@ -79,7 +79,7 @@ export async function deleteVehicleWork(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "work", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.vehicleWork.findFirstOrThrow({ where: { id, deletedAt: null } });

@@ -42,7 +42,7 @@ export async function createTyre(
   const parsed = newTyreSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "create");
+  await authorize(session, "tyre", "create");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -105,7 +105,7 @@ export async function transferTyre(
   const parsed = transferSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "tyre", "edit");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -172,7 +172,7 @@ export async function removeTyre(
   const parsed = removalSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "tyre", "edit");
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
@@ -231,7 +231,7 @@ export async function updateTyre(
   const parsed = editSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "tyre", "edit");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const tyre = await tx.tyre.findFirst({
@@ -277,7 +277,7 @@ export async function deleteTyre(
   if (session.role !== "ADMIN" && session.role !== "OWNER") {
     return { ok: false, error: "Only Admin/Owner may delete tyres" };
   }
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "tyre", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.tyre.findFirstOrThrow({

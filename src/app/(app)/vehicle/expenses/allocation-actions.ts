@@ -67,7 +67,7 @@ export async function allocateVehicleExpense(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "maintenance", "edit");
+  await authorize(session, "vehicle", "edit");
 
   const uniq = new Set(d.rows.map((r) => r.vehicleId));
   if (uniq.size !== d.rows.length) {
@@ -177,7 +177,7 @@ export async function deleteVehicleExpenseAllocation(
   itemId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
-  await authorize(session, "maintenance", "delete");
+  await authorize(session, "vehicle", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.vehicleExpenseItem.findFirstOrThrow({ where: { id: itemId } });

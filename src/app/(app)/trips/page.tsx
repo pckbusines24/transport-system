@@ -30,7 +30,7 @@ export default async function TripManagementPage({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "trips", "view");
 
   // register-first, as the module has always worked — but arriving with a trip
   // (or "new") means the sheet was asked for, so open straight onto it

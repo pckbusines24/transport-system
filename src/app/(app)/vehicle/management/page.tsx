@@ -40,7 +40,7 @@ export default async function VehicleManagementPage({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "vehicle", "view");
 
   // "summary" folded into Expense Detail; old links keep working
   const requested = searchParams.tab === "summary" ? "expense-detail" : searchParams.tab;

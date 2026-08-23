@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function VehicleWorkPage() {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "work", "view");
 
   const { rows, vehicles } = await withTenant(session.tenantId, async (tx) => {
     const [works, vehicles] = await Promise.all([

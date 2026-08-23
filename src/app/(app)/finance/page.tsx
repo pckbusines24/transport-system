@@ -36,7 +36,7 @@ export default async function FinancePage({
   searchParams: Record<string, string | undefined>;
 }) {
   const session = requireSession();
-  await authorize(session, "vouchers", "view");
+  await authorize(session, "finance", "view");
   const canDelete = session.role === "ADMIN" || session.role === "OWNER";
 
   const tab = TABS.some((t) => t.value === searchParams.tab)

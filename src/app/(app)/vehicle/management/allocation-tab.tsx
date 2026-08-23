@@ -19,7 +19,7 @@ export async function VehicleExpenseAllocationTab({
   searchParams: { vehicle?: string; date_from?: string; date_to?: string };
 }) {
   const session = requireSession();
-  await authorize(session, "maintenance", "view");
+  await authorize(session, "vehicle", "view");
 
   const [purchases, history, vehicles] = await Promise.all([
     getUnallocatedPurchases(),
