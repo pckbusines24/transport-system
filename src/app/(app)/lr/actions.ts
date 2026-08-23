@@ -209,12 +209,28 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
         lrNo = await nextLrNumber(tx, { firmId: session.firmId, fyId: session.fyId });
       }
 
-      // duplicate check: only ACTIVE LRs in the CURRENT financial year count —
-      // deleted LR numbers are reusable, and other FYs may repeat the sequence
+      // the LR being edited — ANY year's LR opens from here (FY continuity);
+      // the date guard below then keeps its date inside the LR's OWN year
+      const before = data.id
+        ? await tx.lr.findFirst({
+            where: { id: data.id, firmId: session.firmId },
+            include: { items: true },
+          })
+        : null;
+      if (data.id && !before) throw new Error("LR not found in this firm");
+      if (before?.deletedAt) throw new Error("LR has been deleted");
+      // an edit stays in the LR's own financial year; only a fresh LR belongs
+      // to the session's — numbering, the clash check and the date guard all
+      // follow the document's year, not the year the user is standing in
+      const docFyId = before?.fyId ?? session.fyId;
+
+      // duplicate check: only ACTIVE LRs in the DOCUMENT'S financial year
+      // count — deleted LR numbers are reusable, and other FYs may repeat
+      // the sequence
       const clash = await tx.lr.findFirst({
         where: {
           firmId: session.firmId,
-          fyId: session.fyId,
+          fyId: docFyId,
           lrNo,
           deletedAt: null,
           ...(data.id ? { id: { not: data.id } } : {}),
@@ -230,21 +246,15 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
       data.cargoType = await deriveCargoType(tx, data.items);
       const lrData = lrRowData(data, totals, lrNo);
       const items = lrItemsData(session.tenantId, data);
-      // wrong-FY guard: an LR's own date must belong to the session FY
-      await assertDateInFy(tx, session, lrData.lrDate, "LR entry");
+      // wrong-FY guard: the date must belong to the LR's own FY (edit) or the
+      // session FY (fresh)
+      await assertDateInFy(tx, { fyId: docFyId }, lrData.lrDate, "LR entry");
 
       let savedId: string;
-      if (data.id) {
-        // scoped: an id from another firm/FY must not be editable here
-        const before = await tx.lr.findFirst({
-          where: { id: data.id, firmId: session.firmId, fyId: session.fyId },
-          include: { items: true },
-        });
-        if (!before) throw new Error("LR not found in this firm/financial year");
-        if (before.deletedAt) throw new Error("LR has been deleted");
-        await tx.lrItem.deleteMany({ where: { lrId: data.id } });
+      if (before) {
+        await tx.lrItem.deleteMany({ where: { lrId: before.id } });
         const updated = await tx.lr.update({
-          where: { id: data.id },
+          where: { id: before.id },
           data: { ...lrData, items: { create: items } },
           include: { items: true },
         });
@@ -283,7 +293,9 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
       await syncSequenceTo(tx, {
         tenantId: session.tenantId,
         firmId: session.firmId,
-        fyId: session.fyId,
+        // LR numbering restarts each FY — an old-year edit must bump ITS
+        // year's sequence, not fast-forward the current year's counter
+        fyId: docFyId,
         docType: "LR",
         savedNumber: lrNo,
       });

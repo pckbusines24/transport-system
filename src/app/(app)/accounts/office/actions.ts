@@ -167,8 +167,16 @@ export async function saveOfficeTransaction(
       }
 
       const date = new Date(`${d.date}T00:00:00`);
-      // wrong-FY guard: the entry's own date must belong to the session FY
-      await assertDateInFy(tx, session, date, "office entry");
+      // the entry being edited — any year's entry opens from here (FY
+      // continuity); the guard keeps its date inside the entry's OWN year
+      const before = d.id
+        ? await tx.officeTransaction.findFirstOrThrow({
+            where: { id: d.id, firmId: session.firmId, deletedAt: null },
+          })
+        : null;
+      const docFyId = before?.fyId ?? session.fyId;
+      // wrong-FY guard: the date must belong to the document's own FY
+      await assertDateInFy(tx, { fyId: docFyId }, date, "office entry");
       const values = {
         date,
         txnType: d.txnType,
@@ -186,10 +194,7 @@ export async function saveOfficeTransaction(
 
       let id: string;
       let voucherNo: string;
-      if (d.id) {
-        const before = await tx.officeTransaction.findFirstOrThrow({
-          where: { id: d.id, deletedAt: null },
-        });
+      if (d.id && before) {
         const updated = await tx.officeTransaction.update({
           where: { id: d.id },
           // a blank reference means "use the voucher number" — persisted rather
@@ -343,7 +348,8 @@ export async function saveOfficeTransaction(
           });
         }
       }
-      await postLedger(tx, session, entries);
+      // stamped into the entry's own year — old-entry edits stay put
+      await postLedger(tx, { ...session, fyId: docFyId }, entries);
 
       revalidatePath(REVALIDATE);
       return { ok: true as const, id, voucherNo };

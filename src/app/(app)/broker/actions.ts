@@ -293,15 +293,24 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
 
   try {
     const id = await withTenant(session.tenantId, async (tx) => {
-      // wrong-FY guard: a slip's own date must belong to the session FY
-      await assertDateInFy(tx, session, slipDate, "broker slip entry");
+      // the slip being edited — ANY year's slip opens from here (FY
+      // continuity); the guard below keeps its date inside the slip's OWN year
+      const editBefore = data.id
+        ? await tx.brokerSlip.findFirst({
+            where: { id: data.id, firmId: session.firmId },
+          })
+        : null;
+      if (data.id && !editBefore) throw new Error("Broker slip not found");
+      if (editBefore?.deletedAt) throw new Error("Broker slip has been deleted");
+      // an edit stays in the slip's own financial year — date guard, ledger
+      // legs and shortage entries all keep that year's stamp
+      const docFyId = editBefore?.fyId ?? session.fyId;
+      const docSession = { ...session, fyId: docFyId };
+      // wrong-FY guard: the date must belong to the document's own FY
+      await assertDateInFy(tx, { fyId: docFyId }, slipDate, "broker slip entry");
       let savedId: string;
-      if (data.id) {
-        const before = await tx.brokerSlip.findFirst({
-          where: { id: data.id, firmId: session.firmId },
-        });
-        if (!before) throw new Error("Broker slip not found");
-        if (before.deletedAt) throw new Error("Broker slip has been deleted");
+      if (data.id && editBefore) {
+        const before = editBefore;
         // a financially settled side's money story is frozen: with a balance
         // settlement or voucher allocation against it, changing the figures
         // would strand the recorded settlement against amounts that no longer
@@ -388,7 +397,8 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
         const applied = await applyManualAdvanceUses(tx, {
           tenantId: session.tenantId,
           firmId: session.firmId,
-          fyId: session.fyId,
+          // stamped into the slip's own year — old-slip edits stay put
+          fyId: docFyId,
           partyId,
           kinds: side === "P" ? ["RECEIVED"] : ["PAID"],
           refType,
@@ -573,14 +583,15 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
           );
         }
       }
-      await postLedger(tx, session, [...entries, ...transferEntries]);
+      // docSession: an old slip's re-posted legs stay stamped in ITS year
+      await postLedger(tx, docSession, [...entries, ...transferEntries]);
 
       // Shortage register. The broker side reduces what the broker owes us, so
       // the company bears that loss — it is a shortage CHARGED. The owner side
       // reduces what we owe him, so it is RECOVERED from the owner.
       await releaseShortage(tx, "BROKER_SLIP", savedId);
       if (slipData.partyId && data.p.shortageAmt > 0) {
-        await raiseShortage(tx, session, {
+        await raiseShortage(tx, docSession, {
           date: slipDate,
           module: "BROKER_SLIP",
           refId: savedId,
@@ -592,7 +603,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
         });
       }
       if (slipData.ownerId && data.v.shortageAmt > 0) {
-        await recoverShortage(tx, session, {
+        await recoverShortage(tx, docSession, {
           date: slipDate,
           module: "BROKER_SLIP",
           refId: savedId,

@@ -51,8 +51,9 @@ export async function loadLrFormData(editId?: string, copyId?: string): Promise<
         nextLrNumber(tx, { firmId: session.firmId, fyId: session.fyId }),
         sourceId
           ? tx.lr.findFirst({
-              // scoped: an id from another firm/FY must not load here
-              where: { id: sourceId, firmId: session.firmId, fyId: session.fyId, deletedAt: null },
+              // firm-scoped only: an old-FY LR opens for editing from the new
+              // year too (FY continuity) — saveLr keeps it in its own year
+              where: { id: sourceId, firmId: session.firmId, deletedAt: null },
               include: { items: true },
             })
           : Promise.resolve(null),

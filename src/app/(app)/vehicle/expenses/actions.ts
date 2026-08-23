@@ -187,8 +187,22 @@ export async function saveVehicleExpenseTxn(
         return { ok: false as const, error: "One or more vehicles were not found." };
       }
 
-      // wrong-FY guard: the bill's own date must belong to the session FY
-      await assertDateInFy(tx, session, new Date(`${d.date}T00:00:00`), "vehicle expense entry");
+      // an edit stays in the bill's own financial year (FY continuity); only
+      // a fresh bill belongs to the session FY — the guard follows the doc
+      const docFyId = d.id
+        ? ((
+            await tx.vehicleExpenseVoucher.findFirst({
+              where: { id: d.id, firmId: session.firmId },
+              select: { fyId: true },
+            })
+          )?.fyId ?? session.fyId)
+        : session.fyId;
+      await assertDateInFy(
+        tx,
+        { fyId: docFyId },
+        new Date(`${d.date}T00:00:00`),
+        "vehicle expense entry"
+      );
       const values = {
         date: new Date(`${d.date}T00:00:00`),
         txnType: d.txnType,
@@ -417,7 +431,8 @@ export async function saveVehicleExpenseTxn(
           }
         }
       }
-      await postLedger(tx, session, entries);
+      // stamped into the bill's own year — old-bill edits stay put
+      await postLedger(tx, { ...session, fyId: docFyId }, entries);
 
       // re-post relative-owner transfers for bulk-purchase allocations that
       // survived the edit, against the voucher's CURRENT head and reference
@@ -454,7 +469,9 @@ export async function saveVehicleExpenseTxn(
             });
           }
         }
-        if (transferEntries.length) await postLedger(tx, session, transferEntries);
+        if (transferEntries.length) {
+          await postLedger(tx, { ...session, fyId: docFyId }, transferEntries);
+        }
       }
 
       revalidatePath(REVALIDATE);

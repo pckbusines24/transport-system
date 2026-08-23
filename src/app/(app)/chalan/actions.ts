@@ -331,9 +331,13 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
         return { ok: false as const, error: "This chalan is cancelled — restore it before editing." };
       }
 
-      // duplicate chalan numbers are not allowed within a firm + financial year
-      // wrong-FY guard: a chalan's own date must belong to the session FY
-      await assertDateInFy(tx, session, new Date(data.chalanDate), "chalan entry");
+      // an edit stays in the chalan's own financial year — its date, ledger
+      // legs and shortage entries all keep that year's stamp; only a fresh
+      // chalan belongs to the session FY (FY continuity: old docs edit from here)
+      const docFyId = existing?.fyId ?? session.fyId;
+      const docSession = { ...session, fyId: docFyId };
+      // wrong-FY guard: the date must belong to the document's own FY
+      await assertDateInFy(tx, { fyId: docFyId }, new Date(data.chalanDate), "chalan entry");
       const clash = await tx.chalan.findFirst({
         where: {
           // chalan numbers CONTINUE across financial years, so uniqueness is
@@ -557,14 +561,15 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
       await deduction("Mamool", fields.mamool, "Mamool Recovered");
       await deduction("Courier", fields.courierCharge, "Courier Recovered");
 
-      await postLedger(tx, session, entries);
+      // docSession: an old chalan's re-posted legs stay stamped in ITS year
+      await postLedger(tx, docSession, entries);
       // recovered from the owner: his payable dropped by the shortage.
       // FULL teardown first (not just the recoveries): editing the shortage
       // down to zero must also remove the recovery's ledger credit and the
       // auto-raised entry, or a phantom open shortage survives the edit
       await releaseShortage(tx, "CHALAN", id);
       if (fields.shortageAmt > 0) {
-        await recoverShortage(tx, session, {
+        await recoverShortage(tx, docSession, {
           date: fields.chalanDate,
           module: "CHALAN",
           refId: id,
@@ -759,7 +764,9 @@ export async function saveChalanAdvances(
           { ...common, partyId: chalan.brokerId, side: "DEBIT", amount: r.amount }
         );
       }
-      await postLedger(tx, session, entries);
+      // stamp into the CHALAN's own year — an old chalan's advance legs must
+      // not migrate into the session FY on a re-save
+      await postLedger(tx, { ...session, fyId: chalan.fyId }, entries);
       // adjustments are reference links, not transactions — nothing is posted;
       // only stale rows from the earlier (incorrect) design are cleared
       await reverseLedger(tx, ADV_ADJ_REF, chalan.id);
@@ -1160,9 +1167,11 @@ export async function restoreChalan(
       await deduction("TDS", toNum(chalan.tdsAmt), "TDS Payable");
       await deduction("Mamool", toNum(chalan.mamool), "Mamool Recovered");
       await deduction("Courier", toNum(chalan.courierCharge), "Courier Recovered");
-      await postLedger(tx, session, entries);
+      // re-post into the CHALAN's own year — restoring an old-year chalan from
+      // the new FY must not migrate its accrual across years
+      await postLedger(tx, { ...session, fyId: chalan.fyId }, entries);
       if (toNum(chalan.shortageAmt) > 0) {
-        await recoverShortage(tx, session, {
+        await recoverShortage(tx, { ...session, fyId: chalan.fyId }, {
           date: chalan.chalanDate,
           module: "CHALAN",
           refId: chalanId,

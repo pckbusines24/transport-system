@@ -1,11 +1,11 @@
 import type { Tx } from "@/lib/db";
 
 /**
- * Wrong-FY date guard for ENTRY forms: a new/edited document's own date must
- * fall inside the session's financial year. Viewing and settling old-year
- * data stays date-driven everywhere (FY continuity) — but CREATING a document
- * belongs to the year the user is standing in, else back-dated entries land
- * with the wrong fyId stamp and split registers.
+ * Wrong-FY date guard for ENTRY forms: a document's own date must fall inside
+ * the given financial year. Callers pass the SESSION FY for fresh documents
+ * (creating belongs to the year the user is standing in) and the DOCUMENT'S
+ * OWN FY for edits (an old-year doc edits from the new year — FY continuity —
+ * but its date must stay inside its own year, or registers/numbering split).
  */
 /**
  * DAY-level compare in IST, never time-level: the browser serializes a

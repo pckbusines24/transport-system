@@ -786,9 +786,14 @@ export async function saveInvoice(
         0
       );
 
-      // wrong-FY guard: a FRESH bill's date must belong to the session FY
-      // (an edit keeps its original year, so its date stays with that year)
-      if (!before) await assertDateInFy(tx, session, new Date(data.invoiceDate), "bill entry");
+      // wrong-FY guard: a FRESH bill's date must belong to the session FY; an
+      // edit keeps its original year, so its date must stay inside THAT year
+      await assertDateInFy(
+        tx,
+        { fyId: before?.fyId ?? session.fyId },
+        new Date(data.invoiceDate),
+        "bill entry"
+      );
 
       // bill after delivery, never before: the bill's date must not precede
       // the latest delivery (POD) among its LRs — blocks back-dating a bill

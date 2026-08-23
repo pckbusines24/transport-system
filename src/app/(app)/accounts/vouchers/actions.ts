@@ -287,8 +287,20 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
   try {
     const id = await withTenant(session.tenantId, async (tx) => {
       const voucherDate = toDate(data.voucherDate);
-      // wrong-FY guard: a voucher's own date must belong to the session FY
-      await assertDateInFy(tx, session, voucherDate, "voucher entry");
+      // an edit stays in the voucher's own financial year — its date, ledger
+      // legs, shortage entries and advance rows all keep that year's stamp;
+      // only a fresh voucher belongs to the session FY (FY continuity)
+      const docFyId = data.id
+        ? ((
+            await tx.voucher.findFirst({
+              where: { id: data.id, firmId: session.firmId },
+              select: { fyId: true },
+            })
+          )?.fyId ?? session.fyId)
+        : session.fyId;
+      const docSession = { ...session, fyId: docFyId };
+      // wrong-FY guard: the date must belong to the document's own FY
+      await assertDateInFy(tx, { fyId: docFyId }, voucherDate, "voucher entry");
       const base = {
         voucherNo: data.voucherNo,
         voucherDate,
@@ -761,7 +773,8 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
 
       // a pure advance-adjustment voucher moves no money, so zero-value legs
       // (bank/party) are dropped rather than posted
-      await postLedger(tx, session, entries.filter((e) => e.amount > 0.009));
+      // docSession: an old voucher's re-posted legs stay stamped in ITS year
+      await postLedger(tx, docSession, entries.filter((e) => e.amount > 0.009));
 
       // Per-reference shortage on a voucher allocation. A PAYMENT deducts it
       // from what we hand over, so it is RECOVERED; a RECEIPT means the party
@@ -814,9 +827,9 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
           remarks: `${data.type === "PAYMENT" ? "Deducted on" : "Short received against"} voucher ${data.voucherNo}`,
         };
         if (data.type === "PAYMENT") {
-          await recoverShortage(tx, session, { ...shortageArgs, source: "PARTY" });
+          await recoverShortage(tx, docSession, { ...shortageArgs, source: "PARTY" });
         } else {
-          await raiseShortage(tx, session, shortageArgs);
+          await raiseShortage(tx, docSession, shortageArgs);
         }
       }
 
@@ -912,7 +925,7 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
         await applyManualAdvanceUses(tx, {
           tenantId: session.tenantId,
           firmId: session.firmId,
-          fyId: session.fyId,
+          fyId: docFyId,
           partyId: data.partyId,
           refType: "VOUCHER",
           refId: savedId,
@@ -926,7 +939,7 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
         await applyManualAdvanceUses(tx, {
           tenantId: session.tenantId,
           firmId: session.firmId,
-          fyId: session.fyId,
+          fyId: docFyId,
           partyId: data.bankPartyId,
           refType: "VOUCHER",
           refId: savedId,
@@ -1005,7 +1018,8 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
               data: {
                 tenantId: session.tenantId,
                 firmId: session.firmId,
-                fyId: session.fyId,
+                // the advance is born from the voucher's money — same year
+                fyId: docFyId,
                 partyId: data.partyId,
                 kind: advanceKind,
                 date: voucherDate,
