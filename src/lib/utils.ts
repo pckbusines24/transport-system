@@ -5,12 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Pinned to IST: the business runs on Indian time, but server-rendered pages
+ * (prints) run on a UTC host — reading the instant with local getters there
+ * showed 31 March for a chalan the user dated 1 April. The browser is IST
+ * anyway, so client rendering is unchanged; the server now agrees with it.
+ */
 export function formatDate(d: Date | string | null | undefined): string {
   if (!d) return "";
   const date = typeof d === "string" ? new Date(d) : d;
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}/${date.getFullYear()}`;
+  const t = new Date(date.getTime() + 5.5 * 3600 * 1000);
+  const dd = String(t.getUTCDate()).padStart(2, "0");
+  const mm = String(t.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${t.getUTCFullYear()}`;
 }
 
 export function parseDdMmYyyy(s: string): Date | null {

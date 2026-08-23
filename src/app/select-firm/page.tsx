@@ -107,7 +107,14 @@ export default async function SelectFirmPage() {
                           <input type="hidden" name="fyId" value={fy.id} />
                           <FyButton
                             label={`FY ${fy.label}`}
-                            sub={`${formatDate(fy.startDate)} — ${formatDate(fy.endDate)}`}
+                            sub={`${formatDate(fy.startDate)} — ${formatDate(
+                              // a 23:59:59-stamped end date would read as the
+                              // NEXT IST day — pull late stamps back before
+                              // formatting so 31 March prints as 31 March
+                              fy.endDate.getUTCHours() >= 12
+                                ? new Date(fy.endDate.getTime() - 13 * 3600 * 1000)
+                                : fy.endDate
+                            )}`}
                           />
                         </form>
                       ))}
