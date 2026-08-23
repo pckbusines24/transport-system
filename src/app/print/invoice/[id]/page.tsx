@@ -293,7 +293,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
           <table className="mt-3 w-full border-collapse text-xs">
             <thead>
               <tr>
-                {["#", "Particulars", "UOM", "Qty", "Rate", "Amount"].map((h) => (
+                {["S.No", "Particulars", "UOM", "Qty", "Rate", "Amount"].map((h) => (
                   <th key={h} className="border border-black px-1 py-0.5 text-left">
                     {h}
                   </th>

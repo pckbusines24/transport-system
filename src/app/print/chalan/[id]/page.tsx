@@ -186,7 +186,7 @@ export default async function ChalanPrintPage({
       <table className="mt-3 w-full border-collapse text-xs">
         <thead>
           <tr>
-            {["#", "LR No", "Date", "From", "To", "Consignor", "Qty", "Actual Wt", "Charge Wt"].map(
+            {["S.No", "LR No", "Date", "From", "To", "Consignor", "Qty", "Actual Wt", "Charge Wt"].map(
               (h) => (
                 <th key={h} className="border border-black px-1 py-0.5 text-left">
                   {h}

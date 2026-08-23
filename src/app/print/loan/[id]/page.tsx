@@ -110,7 +110,7 @@ export default async function LoanPrintPage({ params }: { params: { id: string }
         <table className="mt-1 w-full border-collapse text-[11px]">
           <thead>
             <tr className="border-y border-black text-left">
-              <th className="py-1">#</th>
+              <th className="py-1">S.No</th>
               <th>Due Date</th>
               <th>Paid On</th>
               <th className="text-right">Principal</th>
