@@ -8,6 +8,7 @@ import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { assertDateInFy } from "@/lib/fy-guard";
+import { tripLockError } from "@/lib/trip-lock";
 import { nextDocNumber, syncSequenceTo } from "@/lib/sequences";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { toNum } from "@/lib/utils";
@@ -631,6 +632,10 @@ export async function deleteBrokerSlip(
         where: { id, firmId: session.firmId },
       });
       if (!before) throw new Error("Broker slip not found");
+      // chain lock: a slip inside a trip sheet's hishab goes only after the
+      // trip releases it
+      const tripGuard = await tripLockError(tx, "BROKER_SLIP", id, "broker slip");
+      if (tripGuard) throw new Error(tripGuard);
       // a slip settled through a Payment Voucher must NEVER be deleted: the
       // voucher's debit and allocation would survive against a document that
       // no longer exists (mirrors the chalan delete guard)

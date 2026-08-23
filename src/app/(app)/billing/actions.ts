@@ -764,6 +764,31 @@ export async function saveInvoice(
       // wrong-FY guard: a FRESH bill's date must belong to the session FY
       // (an edit keeps its original year, so its date stays with that year)
       if (!before) await assertDateInFy(tx, session, new Date(data.invoiceDate), "bill entry");
+
+      // bill after delivery, never before: the bill's date must not precede
+      // the latest delivery (POD) among its LRs — blocks back-dating a bill
+      // into an earlier year when the maal actually reached in a later one
+      if (data.lrIds.length) {
+        const pods = await tx.pod.findMany({
+          where: { lrId: { in: data.lrIds } },
+          select: { unloadDate: true, docDate: true },
+        });
+        const deliveredAt = pods.reduce<Date | null>((max, p) => {
+          const d = p.unloadDate ?? p.docDate;
+          return !max || d > max ? d : max;
+        }, null);
+        const istDay = (d: Date) => {
+          const t = new Date(d.getTime() + 5.5 * 3600 * 1000);
+          return t.getUTCFullYear() * 10000 + (t.getUTCMonth() + 1) * 100 + t.getUTCDate();
+        };
+        if (deliveredAt && istDay(new Date(data.invoiceDate)) < istDay(deliveredAt)) {
+          const dd = `${String(deliveredAt.getUTCDate()).padStart(2, "0")}/${String(deliveredAt.getUTCMonth() + 1).padStart(2, "0")}/${deliveredAt.getUTCFullYear()}`;
+          return {
+            ok: false,
+            error: `Delivery ${dd} ko hui hai — bill ki date usse pehle ki nahi ho sakti. Delivery wale FY mein jaakar bill banao.`,
+          };
+        }
+      }
       const invoiceData = {
         tenantId: session.tenantId,
         firmId: session.firmId,

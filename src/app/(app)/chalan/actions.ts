@@ -8,6 +8,7 @@ import { withTenant, Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { assertDateInFy } from "@/lib/fy-guard";
+import { tripLockError } from "@/lib/trip-lock";
 import { nextDocNumber, syncSequenceTo } from "@/lib/sequences";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { computeChalan } from "@/lib/calc/chalan";
@@ -838,6 +839,11 @@ export async function deleteChalan(
         };
       }
 
+      // chain lock: a chalan sitting inside a trip sheet's hishab must not
+      // vanish underneath it — the trip releases it first
+      const tripGuard = await tripLockError(tx, "CHALAN", chalanId, "chalan");
+      if (tripGuard) return { ok: false as const, error: tripGuard };
+
       // a chalan settled through a Payment Voucher must NEVER be deleted: the
       // voucher's debit and allocation would survive against a document that
       // no longer exists, driving the broker's ledger permanently negative
@@ -948,6 +954,9 @@ export async function cancelChalan(
       });
       if (!chalan) return { ok: false as const, error: "Chalan not found" };
       if (chalan.cancelledAt) return { ok: false as const, error: "Chalan is already cancelled" };
+      // chain lock: cancelling a trip-linked chalan would orphan the trip's hishab
+      const tripGuard = await tripLockError(tx, "CHALAN", chalanId, "chalan");
+      if (tripGuard) return { ok: false as const, error: tripGuard };
 
       const billed = chalan.lrs.find(
         (l) => l.lr.invoiceLrs.length > 0 || l.lr.status === "BILLED"

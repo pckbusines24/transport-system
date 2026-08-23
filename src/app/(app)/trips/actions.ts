@@ -315,6 +315,16 @@ export async function saveTrip(input: unknown): Promise<SaveResult> {
           include: { expenses: true },
         });
         if (before.deletedAt) throw new Error("Trip has been deleted");
+        // chain lock: a paid hishab is frozen — editing it would desync the
+        // money already handed over via the settlement
+        const settled = await tx.driverSettlement.findFirst({
+          where: { tripId: data.id, deletedAt: null, status: "SETTLED" },
+        });
+        if (settled) {
+          throw new Error(
+            "Is trip ka driver settlement PAID ho chuka hai — pehle woh settlement/voucher reverse karo, fir trip sheet ka hishab badlega."
+          );
+        }
         await tx.tripExpense.deleteMany({ where: { tripId: data.id } });
         const updated = await tx.trip.update({
           where: { id: data.id },
@@ -491,6 +501,16 @@ export async function deleteTrip(id: string): Promise<{ ok: true } | { ok: false
         where: { id, firmId: session.firmId },
       });
       if (!before) throw new Error("Trip not found in this firm");
+      // chain lock: a trip whose settlement is already PAID must never vanish
+      // under the money — reverse the settlement/voucher first
+      const settled = await tx.driverSettlement.findFirst({
+        where: { tripId: id, deletedAt: null, status: "SETTLED" },
+      });
+      if (settled) {
+        throw new Error(
+          "Is trip ka driver settlement PAID ho chuka hai — pehle woh settlement/voucher reverse karo, fir trip delete hoga."
+        );
+      }
       await tx.trip.update({ where: { id }, data: { deletedAt: new Date() } });
       // release consumed driver advances; drop the pending settlement row
       await tx.driverAdvance.updateMany({
