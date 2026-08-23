@@ -34,9 +34,28 @@ export default async function VouchersPage({
   const session = requireSession();
   await authorize(session, "vouchers", "view");
 
-  const tab = TABS.some((t) => t.value === searchParams.tab)
-    ? (searchParams.tab as string)
-    : "RECEIPT";
+  // edit mode: load the voucher (register's Edit button) — its own type
+  // decides the tab, and the entry form prefills from it
+  const editVoucher = searchParams.edit
+    ? await withTenant(session.tenantId, async (tx) => {
+        const v = await tx.voucher.findFirst({
+          where: { id: searchParams.edit, firmId: session.firmId, deletedAt: null },
+          include: { allocations: true },
+        });
+        if (!v) return null;
+        const uses = await tx.partyAdvanceUse.findMany({
+          where: { refType: "VOUCHER", refId: v.id },
+          select: { advanceId: true, amount: true },
+        });
+        return { v, uses };
+      })
+    : null;
+
+  const tab = editVoucher
+    ? editVoucher.v.type
+    : TABS.some((t) => t.value === searchParams.tab)
+      ? (searchParams.tab as string)
+      : "RECEIPT";
 
   // the register is a peer tab, not an entry form — nothing else to load
   if (tab === "REGISTER") {
@@ -128,7 +147,7 @@ export default async function VouchersPage({
       {/* switching type already reset the form, so a link-driven tab loses
           nothing that the old client-state selector did not */}
       <VoucherEntry
-        key={vType}
+        key={editVoucher ? `edit-${editVoucher.v.id}` : vType}
         type={vType}
         peekNumbers={peekNumbers}
         partyOptions={partyOptions}
@@ -136,6 +155,43 @@ export default async function VouchersPage({
         headOptions={headOptions}
         vehicleOptions={vehicleOptions}
         recent={recent}
+        edit={
+          editVoucher
+            ? {
+                id: editVoucher.v.id,
+                voucherNo: editVoucher.v.voucherNo,
+                voucherDate: editVoucher.v.voucherDate.toISOString(),
+                entryType: editVoucher.v.entryType,
+                moduleLink: editVoucher.v.moduleLink,
+                partyId: editVoucher.v.partyId,
+                vehicleId: editVoucher.v.vehicleId,
+                accountHeadId: editVoucher.v.accountHeadId,
+                bankPartyId: editVoucher.v.bankPartyId,
+                creditHeadId: editVoucher.v.creditHeadId,
+                chequeNo: editVoucher.v.chequeNo,
+                chequeDate: editVoucher.v.chequeDate ? editVoucher.v.chequeDate.toISOString() : null,
+                netAmount: Number(editVoucher.v.netAmount),
+                remarks: editVoucher.v.remarks,
+                allocations: editVoucher.v.allocations.map((a) => ({
+                  refId: a.refId,
+                  refNo: a.refNo,
+                  refType: a.refType,
+                  billAmt: Number(a.billAmt),
+                  tdsPct: Number(a.tdsPct),
+                  tdsAmt: Number(a.tdsAmt),
+                  deduction: Number(a.deduction),
+                  otherAmt: Number(a.otherAmt),
+                  roundOff: Number(a.roundOff),
+                  amount: Number(a.amount),
+                  remarks: a.remarks,
+                })),
+                advanceUses: editVoucher.uses.map((u) => ({
+                  advanceId: u.advanceId,
+                  amount: Number(u.amount),
+                })),
+              }
+            : null
+        }
       />
     </div>
   );

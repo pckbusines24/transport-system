@@ -75,6 +75,9 @@ export async function VoucherRegisterTab({
     const [vouchers, total, agg, parties] = await Promise.all([
       tx.voucher.findMany({
         where,
+        // allocation remarks carry the settlement markers — the table hides
+        // Edit on auto-created chalan/slip settlement vouchers
+        include: { allocations: { select: { remarks: true } } },
         orderBy: [{ voucherDate: "asc" }, { voucherNo: "asc" }],
         take: PAGE_SIZE,
         skip: (page - 1) * PAGE_SIZE,
@@ -107,6 +110,14 @@ export async function VoucherRegisterTab({
       tdsAmt: Number(v.tdsAmt),
       deduction: Number(v.deduction),
       netAmount: Number(v.netAmount),
+      settlement: v.allocations.some(
+        (a) =>
+          a.remarks === "CHALAN_BAL_SETTLEMENT" ||
+          a.remarks === "BROKER_SLIP_P_SETTLEMENT" ||
+          a.remarks === "BROKER_SLIP_V_SETTLEMENT"
+      )
+        ? 1
+        : 0,
     }));
     return { rows, total, totals };
   });

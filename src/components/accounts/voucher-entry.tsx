@@ -90,6 +90,39 @@ function toIso(text: string): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** a saved voucher opened for editing from the register */
+export interface EditVoucher {
+  id: string;
+  voucherNo: string;
+  voucherDate: string; // ISO
+  entryType: string;
+  moduleLink: string;
+  partyId: string | null;
+  vehicleId: string | null;
+  accountHeadId: string | null;
+  bankPartyId: string | null;
+  creditHeadId: string | null;
+  chequeNo: string | null;
+  chequeDate: string | null; // ISO
+  netAmount: number;
+  remarks: string | null;
+  allocations: {
+    refId: string;
+    refNo: string;
+    refType: string;
+    billAmt: number;
+    tdsPct: number;
+    tdsAmt: number;
+    deduction: number;
+    otherAmt: number;
+    roundOff: number;
+    amount: number;
+    remarks: string | null;
+  }[];
+  /** advances this voucher had adjusted (partyAdvanceUse rows) */
+  advanceUses: { advanceId: string; amount: number }[];
+}
+
 export function VoucherEntry({
   peekNumbers,
   partyOptions,
@@ -98,6 +131,7 @@ export function VoucherEntry({
   vehicleOptions,
   recent,
   type,
+  edit = null,
 }: {
   peekNumbers: Record<VType, string>;
   partyOptions: MasterOption[];
@@ -108,6 +142,8 @@ export function VoucherEntry({
   recent: Record<VType, RecentVoucher[]>;
   /** the voucher type being entered — the page owns the tabs */
   type: VType;
+  /** edit mode: prefill from this voucher and save with its id */
+  edit?: EditVoucher | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -205,6 +241,52 @@ export function VoucherEntry({
   );
 
 
+  // edit mode: merge the saved allocation values onto the candidate rows —
+  // candidates are fetched excluding THIS voucher, so its own settlement
+  // shows as still-open and can be re-entered exactly as saved
+  const applySavedAllocations = React.useCallback(
+    (candidates: AllocationCandidate[]): SettleRow[] => {
+      const saved = new Map((edit?.allocations ?? []).map((a) => [`${a.refType}:${a.refId}`, a]));
+      const out: SettleRow[] = candidates.map((c) => {
+        const a = saved.get(`${c.module}:${c.refId}`);
+        saved.delete(`${c.module}:${c.refId}`);
+        return {
+          ...c,
+          selected: !!a,
+          tds: a?.tdsAmt ?? 0,
+          shortage: a?.deduction ?? 0,
+          other: a?.otherAmt ?? 0,
+          roundOff: a?.roundOff ?? 0,
+          receive: a?.amount ?? 0,
+          remarks: a?.remarks ?? "",
+        };
+      });
+      // a saved allocation whose reference no longer surfaces as a candidate
+      // still needs a row, or re-saving would silently drop it
+      for (const a of Array.from(saved.values())) {
+        const settle = round2(a.amount + a.tdsAmt + a.deduction + a.otherAmt + a.roundOff);
+        out.push({
+          refId: a.refId,
+          refNo: a.refNo,
+          date: edit?.voucherDate ?? new Date().toISOString(),
+          billAmt: a.billAmt,
+          outstanding: settle,
+          tdsPct: a.tdsPct,
+          module: a.refType as AllocationCandidate["module"],
+          selected: true,
+          tds: a.tdsAmt,
+          shortage: a.deduction,
+          other: a.otherAmt,
+          roundOff: a.roundOff,
+          receive: a.amount,
+          remarks: a.remarks ?? "",
+        });
+      }
+      return out;
+    },
+    [edit]
+  );
+
   // ---- pending references for the settlement grid ----
   const loadRefs = React.useCallback(
     async (pid: string | null) => {
@@ -218,26 +300,16 @@ export function VoucherEntry({
           moduleLink: "ALL",
           partyId: pid,
           voucherType: type,
+          voucherId: edit?.id ?? null,
         });
-        setRows(
-          candidates.map((c) => ({
-            ...c,
-            selected: false,
-            tds: 0,
-            shortage: 0,
-            other: 0,
-            roundOff: 0,
-            receive: 0,
-            remarks: "",
-          }))
-        );
+        setRows(applySavedAllocations(candidates));
       } catch {
         toast({ variant: "destructive", title: "Failed to load pending references" });
       } finally {
         setLoadingRefs(false);
       }
     },
-    [type, toast]
+    [type, toast, edit, applySavedAllocations]
   );
 
   // journal grid: reload pending references whenever the party side changes
@@ -253,21 +325,11 @@ export function VoucherEntry({
       moduleLink: "ALL",
       partyId: journalRefParty,
       voucherType: journalRefDir,
+      voucherId: edit?.id ?? null,
     })
       .then((candidates) => {
         if (cancelled) return;
-        setRows(
-          candidates.map((c) => ({
-            ...c,
-            selected: false,
-            tds: 0,
-            shortage: 0,
-            other: 0,
-            roundOff: 0,
-            receive: 0,
-            remarks: "",
-          }))
-        );
+        setRows(applySavedAllocations(candidates));
       })
       .catch(() => {
         if (!cancelled) toast({ variant: "destructive", title: "Failed to load pending references" });
@@ -278,7 +340,63 @@ export function VoucherEntry({
     return () => {
       cancelled = true;
     };
-  }, [type, journalRefParty, journalRefDir, toast]);
+  }, [type, journalRefParty, journalRefDir, toast, edit, applySavedAllocations]);
+
+  // ---- edit mode: prefill the whole form once from the saved voucher ----
+  const editApplied = React.useRef(false);
+  React.useEffect(() => {
+    if (!edit || editApplied.current) return;
+    editApplied.current = true;
+    setVoucherNo(edit.voucherNo);
+    setDateText(formatDate(new Date(edit.voucherDate)));
+    if (edit.entryType === "CASH" || edit.entryType === "BANK" || edit.entryType === "CARD") {
+      setMode(edit.entryType);
+    }
+    setBankPartyId(
+      type === "JOURNAL"
+        ? null
+        : edit.bankPartyId
+    );
+    setChequeNo(edit.chequeNo ?? "");
+    setChequeDateText(edit.chequeDate ? formatDate(new Date(edit.chequeDate)) : "");
+    setVehicleId(edit.vehicleId);
+    setMoney(edit.netAmount);
+    setRemarks(edit.remarks ?? "");
+    if (type === "JOURNAL") {
+      // journal sides: party OR head on each side
+      setPartyId(edit.accountHeadId ? `${HEAD_PREFIX}${edit.accountHeadId}` : edit.partyId);
+      setCreditLedgerId(
+        edit.creditHeadId ? `${HEAD_PREFIX}${edit.creditHeadId}` : edit.bankPartyId
+      );
+    } else {
+      setPartyId(edit.partyId);
+      if (edit.partyId) {
+        void loadRefs(edit.partyId);
+        getPartyAdvanceInfo(edit.partyId).then(setAdvInfo).catch(() => setAdvInfo(null));
+        if (type === "RECEIPT" || type === "PAYMENT") {
+          getOpenAdvances({ partyId: edit.partyId, type, voucherId: edit.id })
+            .then((list) =>
+              setAdvRows(
+                list.map((a) => ({
+                  ...a,
+                  // restore what THIS voucher had adjusted from each advance
+                  use: edit.advanceUses.find((u) => u.advanceId === a.id)?.amount ?? 0,
+                }))
+              )
+            )
+            .catch(() => setAdvRows([]));
+          getOpenAdvances({ partyId: edit.partyId, type, refund: true, voucherId: edit.id })
+            .then((list) => setRefundRows(list.map((a) => ({ ...a, use: 0 }))))
+            .catch(() => setRefundRows([]));
+        }
+        if (type === "RECEIPT")
+          getOpenCancelAdvances(edit.partyId)
+            .then((list) => setCancelRows(list.map((a) => ({ ...a, use: 0 }))))
+            .catch(() => setCancelRows([]));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit, type]);
 
   const onParty = (pid: string | null) => {
     setPartyId(pid);
@@ -429,11 +547,13 @@ export function VoucherEntry({
     try {
       const isMoney = type === "RECEIPT" || type === "PAYMENT";
       const res = await saveVoucher({
+        // edit mode: the id makes the server reverse + repost this voucher
+        id: edit?.id ?? undefined,
         type,
         voucherNo,
         voucherDate: toIso(dateText),
         entryType: type === "CONTRA" ? "CONTRA" : mode,
-        moduleLink: "OTHERS",
+        moduleLink: (edit?.moduleLink as "OTHERS" | undefined) ?? "OTHERS",
         // journal: either side may be a party/bank/cash ledger or a head
         partyId: type === "JOURNAL" ? partyIdOf(partyId) : partyId, // contra: FROM account
         vehicleId,
@@ -509,8 +629,14 @@ export function VoucherEntry({
             .filter(Boolean)
             .join(" ") || "Ledgers, outstanding, TDS and advance registers updated.",
         });
-        resetAll(type);
-        router.refresh();
+        if (edit) {
+          // back to the register — the edited voucher shows its new figures
+          router.push("/accounts/vouchers?tab=REGISTER");
+          router.refresh();
+        } else {
+          resetAll(type);
+          router.refresh();
+        }
       } else toast({ variant: "destructive", title: "Save failed", description: res.error });
     } finally {
       setSaving(false);
@@ -1128,12 +1254,27 @@ export function VoucherEntry({
         </Card>
       )}
 
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="outline" onClick={() => resetAll(type)} disabled={saving}>
-          Reset
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {edit && (
+          <span className="mr-auto rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-medium">
+            Editing voucher {edit.voucherNo} — Save par purani entries reverse hokar nayi post hongi
+          </span>
+        )}
+        <Button
+          variant="outline"
+          onClick={() =>
+            edit ? router.push("/accounts/vouchers?tab=REGISTER") : resetAll(type)
+          }
+          disabled={saving}
+        >
+          {edit ? "Cancel" : "Reset"}
         </Button>
         <Button onClick={save} disabled={!canSave}>
-          {saving ? "Saving..." : `Save ${TYPE_META[type].title} Voucher`}
+          {saving
+            ? "Saving..."
+            : edit
+              ? `Update ${TYPE_META[type].title} Voucher`
+              : `Save ${TYPE_META[type].title} Voucher`}
         </Button>
       </div>
 

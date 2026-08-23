@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ColumnDef } from "@tanstack/react-table";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ export interface RegisterRow {
   tdsAmt: number;
   deduction: number;
   netAmount: number;
+  /** 1 = auto-created chalan/slip settlement voucher (delete-and-redo only) */
+  settlement: number;
   [key: string]: string | number | null;
 }
 
@@ -113,33 +116,55 @@ export function VoucherRegisterTable({
         cell: ({ row }) => formatMoney(row.original.netAmount),
       },
     ];
-    if (canDelete) {
-      cols.push({
-        id: "actions",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive"
-            onClick={async (e) => {
-              e.stopPropagation();
-              if (!confirm(`Delete voucher ${row.original.voucherNo}?`)) return;
-              const res = await deleteVoucher(row.original.id);
-              if (res.ok) {
-                toast({ title: "Voucher deleted" });
-                router.refresh();
-              } else {
-                toast({ variant: "destructive", title: "Delete failed", description: res.error });
-              }
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        ),
-      });
-    }
+    cols.push({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex gap-0.5">
+          {row.original.settlement ? (
+            // auto-created settlement voucher: figures live with the chalan /
+            // slip — delete here and re-settle from the document instead
+            <span
+              className="px-1 text-[10px] text-muted-foreground"
+              title="Chalan/slip ka settlement voucher — edit ke liye delete karke document se dobara settle karo"
+            >
+              settle
+            </span>
+          ) : (
+            <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+              <Link
+                href={`/accounts/vouchers?edit=${row.original.id}`}
+                title="Edit voucher"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Pencil className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Delete voucher ${row.original.voucherNo}?`)) return;
+                const res = await deleteVoucher(row.original.id);
+                if (res.ok) {
+                  toast({ title: "Voucher deleted" });
+                  router.refresh();
+                } else {
+                  toast({ variant: "destructive", title: "Delete failed", description: res.error });
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      ),
+    });
     return cols;
   }, [canDelete, router, toast, totals]);
 
