@@ -41,7 +41,6 @@ import {
 } from "@/app/(app)/vehicle/driver-advances/actions";
 import { fetchAdblueForTrip } from "@/app/(app)/vehicle/adblue/actions";
 import {
-  fetchOperatingExpensesForTrip,
   fetchVehicleExpensesForTrip,
   type TripFetchedExpenseRow,
 } from "@/app/(app)/vehicle/expenses/actions";
@@ -225,19 +224,14 @@ export function TripSettlementForm({
     totalQty: number;
     rows: { id: string; date: string; destination: string; qty: number; remarks: string }[];
   }>({ totalQty: initial?.ureaQty ?? 0, rows: [] });
-  // ACTUAL only: every other vehicle expense head booked in the range
-  const [opExp, setOpExp] = React.useState<{ total: number; rows: TripFetchedExpenseRow[] }>({
-    total: initial?.autoFetchedExp ?? 0,
-    rows: [],
-  });
-  const [popup, setPopup] = React.useState<"DIESEL" | "ADVANCE" | "UREA" | "OPEX" | null>(null);
+  const [popup, setPopup] = React.useState<"DIESEL" | "ADVANCE" | "UREA" | null>(null);
 
   // Saved sheets are frozen: totals come from the snapshot and no live fetch
   // runs, which used to leave every "click for detail" popup EMPTY. Opening a
   // popup now lazily fetches the detail rows for the saved period — read-only,
   // merged into `rows` only, so the frozen totals are never touched.
   const detailFetched = React.useRef(false);
-  const openPopup = (p: "DIESEL" | "ADVANCE" | "UREA" | "OPEX") => {
+  const openPopup = (p: "DIESEL" | "ADVANCE" | "UREA") => {
     setPopup(p);
     if (liveMode || detailFetched.current || !vehicleId || !fromIso || !toIso) return;
     detailFetched.current = true;
@@ -246,9 +240,6 @@ export function TripSettlementForm({
       .catch(() => {});
     fetchAdblueForTrip({ vehicleId, dateFrom: fromIso, dateTo: toIso })
       .then((r) => setUrea((prev) => ({ ...prev, rows: r.rows })))
-      .catch(() => {});
-    fetchOperatingExpensesForTrip({ vehicleId, dateFrom: fromIso, dateTo: toIso })
-      .then((r) => setOpExp((prev) => ({ ...prev, rows: r.rows })))
       .catch(() => {});
     if (driverId)
       fetchDriverAdvancesForTrip({
@@ -271,11 +262,6 @@ export function TripSettlementForm({
     fetchAdblueForTrip({ vehicleId, dateFrom: fromIso, dateTo: toIso })
       .then((r) => !cancelled && setUrea(r))
       .catch(() => setUrea({ totalQty: 0, rows: [] }));
-    // fetched for every method so switching to ACTUAL does not need a re-fetch;
-    // the other two methods simply never read it
-    fetchOperatingExpensesForTrip({ vehicleId, dateFrom: fromIso, dateTo: toIso })
-      .then((r) => !cancelled && setOpExp(r))
-      .catch(() => setOpExp({ total: 0, rows: [] }));
     return () => {
       cancelled = true;
     };
@@ -377,12 +363,14 @@ export function TripSettlementForm({
   // Toll and urea are counted whichever way their Driver/Company toggle is set:
   // the toggle decides who bears the cost for the driver settlement, but the
   // vehicle burned the fuel and paid the toll either way.
+  // register-booked "other" heads deliberately NOT counted: those bills are
+  // already the company's recorded cost in the vehicle expense register —
+  // pulling them in here counted the same rupee twice
   const actualOperatingTotal = r2(
     exp.dieselTotal +
       advances.total +
       exp.tollTotal +
       ureaAmount +
-      opExp.total +
       roadBill +
       fooding +
       rtoExp +
@@ -458,11 +446,6 @@ export function TripSettlementForm({
         // company urea is regenerated server-side; only the driver-borne case
         // needs booking here, or the two would stack
         if (ureaType === "DRIVER") push("UREA", ureaAmount, "Actual urea (auto)");
-        // LOAD-BEARING remark: these rupees come from the vehicle expense
-        // REGISTER, which the vehicle P&L and the 360° trip summary already
-        // sweep — both exclude trip-expense rows carrying exactly this remark
-        // so the money counts once. Change it there too or it doubles again.
-        push("MISC", opExp.total, "Other operating expenses (auto)");
         push("MISC", roadBill, "Road bills");
         push("DRIVER_BATA", fooding, "Fooding");
         push("POLICE_RTO", rtoExp, "RTO expenses");
@@ -519,7 +502,9 @@ export function TripSettlementForm({
         fixedTripExp: fixedExp,
         roadExp,
         otherOpExp,
-        autoFetchedExp: opExp.total,
+        // register-booked heads no longer join the ACTUAL sheet (they live in
+        // the vehicle expense register as the company's own recorded cost)
+        autoFetchedExp: 0,
         actualTotal,
         approvedTotal,
         grandTotal,
@@ -765,16 +750,6 @@ export function TripSettlementForm({
                   <NumInput value={ureaRate} onChange={setUreaRate} className="h-7 w-20 text-xs" />
                   <b className="tabular-nums">{formatMoney(ureaAmount)}</b>
                 </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  className="text-primary underline-offset-2 hover:underline"
-                  onClick={() => openPopup("OPEX")}
-                >
-                  Auto Fetched Expenses ({opExp.rows.length}) — click for details
-                </button>
-                <b className="tabular-nums">{formatMoney(opExp.total)}</b>
               </div>
               <p className="border-t pt-2 text-[11px] text-muted-foreground">
                 Above: fetched from the vehicle expense, driver advance and AdBlue
@@ -1086,9 +1061,7 @@ export function TripSettlementForm({
                 ? `Diesel — ${formatMoney(exp.dieselTotal)}`
                 : popup === "ADVANCE"
                   ? `Driver Advance — ${formatMoney(advances.total)}`
-                  : popup === "OPEX"
-                    ? `Auto Fetched Operating Expenses — ${formatMoney(opExp.total)}`
-                    : `Urea — ${urea.totalQty.toLocaleString("en-IN")} L × ${ureaRate} = ${formatMoney(ureaAmount)}`}
+                  : `Urea — ${urea.totalQty.toLocaleString("en-IN")} L × ${ureaRate} = ${formatMoney(ureaAmount)}`}
             </DialogTitle>
             <DialogDescription>Fetched live from the source module.</DialogDescription>
           </DialogHeader>
@@ -1099,9 +1072,7 @@ export function TripSettlementForm({
                   ? ["Date", "Supplier", "Voucher No", "Amount", "Remarks"]
                   : popup === "ADVANCE"
                     ? ["Date", "Mode", "Voucher Ref", "Amount", "Remarks"]
-                    : popup === "OPEX"
-                      ? ["Date", "Head", "Supplier", "Voucher No", "Amount"]
-                      : ["Date", "Destination", "Litres", "Remarks"]
+                    : ["Date", "Destination", "Litres", "Remarks"]
                 ).map((h) => (
                   <th key={h} className={`${cell} bg-muted text-left font-semibold`}>
                     {h}
@@ -1132,23 +1103,6 @@ export function TripSettlementForm({
                     <td className={cell}>{r.remarks}</td>
                   </tr>
                 ))}
-              {popup === "OPEX" &&
-                opExp.rows.map((r, i) => (
-                  <tr key={`${r.voucherNo}-${i}`}>
-                    <td className={cell}>{formatDate(r.date)}</td>
-                    <td className={cell}>{r.head}</td>
-                    <td className={cell}>{r.supplier}</td>
-                    <td className={cell}>{r.voucherNo}</td>
-                    <td className={`${cell} text-right`}>{formatMoney(r.amount)}</td>
-                  </tr>
-                ))}
-              {popup === "OPEX" && !opExp.rows.length && (
-                <tr>
-                  <td colSpan={5} className={`${cell} py-2 text-center text-muted-foreground`}>
-                    No other vehicle expenses booked in this date range.
-                  </td>
-                </tr>
-              )}
               {popup === "UREA" &&
                 urea.rows.map((r) => (
                   <tr key={r.id}>

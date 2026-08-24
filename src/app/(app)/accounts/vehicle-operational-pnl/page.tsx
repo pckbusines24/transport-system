@@ -167,16 +167,28 @@ export default async function VehicleOperationalPnlPage({
           },
         }),
         tx.driverAssignment.findMany(),
-        // urea consumed on own-vehicle trips (driver- and company-borne)
+        // trip-sheet costs on own vehicles: urea (all methods) + the ACTUAL
+        // sheet's manual operating expenses (road bill / RTO / fooding /
+        // road / other) — those five exist only on the sheet, no register
+        // bill or driver settlement ever carries them
         tx.trip.findMany({
           where: {
             ...scope,
             deletedAt: null,
             vehicleId: { in: ownIds },
             tripDate: period,
-            ureaAmount: { gt: 0 },
+            OR: [{ ureaAmount: { gt: 0 } }, { calcMethod: "ACTUAL" }],
           },
-          select: { ureaAmount: true },
+          select: {
+            ureaAmount: true,
+            calcMethod: true,
+            roadBillExp: true,
+            foodingDays: true,
+            foodingRate: true,
+            rtoExp: true,
+            roadExp: true,
+            otherOpExp: true,
+          },
         }),
         // full EMI of vehicle loans on own vehicles, on payment date — the
         // loan is long-lived, so no FY filter on it: an instalment paid this
@@ -401,12 +413,30 @@ export default async function VehicleOperationalPnlPage({
   );
 
   // ---- urea from own-vehicle trip settlements ----
-  const ureaTotal = r2(trips.reduce((sum, t) => sum + toNum(String(t.ureaAmount)), 0));
+  const ureaTrips = trips.filter((t) => toNum(String(t.ureaAmount)) > 0);
+  const ureaTotal = r2(ureaTrips.reduce((sum, t) => sum + toNum(String(t.ureaAmount)), 0));
+
+  // ---- ACTUAL trip sheets: the five manual operating expenses ----
+  const actualTrips = trips.filter((t) => t.calcMethod === "ACTUAL");
+  const sumOf = (pick: (t: (typeof trips)[number]) => number) =>
+    r2(actualTrips.reduce((s, t) => s + pick(t), 0));
+  const tripOpex = {
+    roadBill: sumOf((t) => toNum(String(t.roadBillExp))),
+    rto: sumOf((t) => toNum(String(t.rtoExp))),
+    fooding: sumOf((t) => toNum(String(t.foodingDays)) * toNum(String(t.foodingRate))),
+    road: sumOf((t) => toNum(String(t.roadExp))),
+    other: sumOf((t) => toNum(String(t.otherOpExp))),
+  };
+  const tripOpexTotal = r2(
+    tripOpex.roadBill + tripOpex.rto + tripOpex.fooding + tripOpex.road + tripOpex.other
+  );
 
   // ---- vehicle loan EMIs (full instalment) ----
   const loanExpense = r2(emis.reduce((sum, e) => sum + toNum(String(e.total)), 0));
 
-  const totalExpenses = r2(vehicleExpTotal + driverTotal + ureaTotal + loanExpense);
+  const totalExpenses = r2(
+    vehicleExpTotal + driverTotal + ureaTotal + tripOpexTotal + loanExpense
+  );
   const profit = r2(totalVehicleIncome - totalExpenses);
 
   const filters: FilterDef[] = [{ type: "daterange", key: "date", label: "Period" }];
@@ -435,7 +465,8 @@ export default async function VehicleOperationalPnlPage({
           booked driver salary (own-vehicle drivers, net of salary-adjusted advances), driver
           advances, driver settlements on ACCRUAL (every +/- balance counts on its trip date,
           paid or not — paying later changes nothing here), urea from own-vehicle trip
-          settlements, and full vehicle-loan EMIs.
+          settlements, the ACTUAL-method trip sheet&apos;s manual operating expenses (road
+          bill / RTO / fooding / road / other), and full vehicle-loan EMIs.
         </InfoHint>
       </h1>
       <FilterBar filters={filters} />
@@ -542,7 +573,19 @@ export default async function VehicleOperationalPnlPage({
               <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
                 Urea (Trip Settlements)
               </div>
-              {line(`Urea on own-vehicle trips (${trips.length} trips)`, ureaTotal)}
+              {line(`Urea on own-vehicle trips (${ureaTrips.length} trips)`, ureaTotal)}
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                Trip Sheet Expenses — Actual method ({actualTrips.length} trip
+                {actualTrips.length === 1 ? "" : "s"})
+              </div>
+              {line("Road Bills", tripOpex.roadBill)}
+              {line("RTO Expenses", tripOpex.rto)}
+              {line("Fooding", tripOpex.fooding)}
+              {line("Road Expenses", tripOpex.road)}
+              {line("Any Other Operating Expense", tripOpex.other)}
+              {line("Total Trip Sheet Expenses", tripOpexTotal, { strong: true })}
             </div>
             <div>
               <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
@@ -564,6 +607,7 @@ export default async function VehicleOperationalPnlPage({
           {line("Vehicle Expenses (bill allocations)", vehicleExpTotal, { less: true })}
           {line("Driver Expenses (salary + advances + settlements)", driverTotal, { less: true })}
           {line("Urea (trip settlements)", ureaTotal, { less: true })}
+          {line("Trip Sheet Expenses (Actual method)", tripOpexTotal, { less: true })}
           {line("Vehicle Loan EMIs", loanExpense, { less: true })}
           <div
             className={`mt-1 flex justify-between border-t pt-1 text-base font-bold ${profit >= 0 ? "text-emerald-600" : "text-destructive"}`}

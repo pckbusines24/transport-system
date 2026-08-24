@@ -9,6 +9,7 @@ import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { nextDocNumber, syncSequenceTo } from "@/lib/sequences";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
+import { round2 } from "@/lib/calc/tds";
 import { tripLegTotal, tripLegBalance } from "@/lib/calc/trip";
 import { chalanTotals, slipTotals } from "@/lib/trip-docs";
 
@@ -498,6 +499,42 @@ export async function saveTrip(input: unknown): Promise<SaveResult> {
         ]);
       }
 
+      // ---- ACTUAL method, relative vehicle: the sheet's manual operating
+      // expenses were spent on the owner's gaadi — each component lands on
+      // HIS ledger (urea/diesel/toll keep their own existing routes)
+      await reverseLedger(tx, "TRIP_OPEX", savedId);
+      if (
+        data.calcMethod === "ACTUAL" &&
+        vehicle.ownershipType === "RELATIVE" &&
+        vehicle.ownerId
+      ) {
+        const fooding = round2(data.foodingDays * data.foodingRate);
+        const components: [string, number, string][] = [
+          ["Road Bill Expense", data.roadBillExp, "Road bills"],
+          ["RTO Expense", data.rtoExp, "RTO expenses"],
+          ["Fooding Expense", fooding, `Fooding ${data.foodingDays} × ${data.foodingRate}`],
+          ["Road Expense", data.roadExp, "Road expenses"],
+          ["Other Operating Expense", data.otherOpExp, "Other operating expense"],
+        ];
+        const entries: Parameters<typeof postLedger>[2] = [];
+        for (const [headName, amount, label] of components) {
+          if (amount <= 0) continue;
+          const headId = await ensureAccountHead(tx, session, headName, "EXPENSE");
+          const common = {
+            date: toDate(data.tripDate),
+            refType: "TRIP_OPEX",
+            refId: savedId,
+            refNo: tripNo,
+            narration: `${label} for relative vehicle — transferred to owner (trip ${tripNo})`,
+          };
+          entries.push(
+            { ...common, partyId: vehicle.ownerId, side: "DEBIT", amount: round2(amount) },
+            { ...common, accountHeadId: headId, side: "CREDIT", amount: round2(amount) }
+          );
+        }
+        if (entries.length) await postLedger(tx, session, entries);
+      }
+
       return savedId;
     });
 
@@ -544,6 +581,7 @@ export async function deleteTrip(id: string): Promise<{ ok: true } | { ok: false
         data: { deletedAt: new Date() },
       });
       await reverseLedger(tx, "TRIP_UREA", id);
+      await reverseLedger(tx, "TRIP_OPEX", id);
       // release the chalans / broker slips back to pending
       await tx.tripDoc.deleteMany({ where: { tripId: id } });
       await audit(tx, session, { entity: "Trip", entityId: id, action: "DELETE", before });
