@@ -284,9 +284,24 @@ export async function processDriverSalary(
         return { ok: false as const, error: "Deductions exceed the gross salary." };
       }
 
+      // the salary belongs to its MONTH's financial year, not the year the
+      // user is standing in — March booked from April must stamp the OLD
+      // year, or FY-scoped ledgers and exports show it a year late. Mid-month
+      // noon UTC dodges every timezone/boundary ambiguity in the FY range.
+      const monthFy = await tx.financialYear.findFirst({
+        where: {
+          firmId: session.firmId,
+          startDate: { lte: new Date(`${d.month}-15T12:00:00Z`) },
+          endDate: { gte: new Date(`${d.month}-15T12:00:00Z`) },
+        },
+        select: { id: true },
+      });
+      const docFyId = monthFy?.id ?? session.fyId;
+
       const values = {
         driverId: d.driverId,
         month: d.month,
+        fyId: docFyId,
         salaryAmount: d.salaryAmount,
         incentive: d.incentive,
         bonus: d.bonus,
@@ -348,8 +363,8 @@ export async function processDriverSalary(
             data: {
               tenantId: session.tenantId,
               firmId: session.firmId,
-              fyId: session.fyId,
               createdById: session.userId,
+              // fyId comes from `values` — the month's own year
               ...values,
             },
           });
@@ -464,7 +479,8 @@ export async function processDriverSalary(
           }
         );
       }
-      await postLedger(tx, session, entries);
+      // stamped into the MONTH's year — the relative-owner legs included
+      await postLedger(tx, { ...session, fyId: docFyId }, entries);
 
       revalidatePath(REVALIDATE);
       return { ok: true as const, id, netPayable };
