@@ -73,11 +73,22 @@ async function collect(
       ? round2(a.uses.filter((u) => u.date <= asOf).reduce((s, u) => s + toNum(String(u.amount)), 0))
       : round2(toNum(String(a.consumedAmount)));
   if (side === "RECV") {
-    const [invoices, slips, advances, settlements, drivers] = await Promise.all([
+    const [invoices, slips, officeIncome, advances, settlements, drivers] = await Promise.all([
       tx.invoice.findMany({ where: { ...scope, deletedAt: null } }),
       // party/broker side of slips — what the party still owes after its own
       // balance-received figures
       tx.brokerSlip.findMany({ where: { ...scope, deletedAt: null, partyId: { not: null } } }),
+      // income booked on credit — the Outstanding register carries these, so
+      // the tile must too or the two totals disagree
+      tx.officeTransaction.findMany({
+        where: {
+          ...scope,
+          deletedAt: null,
+          txnType: "INCOME",
+          paymentMode: null,
+          partyId: { not: null },
+        },
+      }),
       // advances we PAID that nothing consumed yet — the party owes them back
       // (chalan-cancel advances included, labelled apart)
       tx.partyAdvance.findMany({
@@ -132,6 +143,27 @@ async function collect(
         amount: balance,
         settled: own,
         outstanding,
+      });
+    }
+    // credit income entries settle through OFFICE_INCOME voucher allocations
+    const incomePos = await refPositions(tx, {
+      ...scope,
+      refType: "OFFICE_INCOME",
+      asOf,
+      docs: officeIncome.map((t) => ({ id: t.id, original: toNum(String(t.amount)) })),
+    });
+    for (const t of officeIncome) {
+      const p = incomePos.get(t.id);
+      if (!p || p.outstanding <= 0.009) continue;
+      out.push({
+        partyId: t.partyId,
+        partyName: null,
+        refNo: t.refNo || t.voucherNo,
+        date: t.date,
+        type: "OFFICE INCOME",
+        amount: p.original,
+        settled: p.settled,
+        outstanding: p.outstanding,
       });
     }
     for (const a of advances) {

@@ -3,7 +3,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
-import { ALL_PAYABLE_REF_TYPES, settledByRef } from "@/lib/settlement";
+import { ALL_PAYABLE_REF_TYPES, refPositions, settledByRef } from "@/lib/settlement";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport } from "@/components/accounts/simple-report";
 
@@ -189,8 +189,53 @@ export async function OutstandingPayableTab({
         refTypes: ALL_PAYABLE_REF_TYPES,
       }),
     ]);
-    return { chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef };
-  }).then(({ chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef }) => {
+    // dashboard-tile parity: the Payable tile also counts pending driver
+    // settlements (company owes the driver) and open advances RECEIVED
+    // (we owe them back to the party) — this register carries both too
+    const advances =
+      source && source !== "ADVANCE"
+        ? []
+        : await tx.partyAdvance.findMany({
+            where: {
+              firmId: session.firmId,
+              deletedAt: null,
+              kind: "RECEIVED",
+              date: effDate,
+              ...(searchParams.party ? { partyId: searchParams.party } : {}),
+            },
+            orderBy: { date: "asc" },
+          });
+    const advPartyIds = Array.from(new Set(advances.map((a) => a.partyId)));
+    const advParties = advPartyIds.length
+      ? await tx.party.findMany({
+          where: { id: { in: advPartyIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const driverSetts =
+      source && source !== "DRIVER_SETTLEMENT"
+        ? []
+        : await tx.driverSettlement.findMany({
+            where: {
+              firmId: session.firmId,
+              deletedAt: null,
+              amount: { gt: 0 },
+              status: "PENDING",
+              date: effDate,
+            },
+            orderBy: { date: "asc" },
+          });
+    const driverRows = driverSetts.length
+      ? await tx.driver.findMany({ select: { id: true, partyId: true, name: true } })
+      : [];
+    const settPos = await refPositions(tx, {
+      firmId: session.firmId,
+      fyId: session.fyId,
+      refType: "DRIVER_SETTLEMENT",
+      docs: driverSetts.map((s) => ({ id: s.id, original: toNum(String(s.amount)) })),
+    });
+    return { chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverSetts, driverRows, settPos };
+  }).then(({ chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverSetts, driverRows, settPos }) => {
     const partyById = new Map(parties.map((p) => [p.id, p]));
     const status = (total: number, outstanding: number) =>
       outstanding <= 0.009 ? "PAID" : outstanding < total - 0.009 ? "PARTLY PAID" : "UNPAID";
@@ -352,6 +397,47 @@ export async function OutstandingPayableTab({
       };
     });
 
+    const advPartyName = new Map(advParties.map((p) => [p.id, p.name]));
+    const advanceRows = advances.map((a) => {
+      const gross = Math.round(toNum(String(a.amount)) * 100) / 100;
+      const paid = Math.round(toNum(String(a.consumedAmount)) * 100) / 100;
+      const outstanding = Math.round((gross - paid) * 100) / 100;
+      return {
+        refNo: a.voucherNo ?? "ADV",
+        date: a.date.toISOString(),
+        kind: "ADVANCE_RECEIVED",
+        partyType: partyType(a.partyId, "Party"),
+        party: advPartyName.get(a.partyId) ?? partyById.get(a.partyId)?.name ?? "",
+        gross,
+        paid,
+        outstanding,
+        status: status(gross, outstanding),
+        link: "accounts/vouchers?tab=REGISTER",
+      };
+    });
+
+    const drvById = new Map(driverRows.map((d) => [d.id, d]));
+    const driverSettRows = driverSetts
+      .filter((s) => !searchParams.party || drvById.get(s.driverId)?.partyId === searchParams.party)
+      .map((s) => {
+        const p = settPos.get(s.id);
+        const gross = Math.round(toNum(String(s.amount)) * 100) / 100;
+        const paid = Math.round((p?.settled ?? 0) * 100) / 100;
+        const outstanding = Math.round((p ? p.outstanding : gross) * 100) / 100;
+        return {
+          refNo: s.tripRef || s.voucherNo || "SETTLEMENT",
+          date: s.date.toISOString(),
+          kind: "DRIVER_SETTLEMENT",
+          partyType: "Driver",
+          party: drvById.get(s.driverId)?.name ?? "",
+          gross,
+          paid,
+          outstanding,
+          status: status(gross, outstanding),
+          link: "vehicle/driver-settlements",
+        };
+      });
+
     return {
       parties,
       rows: [
@@ -362,6 +448,8 @@ export async function OutstandingPayableTab({
         ...vehicleRows,
         ...adblueRows,
         ...hireRows,
+        ...advanceRows,
+        ...driverSettRows,
       ]
         .filter((r) => r.gross > 0)
         .filter((r) => showClosed || r.outstanding > 0.009)
@@ -392,6 +480,8 @@ export async function OutstandingPayableTab({
         { value: "VEHICLE_EXPENSE", label: "Vehicle Expense" },
         { value: "ADBLUE", label: "AdBlue / Urea Purchase" },
         { value: "HIRE_SLIP", label: "Hire Slip (Lorry Hire)" },
+        { value: "ADVANCE", label: "Advances (Received)" },
+        { value: "DRIVER_SETTLEMENT", label: "Driver Settlements" },
       ],
     },
     {
@@ -406,7 +496,7 @@ export async function OutstandingPayableTab({
     <div className="space-y-4">
       <FilterBar filters={filters} />
       <SimpleReport
-        title={`${rows.length} payable${rows.length === 1 ? "" : "s"} (chalan freight + broker slip owner side + hire slips + staff salary + office & vehicle expense bills)`}
+        title={`${rows.length} payable${rows.length === 1 ? "" : "s"} (chalans + broker slip owner side + hire slips + staff salary + office/vehicle/adblue bills + received advances + driver settlements — same set as the dashboard tile)`}
         columns={[
           { key: "refNo", header: "Ref No", linkBase: "/", linkParamKey: "link" },
           { key: "date", header: "Date", kind: "date" },

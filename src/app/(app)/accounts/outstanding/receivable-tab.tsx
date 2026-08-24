@@ -3,7 +3,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
-import { ALL_RECEIVABLE_REF_TYPES, settledByRef } from "@/lib/settlement";
+import { ALL_RECEIVABLE_REF_TYPES, refPositions, settledByRef } from "@/lib/settlement";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport } from "@/components/accounts/simple-report";
 
@@ -101,8 +101,53 @@ export async function OutstandingReceivableTab({
         refTypes: ALL_RECEIVABLE_REF_TYPES,
       }),
     ]);
-    return { invoices, slips, office, parties, settled };
-  }).then(({ invoices, slips, office, parties, settled }) => {
+    // dashboard-tile parity: the Receivable tile also counts open advances we
+    // PAID (party owes them back) and driver balances the company must
+    // recover — this register carries them too, so the two totals agree
+    const advances =
+      source && source !== "ADVANCE"
+        ? []
+        : await tx.partyAdvance.findMany({
+            where: {
+              firmId: session.firmId,
+              deletedAt: null,
+              kind: "PAID",
+              date: effDate,
+              ...(searchParams.party ? { partyId: searchParams.party } : {}),
+            },
+            orderBy: { date: "asc" },
+          });
+    const advPartyIds = Array.from(new Set(advances.map((a) => a.partyId)));
+    const advParties = advPartyIds.length
+      ? await tx.party.findMany({
+          where: { id: { in: advPartyIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const driverSetts =
+      source && source !== "DRIVER_SETTLEMENT"
+        ? []
+        : await tx.driverSettlement.findMany({
+            where: {
+              firmId: session.firmId,
+              deletedAt: null,
+              amount: { lt: 0 },
+              status: "PENDING",
+              date: effDate,
+            },
+            orderBy: { date: "asc" },
+          });
+    const driverRows = driverSetts.length
+      ? await tx.driver.findMany({ select: { id: true, partyId: true, name: true } })
+      : [];
+    const settPos = await refPositions(tx, {
+      firmId: session.firmId,
+      fyId: session.fyId,
+      refType: "DRIVER_SETTLEMENT",
+      docs: driverSetts.map((s) => ({ id: s.id, original: Math.abs(toNum(String(s.amount))) })),
+    });
+    return { invoices, slips, office, parties, settled, advances, advParties, driverSetts, driverRows, settPos };
+  }).then(({ invoices, slips, office, parties, settled, advances, advParties, driverSetts, driverRows, settPos }) => {
     const partyById = new Map(parties.map((p) => [p.id, p.name]));
     const status = (total: number, outstanding: number) =>
       outstanding <= 0.009 ? "PAID" : outstanding < total - 0.009 ? "PARTLY PAID" : "UNPAID";
@@ -166,9 +211,49 @@ export async function OutstandingReceivableTab({
       };
     });
 
+    const advPartyName = new Map(advParties.map((p) => [p.id, p.name]));
+    const advanceRows = advances.map((a) => {
+      const net = Math.round(toNum(String(a.amount)) * 100) / 100;
+      const received = Math.round(toNum(String(a.consumedAmount)) * 100) / 100;
+      const outstanding = Math.round((net - received) * 100) / 100;
+      return {
+        refNo: a.voucherNo ?? "ADV",
+        date: a.date.toISOString(),
+        kind: a.source === "CHALAN_CANCEL" ? "CANCEL ADVANCE" : "ADVANCE (PAID)",
+        party: advPartyName.get(a.partyId) ?? partyById.get(a.partyId) ?? "",
+        netTotal: net,
+        received,
+        outstanding,
+        status: status(net, outstanding),
+        link:
+          a.source === "CHALAN_CANCEL" ? "chalan/cancel-advances" : "accounts/vouchers?tab=REGISTER",
+      };
+    });
+
+    const drvById = new Map(driverRows.map((d) => [d.id, d]));
+    const driverSettRows = driverSetts
+      .filter((s) => !searchParams.party || drvById.get(s.driverId)?.partyId === searchParams.party)
+      .map((s) => {
+        const p = settPos.get(s.id);
+        const net = Math.round(Math.abs(toNum(String(s.amount))) * 100) / 100;
+        const received = Math.round((p?.settled ?? 0) * 100) / 100;
+        const outstanding = Math.round((p ? p.outstanding : net) * 100) / 100;
+        return {
+          refNo: s.tripRef || s.voucherNo || "SETTLEMENT",
+          date: s.date.toISOString(),
+          kind: "DRIVER SETTLEMENT",
+          party: drvById.get(s.driverId)?.name ?? "",
+          netTotal: net,
+          received,
+          outstanding,
+          status: status(net, outstanding),
+          link: "vehicle/driver-settlements",
+        };
+      });
+
     return {
       parties,
-      rows: [...invoiceRows, ...slipRows, ...officeRows]
+      rows: [...invoiceRows, ...slipRows, ...officeRows, ...advanceRows, ...driverSettRows]
         .filter((r) => r.netTotal > 0)
         .filter((r) => showClosed || r.outstanding > 0.009)
         .sort((a, b) => a.date.localeCompare(b.date)),
@@ -194,6 +279,8 @@ export async function OutstandingReceivableTab({
         { value: "INVOICE", label: "Customer Invoices" },
         { value: "BROKER_SLIP", label: "Broker Slips" },
         { value: "OFFICE_INCOME", label: "Office Income" },
+        { value: "ADVANCE", label: "Advances (Paid)" },
+        { value: "DRIVER_SETTLEMENT", label: "Driver Settlements" },
       ],
     },
     {
@@ -208,7 +295,7 @@ export async function OutstandingReceivableTab({
     <div className="space-y-4">
       <FilterBar filters={filters} />
       <SimpleReport
-        title={`${rows.length} receivable${rows.length === 1 ? "" : "s"} (customer invoices + broker slips)`}
+        title={`${rows.length} receivable${rows.length === 1 ? "" : "s"} (invoices + broker slips + office income + advances + driver settlements — same set as the dashboard tile)`}
         columns={[
           { key: "refNo", header: "Ref No", linkBase: "/", linkParamKey: "link" },
           { key: "date", header: "Date", kind: "date" },
