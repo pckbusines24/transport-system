@@ -371,6 +371,28 @@ export async function saveTrip(input: unknown): Promise<SaveResult> {
       // document settles in exactly ONE trip sheet (pending enforcement)
       await tx.tripDoc.deleteMany({ where: { tripId: savedId } });
       if (data.docs.length) {
+        // release links held by DEAD trips for the selected docs — an orphan
+        // link (trip deleted/missing but the row left behind) would otherwise
+        // hit the unique constraint even though the pending list rightly
+        // offered the document
+        const holders = await tx.tripDoc.findMany({
+          where: { OR: data.docs.map((d) => ({ refType: d.refType, refId: d.refId })) },
+          select: { id: true, tripId: true },
+        });
+        if (holders.length) {
+          const holderTrips = await tx.trip.findMany({
+            where: {
+              id: { in: Array.from(new Set(holders.map((h) => h.tripId))) },
+              deletedAt: null,
+            },
+            select: { id: true },
+          });
+          const alive = new Set(holderTrips.map((t) => t.id));
+          const stale = holders.filter((h) => !alive.has(h.tripId));
+          if (stale.length) {
+            await tx.tripDoc.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
+          }
+        }
         try {
           await tx.tripDoc.createMany({
             data: data.docs.map((doc) => ({
@@ -676,9 +698,22 @@ export async function getPendingTripDocs(input: {
   return withTenant(session.tenantId, async (tx) => {
     const linked = await tx.tripDoc.findMany({
       where: input.excludeTripId ? { tripId: { not: input.excludeTripId } } : {},
-      select: { refType: true, refId: true },
+      select: { tripId: true, refType: true, refId: true },
     });
-    const linkedSet = new Set(linked.map((l) => `${l.refType}:${l.refId}`));
+    // only a link whose trip is still ALIVE hides a document — an orphan link
+    // (its trip deleted or missing, but the link row left behind) must not
+    // bury a chalan/slip in no-man's-land forever
+    const liveTrips = await tx.trip.findMany({
+      where: {
+        id: { in: Array.from(new Set(linked.map((l) => l.tripId))) },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    const liveTripIds = new Set(liveTrips.map((t) => t.id));
+    const linkedSet = new Set(
+      linked.filter((l) => liveTripIds.has(l.tripId)).map((l) => `${l.refType}:${l.refId}`)
+    );
 
     const [chalans, slips, cities, parties] = await Promise.all([
       tx.chalan.findMany({

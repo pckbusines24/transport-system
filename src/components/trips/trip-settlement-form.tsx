@@ -155,12 +155,16 @@ export function TripSettlementForm({
 
   // ---- step 1b: pending chalans / broker slips ----
   const [pendingDocs, setPendingDocs] = React.useState<PendingTripDoc[]>([]);
+  // a failed fetch must SAY so — an empty list with no error reads as "no
+  // pending documents", which sends the user hunting in the wrong direction
+  const [pendingError, setPendingError] = React.useState<string | null>(null);
   const [selectedDocs, setSelectedDocs] = React.useState<Set<string>>(
     new Set(initial?.docs.map((d) => `${d.refType}:${d.refId}`) ?? [])
   );
   React.useEffect(() => {
     if (!vehicleId || !fromIso || !toIso) {
       setPendingDocs([]);
+      setPendingError(null);
       return;
     }
     let cancelled = false;
@@ -171,9 +175,21 @@ export function TripSettlementForm({
       excludeTripId: initial?.id ?? null,
     })
       .then((r) => {
-        if (!cancelled) setPendingDocs(r);
+        if (!cancelled) {
+          setPendingDocs(r);
+          setPendingError(null);
+        }
       })
-      .catch(() => setPendingDocs([]));
+      .catch((e) => {
+        if (!cancelled) {
+          setPendingDocs([]);
+          setPendingError(
+            e instanceof Error && e.message
+              ? e.message
+              : "Pending chalans load nahi hue — page refresh karke dobara try karein."
+          );
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -683,10 +699,16 @@ export function TripSettlementForm({
                 })}
                 {!pendingDocs.length && (
                   <tr>
-                    <td colSpan={12} className={`${cell} py-2 text-center text-muted-foreground`}>
-                      No pending chalans / broker slips for this vehicle in the date range.
-                      Documents settled in earlier trip sheets never appear again.
-                    </td>
+                    {pendingError ? (
+                      <td colSpan={12} className={`${cell} py-2 text-center text-destructive`}>
+                        Pending list load nahi hui: {pendingError}
+                      </td>
+                    ) : (
+                      <td colSpan={12} className={`${cell} py-2 text-center text-muted-foreground`}>
+                        No pending chalans / broker slips for this vehicle in the date range.
+                        Documents settled in earlier trip sheets never appear again.
+                      </td>
+                    )}
                   </tr>
                 )}
               </tbody>
