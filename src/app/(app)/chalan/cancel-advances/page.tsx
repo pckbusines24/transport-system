@@ -5,6 +5,7 @@ import { withTenant } from "@/lib/db";
 import { formatDate, formatMoney, toNum } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { InfoHint } from "@/components/ui/info-hint";
+import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -14,28 +15,50 @@ export const dynamic = "force-dynamic";
  * broker until it is recovered by receipt voucher or adjusted against his
  * next chalan; the adjustment trail shows per document.
  */
-export default async function ChalanCancelAdvancesPage() {
+export default async function ChalanCancelAdvancesPage({
+  searchParams,
+}: {
+  searchParams: { date_from?: string; date_to?: string };
+}) {
   const session = requireSession();
   await authorize(session, "chalan", "view");
+
+  const hasDates = Boolean(searchParams.date_from || searchParams.date_to);
 
   const { advances, parties, chalans } = await withTenant(session.tenantId, async (tx) => {
     // FY continuity: an unrecovered cancel-advance stays listed EVERY year
     // until the money comes back; fully-recovered ones stay scoped to the
-    // session FY so the register does not fill with closed history
+    // session FY so the register does not fill with closed history — UNLESS
+    // a date filter is set, which shows EVERY row of that period (recovered
+    // included, any year): date filter beats FY, like every other register
     const all = await tx.partyAdvance.findMany({
       where: {
         firmId: session.firmId,
         deletedAt: null,
         source: "CHALAN_CANCEL",
+        ...(hasDates
+          ? {
+              date: {
+                ...(searchParams.date_from
+                  ? { gte: new Date(searchParams.date_from + "T00:00:00") }
+                  : {}),
+                ...(searchParams.date_to
+                  ? { lte: new Date(searchParams.date_to + "T23:59:59") }
+                  : {}),
+              },
+            }
+          : {}),
       },
       include: { uses: true },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     });
-    const advances = all.filter(
-      (a) =>
-        a.fyId === session.fyId ||
-        Number(a.amount) - Number(a.consumedAmount) > 0.009
-    );
+    const advances = hasDates
+      ? all
+      : all.filter(
+          (a) =>
+            a.fyId === session.fyId ||
+            Number(a.amount) - Number(a.consumedAmount) > 0.009
+        );
     const parties = await tx.party.findMany({
       where: { id: { in: advances.map((a) => a.partyId) } },
       select: { id: true, name: true },
@@ -72,6 +95,7 @@ export default async function ChalanCancelAdvancesPage() {
   });
 
   const totalOpen = rows.reduce((s, r) => s + r.balance, 0);
+  const filters: FilterDef[] = [{ type: "daterange", key: "date", label: "Date" }];
 
   return (
     <div className="space-y-4 p-4">
@@ -82,7 +106,9 @@ export default async function ChalanCancelAdvancesPage() {
             <InfoHint>
               Advances stuck on cancelled chalans (accident / rejection). Recover by receipt
               voucher, or adjust in the broker&apos;s next chalan — the adjustment grid offers
-              these automatically.
+              these automatically. Set a date range to see EVERY row of that period (any
+              year, recovered included); without one the register shows this FY plus every
+              still-open advance.
             </InfoHint>
           </h1>
         </div>
@@ -90,6 +116,8 @@ export default async function ChalanCancelAdvancesPage() {
           Open to recover: <b className="tabular-nums">{formatMoney(totalOpen)}</b>
         </div>
       </div>
+
+      <FilterBar filters={filters} />
 
       <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-sm">

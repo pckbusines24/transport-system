@@ -22,15 +22,18 @@ export default async function AdvanceRegisterPage({
   await authorize(session, "reports", "view");
 
   const { advances, parties } = await withTenant(session.tenantId, async (tx) => {
+    const hasDates = Boolean(searchParams.date_from || searchParams.date_to);
     const where: Prisma.PartyAdvanceWhereInput = {
       firmId: session.firmId,
-      fyId: session.fyId,
+      // date filter beats FY (FY continuity): a range reaching into an old
+      // year shows that year's advances; no filter → current FY as before
+      ...(hasDates ? {} : { fyId: session.fyId }),
       deletedAt: null,
       // cancel-created advances have their own register (Chalan Cancel Advances)
       source: { not: "CHALAN_CANCEL" },
     };
     if (searchParams.party) where.partyId = searchParams.party;
-    if (searchParams.date_from || searchParams.date_to) {
+    if (hasDates) {
       where.date = {
         ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
         ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
