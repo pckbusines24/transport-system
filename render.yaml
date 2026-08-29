@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: transport-tms
+    name: transport-system
     runtime: node
     # free tier spins down after 15 min idle → 30-60s cold start on the next
     # visit; move to "starter" the moment real users depend on this
