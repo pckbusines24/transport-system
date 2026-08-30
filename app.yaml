@@ -9,8 +9,15 @@
 #    why uploads move to object storage; STORAGE_DRIVER=s3 is not optional here.
 #  - Builds get 4 vCPU / 10 GiB regardless of instance size, so the 1.8 GB
 #    `next build` fits on any tier. The RUNTIME is the constraint: this app
-#    holds ~375 MB resident at idle, so the 512 MB instance is too tight —
-#    basic-xs (1 GB) is the smallest safe size.
+#    holds ~375 MB resident at idle, so the 0.5 GB instance is too tight and
+#    1 GB is the smallest safe size.
+#  - apps-s-1vcpu-1gb is the current slug. The old `basic-xs` names the same
+#    size but is a legacy plan DigitalOcean is deprecating; `doctl apps tier
+#    instance-size list` prints the authoritative set.
+#  - No custom domain configured, so the app answers on its generated
+#    <name>-<hash>.ondigitalocean.app hostname with DO-managed TLS. The session
+#    cookie is host-only, so that works as-is; add a `domains:` block later
+#    without touching anything else.
 #  - `npm start` already runs `prisma migrate deploy` before `next start`, so
 #    migrations apply on every release, as they did on Render.
 #  - Put the app in the SAME region as the database. This app issues many
@@ -25,7 +32,7 @@ services:
       deploy_on_push: true
     build_command: npm ci && npm run build
     run_command: npm start
-    instance_size_slug: basic-xs
+    instance_size_slug: apps-s-1vcpu-1gb
     instance_count: 1
     http_port: 8080
     health_check:
