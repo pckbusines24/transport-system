@@ -76,13 +76,22 @@ export function Logo({
 }) {
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
-      <LogoMark className={cn("h-8 w-8", markClassName)} onDark={onDark} />
+      {/* the tile stays gold even on a dark ground: an ink tile on an ink panel
+          is invisible, and the mark is the one thing that must always read */}
+      <LogoMark className={cn("h-8 w-8", markClassName)} />
       {showWordmark && (
         // tight tracking and a light second word: the eye reads "Transport" as
         // the name and "TMS" as the qualifier, without needing two type sizes
-        <span className="text-[1.0625rem] font-semibold tracking-[-0.02em]">
+        <span
+          className={cn(
+            "text-[1.0625rem] font-semibold tracking-[-0.02em]",
+            onDark && "text-inverted-foreground"
+          )}
+        >
           Transport
-          <span className="font-light text-muted-foreground">TMS</span>
+          <span className={cn("font-light", onDark ? "text-inverted-muted" : "text-muted-foreground")}>
+            TMS
+          </span>
         </span>
       )}
     </span>
