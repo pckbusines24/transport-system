@@ -38,3 +38,6 @@ next-env.d.ts
 # local secrets
 .env
 /test-results/
+
+# parity harness scratch modules
+/scripts/parity/.tmp/
