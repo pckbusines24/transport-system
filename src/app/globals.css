@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   DESIGN SYSTEM — see /design-system for a live specimen of every token below.
+
+   Three ideas carry the whole look:
+
+   1. WARM CANVAS, COOL INK. The page is a soft off-white with a golden
+      ambient wash; content sits on near-white cards. Nothing is pure grey —
+      every neutral carries a little warmth so the yellow never looks bolted on.
+   2. SOFT GEOMETRY. Generous radii and wide, low-opacity shadows. Elevation is
+      communicated by blur and lift, never by a hard border or a dark line.
+   3. INK FOR EMPHASIS. Instead of shouting with colour, the most important
+      panel inverts to near-black. Yellow is the accent, ink is the emphasis.
+   ========================================================================== */
+
 /* Extension-proof dialog layout: some browser extensions (AI sidebars etc.)
    inject styles that reflow dialog children side-by-side, squeezing the
    title into a sliver and pushing buttons out of the box. Pin the stacked
@@ -18,68 +32,172 @@
 
 @layer base {
   :root {
-    /* Light theme — clean white surfaces with a golden-yellow primary */
-    --background: 45 40% 98%;
-    --foreground: 224 30% 12%;
+    /* ---- surfaces ------------------------------------------------------ */
+    /* canvas is the warm page ground; card is the near-white panel on it */
+    --background: 45 42% 97%;
+    --foreground: 225 22% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 224 30% 12%;
+    --card-foreground: 225 22% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 30% 12%;
-    --primary: 43 96% 50%;
+    --popover-foreground: 225 22% 11%;
+
+    /* sunken: insets, table headers, empty wells — a shade below the card */
+    --sunken: 45 30% 96%;
+    --sunken-foreground: 224 12% 40%;
+
+    /* inverted: the emphasis panel. Near-black, never pure #000, so it reads
+       as a deliberate surface rather than a hole punched in the page. */
+    --inverted: 225 16% 12%;
+    --inverted-foreground: 45 30% 96%;
+    --inverted-muted: 225 8% 62%;
+
+    /* ---- brand --------------------------------------------------------- */
+    --primary: 44 96% 56%;
     --primary-foreground: 30 45% 10%;
-    --secondary: 45 60% 93%;
-    --secondary-foreground: 30 40% 18%;
-    --muted: 45 25% 94%;
-    --muted-foreground: 220 12% 44%;
-    --accent: 45 70% 92%;
-    --accent-foreground: 30 40% 15%;
-    --destructive: 0 72% 45%;
+    --secondary: 45 55% 93%;
+    --secondary-foreground: 30 38% 18%;
+    --accent: 45 68% 92%;
+    --accent-foreground: 30 38% 15%;
+    --muted: 45 25% 95%;
+    --muted-foreground: 224 11% 45%;
+
+    /* ---- status -------------------------------------------------------- */
+    /* tuned to sit on the warm canvas without vibrating against the yellow */
+    --destructive: 356 62% 52%;
     --destructive-foreground: 0 0% 100%;
-    --border: 44 22% 88%;
-    --input: 44 22% 82%;
-    --ring: 43 96% 45%;
-    --radius: 0.75rem;
-    /* kept for compatibility with tailwind sidebar tokens */
+    --success: 158 42% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 36 78% 52%;
+    --warning-foreground: 30 45% 10%;
+    --info: 244 44% 62%;
+    --info-foreground: 0 0% 100%;
+
+    /* ---- lines & focus -------------------------------------------------- */
+    /* borders are barely there: separation comes from surface + shadow */
+    --border: 44 20% 89%;
+    --input: 44 20% 84%;
+    --ring: 44 96% 46%;
+
+    /* ---- geometry -------------------------------------------------------
+       One step per role, so a component never has to invent a radius:
+         control  inputs, buttons, small chips
+         panel    cards and dialogs
+         frame    the outermost app shell
+         pill     fully round — nav items, badges, toggles                  */
+    --radius: 0.875rem; /* control — tailwind's rounded-lg */
+    --radius-panel: 1.5rem;
+    --radius-frame: 2rem;
+
+    /* ---- elevation ------------------------------------------------------
+       Warm-tinted, wide, and low opacity. Shadows describe height, so each
+       step raises blur and spread together rather than just darkening.     */
+    --shadow-sm: 0 1px 2px -1px hsl(38 40% 28% / 0.10);
+    --shadow-card: 0 1px 1px hsl(38 40% 28% / 0.04), 0 6px 12px -6px hsl(38 40% 24% / 0.18);
+    --shadow-raised: 0 2px 3px -1px hsl(38 40% 28% / 0.07), 0 14px 28px -10px hsl(38 40% 22% / 0.28);
+    --shadow-overlay: 0 6px 10px -4px hsl(38 40% 24% / 0.16), 0 30px 60px -20px hsl(38 40% 18% / 0.42);
+
+    /* ---- motion ---------------------------------------------------------
+       Fast enough to feel instant, eased so it never looks mechanical.     */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --duration-fast: 120ms;
+    --duration: 200ms;
+
+    /* compatibility: older sidebar tokens still referenced by tailwind */
     --sidebar: 0 0% 100%;
-    --sidebar-foreground: 224 30% 12%;
-    --sidebar-muted: 220 12% 44%;
-    --sidebar-border: 44 22% 88%;
-    --sidebar-accent: 45 70% 92%;
+    --sidebar-foreground: 225 22% 11%;
+    --sidebar-muted: 224 11% 45%;
+    --sidebar-border: 44 20% 89%;
+    --sidebar-accent: 45 68% 92%;
   }
+
   .dark {
-    --background: 222 24% 7%;
-    --foreground: 40 25% 95%;
-    --card: 222 21% 11%;
-    --card-foreground: 40 25% 95%;
-    --popover: 222 21% 13%;
-    --popover-foreground: 40 25% 95%;
-    --primary: 44 96% 58%;
+    --background: 225 18% 8%;
+    --foreground: 44 22% 95%;
+    --card: 225 15% 12%;
+    --card-foreground: 44 22% 95%;
+    --popover: 225 15% 14%;
+    --popover-foreground: 44 22% 95%;
+
+    --sunken: 225 15% 10%;
+    --sunken-foreground: 220 12% 68%;
+
+    /* in dark mode the emphasis panel goes UP, not down — a lifted slate
+       reads as emphasis where another black card would simply disappear */
+    --inverted: 225 12% 20%;
+    --inverted-foreground: 44 22% 95%;
+    --inverted-muted: 220 10% 66%;
+
+    --primary: 44 94% 60%;
     --primary-foreground: 30 50% 10%;
-    --secondary: 222 16% 19%;
-    --secondary-foreground: 40 25% 92%;
-    --muted: 222 17% 14%;
-    --muted-foreground: 220 14% 70%;
-    --accent: 222 17% 18%;
-    --accent-foreground: 40 25% 95%;
-    --destructive: 0 68% 55%;
+    --secondary: 225 12% 20%;
+    --secondary-foreground: 44 22% 92%;
+    --accent: 225 13% 19%;
+    --accent-foreground: 44 22% 95%;
+    --muted: 225 14% 15%;
+    --muted-foreground: 220 12% 68%;
+
+    --destructive: 358 64% 56%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 14% 22%;
-    --input: 220 14% 28%;
-    --ring: 44 96% 58%;
-    --sidebar: 222 21% 11%;
-    --sidebar-foreground: 40 25% 95%;
-    --sidebar-muted: 220 14% 70%;
-    --sidebar-border: 220 14% 22%;
-    --sidebar-accent: 222 17% 18%;
+    --success: 152 40% 46%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 84% 56%;
+    --warning-foreground: 30 45% 10%;
+    --info: 232 58% 66%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 10% 22%;
+    --input: 220 10% 28%;
+    --ring: 44 94% 60%;
+
+    /* on a dark ground a warm shadow is invisible — go neutral and deeper */
+    --shadow-sm: 0 1px 2px -1px hsl(0 0% 0% / 0.5);
+    --shadow-card: 0 1px 2px -1px hsl(0 0% 0% / 0.4), 0 8px 20px -12px hsl(0 0% 0% / 0.6);
+    --shadow-raised: 0 2px 4px -2px hsl(0 0% 0% / 0.5), 0 16px 32px -16px hsl(0 0% 0% / 0.7);
+    --shadow-overlay: 0 8px 12px -6px hsl(0 0% 0% / 0.6), 0 32px 64px -24px hsl(0 0% 0% / 0.8);
+
+    --sidebar: 225 15% 12%;
+    --sidebar-foreground: 44 22% 95%;
+    --sidebar-muted: 220 12% 68%;
+    --sidebar-border: 220 10% 22%;
+    --sidebar-accent: 225 13% 19%;
   }
+
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  /* The ambient wash: a golden glow anchored to the top-right that fades out
+     well before the fold. Fixed and non-interactive, so it costs one paint
+     and never intercepts a click. Without this the canvas reads flat grey. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(70rem 40rem at 100% 0%, hsl(var(--primary) / 0.22), transparent 60%),
+      radial-gradient(50rem 34rem at 88% 42%, hsl(44 90% 62% / 0.14), transparent 62%);
+  }
+  .dark body::before {
+    background:
+      radial-gradient(70rem 40rem at 100% 0%, hsl(var(--primary) / 0.1), transparent 60%),
+      radial-gradient(50rem 34rem at 88% 42%, hsl(44 90% 55% / 0.06), transparent 62%);
+  }
+
   ::selection {
     background: hsl(var(--primary) / 0.3);
+  }
+
+  /* Numerals line up in columns — money and dates must never jitter between
+     rows because a 1 is narrower than an 8. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 
   /*
@@ -111,20 +229,52 @@
       min-height: 0;
     }
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
+  /* ---- typography roles ------------------------------------------------
+     Display type is LIGHT and tight: at 40px+ a regular weight reads heavy
+     and dated. Labels go the other way — small, medium, and widely tracked. */
+  .text-display {
+    @apply text-4xl font-light leading-[1.05] tracking-[-0.03em] sm:text-5xl;
+  }
+  .text-metric {
+    @apply text-3xl font-light leading-none tracking-[-0.02em] tabular-nums;
+  }
   .page-title {
     @apply text-xl font-semibold tracking-tight;
+  }
+  .text-eyebrow {
+    @apply text-[0.6875rem] font-medium uppercase tracking-[0.09em] text-muted-foreground;
   }
 }
 
 @layer utilities {
+  /* Elevation utilities. Prefer these over tailwind's shadow-* so every
+     surface in the app draws from the same four-step scale. */
   .shadow-card {
-    box-shadow: 0 1px 2px 0 rgb(120 90 20 / 0.06), 0 1px 8px -2px rgb(120 90 20 / 0.08);
+    box-shadow: var(--shadow-card);
   }
-  .dark .shadow-card {
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 2px 10px -2px rgb(0 0 0 / 0.5);
+  .shadow-raised {
+    box-shadow: var(--shadow-raised);
+  }
+  .shadow-overlay {
+    box-shadow: var(--shadow-overlay);
+  }
+
+  /* Hairline that reads as a fold in the surface rather than a drawn border */
+  .divide-hairline > * + * {
+    border-top: 1px solid hsl(var(--border) / 0.7);
   }
 }
 
@@ -135,5 +285,8 @@
   body {
     background: white !important;
     color: black !important;
+  }
+  body::before {
+    display: none !important;
   }
 }
