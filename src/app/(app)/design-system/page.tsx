@@ -215,6 +215,7 @@ export default function DesignSystemPage() {
               <Stat label="Firms" value="6" icon={<Building2 />} size="sm" />
             </div>
             <SegmentedMeter
+              suffix="%"
               segments={[
                 { label: "Delivered", value: 62, tone: "ink" },
                 { label: "In transit", value: 21, tone: "primary" },

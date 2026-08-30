@@ -84,9 +84,17 @@ export interface MeterSegment {
 export function SegmentedMeter({
   segments,
   className,
+  suffix = "",
 }: {
   segments: MeterSegment[];
   className?: string;
+  /**
+   * Appended to each segment's printed value. Empty by default, because the
+   * width ALREADY encodes the share — printing "%" on a raw count would claim
+   * that 4 expired bills are 4 percent of something, which is simply false.
+   * Pass "%" only when the values really are percentages.
+   */
+  suffix?: string;
 }) {
   const total = segments.reduce((s, x) => s + Math.max(0, x.value), 0) || 1;
   return (
@@ -110,7 +118,8 @@ export function SegmentedMeter({
                   "border border-border/60 bg-[repeating-linear-gradient(135deg,hsl(var(--muted))_0_6px,transparent_6px_12px)] text-muted-foreground"
               )}
             >
-              {s.value}%
+              {s.value}
+              {suffix}
             </div>
           </div>
         );

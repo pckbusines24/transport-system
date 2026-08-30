@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { Logo } from "@/components/brand/logo";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
@@ -10,7 +11,6 @@ import {
   LogOut,
   Menu,
   Search,
-  Truck,
   User,
   X,
 } from "lucide-react";
@@ -308,13 +308,12 @@ function MobileMenu({
 
 function Brand() {
   return (
-    <Link href="/dashboard" className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-sm">
-        <Truck className="h-5 w-5 text-primary-foreground" />
-      </span>
-      <span className="text-[17px] font-bold tracking-tight">
-        Transport<span className="text-primary">TMS</span>
-      </span>
+    <Link
+      href="/dashboard"
+      className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      aria-label="TransportTMS — go to dashboard"
+    >
+      <Logo markClassName="h-9 w-9" />
     </Link>
   );
 }
