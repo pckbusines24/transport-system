@@ -47,20 +47,21 @@ export function TripRegisterClient({
   const router = useRouter();
   const { toast } = useToast();
 
-  const money = (
-    key: keyof Pick<TripRegisterRow, "freight" | "approved" | "vehicleCost">,
-    header: string
-  ): ColumnDef<TripRegisterRow> => ({
-    accessorKey: key,
-    header,
-    cell: ({ row }) => formatMoney(row.original[key]),
-    meta: {
-      numeric: true,
-      total: (rs) => formatMoney(rs.reduce((s, r) => s + r[key], 0)),
-    } satisfies DataTableColumnMeta<TripRegisterRow>,
-  });
+  const columns: ColumnDef<TripRegisterRow>[] = React.useMemo(() => {
+    const money = (
+      key: keyof Pick<TripRegisterRow, "freight" | "approved" | "vehicleCost">,
+      header: string
+    ): ColumnDef<TripRegisterRow> => ({
+      accessorKey: key,
+      header,
+      cell: ({ row }) => formatMoney(row.original[key]),
+      meta: {
+        numeric: true,
+        total: (rs) => formatMoney(rs.reduce((s, r) => s + r[key], 0)),
+      } satisfies DataTableColumnMeta<TripRegisterRow>,
+    });
 
-  const columns: ColumnDef<TripRegisterRow>[] = [
+    return [
     { accessorKey: "tripNo", header: "Trip Sheet No" },
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     { accessorKey: "vehicle", header: "Vehicle" },
@@ -159,7 +160,8 @@ export function TripRegisterClient({
         </div>
       ),
     },
-  ];
+    ];
+  }, [canDelete, router, toast]);
 
   return (
     <div className="space-y-4">

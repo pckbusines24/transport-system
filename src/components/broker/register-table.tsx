@@ -128,10 +128,10 @@ export function BrokerRegisterTable({
   const uploadRowRef = React.useRef<BrokerRegisterRow | null>(null);
   const [uploading, setUploading] = React.useState(false);
 
-  const startPodUpload = (row: BrokerRegisterRow) => {
+  const startPodUpload = React.useCallback((row: BrokerRegisterRow) => {
     uploadRowRef.current = row;
     fileInputRef.current?.click();
-  };
+  }, []);
 
   const handlePodFile = async (file: File | null) => {
     const row = uploadRowRef.current;
@@ -159,7 +159,7 @@ export function BrokerRegisterTable({
     }
   };
 
-  const togglePod = async (row: BrokerRegisterRow, attached: boolean) => {
+  const togglePod = React.useCallback(async (row: BrokerRegisterRow, attached: boolean) => {
     const res = await setBrokerSlipPodAttached(row.id, attached);
     if (res.ok) {
       toast({
@@ -172,7 +172,7 @@ export function BrokerRegisterTable({
     } else {
       toast({ variant: "destructive", title: "Update failed", description: res.error });
     }
-  };
+  }, [router, toast]);
 
   const confirmDelete = async () => {
     if (!toDelete) return;
@@ -191,7 +191,7 @@ export function BrokerRegisterTable({
     }
   };
 
-  const columns: ColumnDef<BrokerRegisterRow>[] = [
+  const columns: ColumnDef<BrokerRegisterRow>[] = React.useMemo(() => [
     { accessorKey: "slipNo", header: "Slip No" },
     {
       accessorKey: "slipDate",
@@ -387,7 +387,7 @@ export function BrokerRegisterTable({
           } satisfies ColumnDef<BrokerRegisterRow>,
         ]
       : []),
-  ];
+  ], [canDelete, ret, startPodUpload, togglePod, uploading]);
 
   return (
     <div className="space-y-2">

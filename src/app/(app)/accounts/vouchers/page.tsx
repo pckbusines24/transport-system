@@ -82,15 +82,10 @@ export default async function VouchersPage({
   const { peekNumbers, recent } = await withTenant(session.tenantId, async (tx) => {
     const peekNumbers = {} as Record<VoucherType, string>;
     const recent = {} as Record<VoucherType, RecentVoucher[]>;
-    const parties = await tx.party.findMany({ select: { id: true, name: true } });
-    const partyName = new Map(parties.map((p) => [p.id, p.name]));
-    for (const t of TYPES) {
-      peekNumbers[t] =
-        (await peekDocNumber(tx, {
-          firmId: session.firmId,
-          fyId: session.fyId,
-          docType: `VOUCHER_${t}` as DocNumberType,
-        })) ?? "1";
+    // load every type's strip first, then resolve names once: only the parties
+    // these ten-per-type vouchers actually reference are needed, so the whole
+    // party master no longer has to be read to render the page
+    const loadType = async (t: VoucherType) => {
       const vouchers = await tx.voucher.findMany({
         where: {
           firmId: session.firmId,
@@ -108,7 +103,36 @@ export default async function VouchersPage({
             include: { uses: { orderBy: { date: "asc" } } },
           })
         : [];
-      const advByVoucher = new Map(advances.map((a) => [a.voucherId ?? "", a]));
+      return {
+        t,
+        vouchers,
+        advByVoucher: new Map(advances.map((a) => [a.voucherId ?? "", a])),
+      };
+    };
+    const loaded: Awaited<ReturnType<typeof loadType>>[] = [];
+    for (const t of TYPES) {
+      peekNumbers[t] =
+        (await peekDocNumber(tx, {
+          firmId: session.firmId,
+          fyId: session.fyId,
+          docType: `VOUCHER_${t}` as DocNumberType,
+        })) ?? "1";
+      loaded.push(await loadType(t));
+    }
+    // inactive and bank/cash parties can be referenced too, so this reads the
+    // Party table rather than reusing the (active, non-bank) option lists
+    const partyIds = Array.from(
+      new Set(
+        loaded
+          .flatMap((l) => l.vouchers.flatMap((v) => [v.partyId, v.bankPartyId]))
+          .filter(Boolean) as string[]
+      )
+    );
+    const parties = partyIds.length
+      ? await tx.party.findMany({ where: { id: { in: partyIds } }, select: { id: true, name: true } })
+      : [];
+    const partyName = new Map(parties.map((p) => [p.id, p.name]));
+    for (const { t, vouchers, advByVoucher } of loaded) {
       recent[t] = vouchers.map((v) => ({
         id: v.id,
         voucherNo: v.voucherNo,

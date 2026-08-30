@@ -58,14 +58,15 @@ export function LrTypeReportTable({
   const [toDelete, setToDelete] = React.useState<LrTypeReportRow | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  const money = { numeric: true } satisfies DataTableColumnMeta<LrTypeReportRow>;
-  const total = (key: keyof LrTypeReportRow) => ({
-    numeric: true,
-    total: (all: LrTypeReportRow[]) =>
-      formatMoney(all.reduce((s, r) => s + (Number(r[key]) || 0), 0)),
-  });
+  const columns: ColumnDef<LrTypeReportRow>[] = React.useMemo(() => {
+    const money = { numeric: true } satisfies DataTableColumnMeta<LrTypeReportRow>;
+    const total = (key: keyof LrTypeReportRow) => ({
+      numeric: true,
+      total: (all: LrTypeReportRow[]) =>
+        formatMoney(all.reduce((s, r) => s + (Number(r[key]) || 0), 0)),
+    });
 
-  const columns: ColumnDef<LrTypeReportRow>[] = [
+    return [
     { accessorKey: "lrNo", header: "LR No" },
     { accessorKey: "lrDate", header: "Date" },
     { accessorKey: "route", header: "Route" },
@@ -117,7 +118,8 @@ export function LrTypeReportTable({
         </div>
       ),
     },
-  ];
+    ];
+  }, [canDelete]);
 
   const confirmDelete = async () => {
     if (!toDelete) return;

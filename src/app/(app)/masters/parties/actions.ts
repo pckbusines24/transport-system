@@ -9,6 +9,7 @@ import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { actionError, optStr, zodError, type ActionResult } from "../_lib/util";
 
 const schema = z.object({
@@ -102,6 +103,7 @@ export async function saveParty(input: unknown): Promise<ActionResult> {
     revalidatePath("/masters/parties");
     revalidateTag(lookupTag.parties(session.tenantId));
     revalidateTag(lookupTag.vehicles(session.tenantId));
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (e) {
     return actionError(e);
@@ -121,6 +123,7 @@ export async function deleteParty(id: string): Promise<ActionResult> {
     revalidatePath("/masters/parties");
     revalidateTag(lookupTag.parties(session.tenantId));
     revalidateTag(lookupTag.vehicles(session.tenantId));
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (e) {
     return actionError(e);
@@ -184,5 +187,6 @@ export async function importParties(formData: FormData): Promise<ImportSummary> 
   );
   revalidateTag(lookupTag.parties(session.tenantId));
   revalidateTag(lookupTag.vehicles(session.tenantId));
+  revalidateOutstanding(session.tenantId);
   return summary;
 }

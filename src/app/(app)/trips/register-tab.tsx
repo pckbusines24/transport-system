@@ -52,15 +52,30 @@ export async function TripRegisterTab({
           ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
         };
       }
-      const [trips, vehicles, drivers, cities, settlements] = await Promise.all([
+      const [trips, vehicles, drivers, settlements] = await Promise.all([
         tx.trip.findMany({ where, orderBy: [{ tripDate: "desc" }, { createdAt: "desc" }] }),
-        tx.vehicle.findMany({ orderBy: { number: "asc" } }),
-        tx.driver.findMany({ where: { firmId: session.firmId, deletedAt: null } }),
-        tx.city.findMany(),
+        // these three feed id→label maps and the filter dropdowns, so only the
+        // label columns are needed — the full master rows were pure wire cost
+        tx.vehicle.findMany({ orderBy: { number: "asc" }, select: { id: true, number: true } }),
+        tx.driver.findMany({
+          where: { firmId: session.firmId, deletedAt: null },
+          select: { id: true, name: true },
+        }),
         tx.driverSettlement.findMany({
           where: { firmId: session.firmId, deletedAt: null, tripId: { not: null } },
+          select: { tripId: true, status: true },
         }),
       ]);
+      // only the cities these trips actually route through — the register used
+      // to pull the whole city master to label two columns
+      const cityIds = Array.from(
+        new Set(
+          trips.flatMap((t) => [t.goingSourceCityId, t.goingDestCityId]).filter(Boolean) as string[]
+        )
+      );
+      const cities = cityIds.length
+        ? await tx.city.findMany({ where: { id: { in: cityIds } }, select: { id: true, name: true } })
+        : [];
       const docTotals = await tripGrandTotals(tx, trips.map((t) => t.id));
       return { trips, vehicles, drivers, cities, settlements, docTotals };
     }

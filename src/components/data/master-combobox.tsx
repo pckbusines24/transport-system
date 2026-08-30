@@ -11,6 +11,9 @@ export interface MasterOption {
   meta?: string;
 }
 
+/** Rendered-suggestion cap; filtering and selection still span every option. */
+const MAX_RENDERED = 50;
+
 interface MasterComboboxProps {
   options: MasterOption[];
   value: string | null | undefined;
@@ -59,12 +62,25 @@ export function MasterCombobox({
 
   const query = text.trim().toLowerCase();
   const showAll = !query || (selected && text === selected.label);
-  const filtered = showAll
-    ? options
-    : options.filter((o) => `${o.label} ${o.meta ?? ""}`.toLowerCase().includes(query));
-  // index === filtered.length means the "+ Create new" row
-  const createIndex = renderCreateDialog ? filtered.length : -1;
-  const lastIndex = renderCreateDialog ? filtered.length : filtered.length - 1;
+  const filtered = React.useMemo(
+    () =>
+      showAll
+        ? options
+        : options.filter((o) => `${o.label} ${o.meta ?? ""}`.toLowerCase().includes(query)),
+    [options, showAll, query]
+  );
+  // A master with thousands of rows rendered every match into the DOM, which
+  // is what made a big party list slow to open. Only the slice is capped —
+  // `options` stays whole, so blur-time exact-match select and the duplicate
+  // check below still see every record.
+  const visible = React.useMemo(
+    () => (filtered.length > MAX_RENDERED ? filtered.slice(0, MAX_RENDERED) : filtered),
+    [filtered]
+  );
+  const truncated = filtered.length > visible.length;
+  // index === visible.length means the "+ Create new" row
+  const createIndex = renderCreateDialog ? visible.length : -1;
+  const lastIndex = renderCreateDialog ? visible.length : visible.length - 1;
 
   const scrollTo = (idx: number) => {
     listRef.current
@@ -89,7 +105,7 @@ export function MasterCombobox({
       openCreate();
       return true;
     }
-    const opt = filtered[highlight];
+    const opt = visible[highlight];
     if (opt) {
       pick(opt);
       return true;
@@ -185,10 +201,10 @@ export function MasterCombobox({
           ref={listRef}
           className="absolute z-50 mt-1 max-h-64 w-full min-w-[240px] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          {filtered.length === 0 && !renderCreateDialog && (
+          {visible.length === 0 && !renderCreateDialog && (
             <div className="px-2 py-2 text-sm text-muted-foreground">No match found.</div>
           )}
-          {filtered.map((opt, idx) => (
+          {visible.map((opt, idx) => (
             <div
               key={opt.value}
               data-idx={idx}
@@ -214,6 +230,11 @@ export function MasterCombobox({
               )}
             </div>
           ))}
+          {truncated && (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              Showing {visible.length} of {filtered.length} — keep typing to narrow&hellip;
+            </div>
+          )}
           {renderCreateDialog && (
             <div
               data-idx={createIndex}

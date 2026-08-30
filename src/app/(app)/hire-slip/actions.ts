@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { saveDocRow, deleteDocRow, type ActionResult, type DocCrudConfig } from "@/lib/doc-crud";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { parseDateInput, optStr } from "../masters/_lib/util";
 import { round2 } from "@/lib/calc/tds";
 
@@ -70,11 +71,15 @@ export async function saveHireSlip(input: unknown): Promise<ActionResult> {
       data.lessSc
   );
   const balance = round2(totalHire - data.advance);
-  return saveDocRow(session, CFG, id, { ...data, slipDate: date, totalHire, balance });
+  const res = await saveDocRow(session, CFG, id, { ...data, slipDate: date, totalHire, balance });
+  if (res.ok) revalidateOutstanding(session.tenantId);
+  return res;
 }
 
 export async function deleteHireSlip(id: string): Promise<ActionResult> {
   const session = requireSession();
   await authorize(session, "hireslip", "delete");
-  return deleteDocRow(session, CFG, id);
+  const res = await deleteDocRow(session, CFG, id);
+  if (res.ok) revalidateOutstanding(session.tenantId);
+  return res;
 }

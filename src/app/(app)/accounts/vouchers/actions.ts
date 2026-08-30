@@ -13,6 +13,7 @@ import { postLedger, reverseLedger, LedgerPostEntry } from "@/lib/ledger";
 import { round2 } from "@/lib/calc/tds";
 import { adjustmentsTotal, applyAdjustments, ensureAdjustmentHead } from "@/lib/adjust-engine";
 import { tdsHead } from "@/lib/account-heads";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import {
   payableSettlement,
   refPositions,
@@ -1048,6 +1049,7 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
 
     revalidatePath("/accounts/vouchers");
     revalidatePath("/accounts/vouchers/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -1198,6 +1200,7 @@ export async function deleteVoucher(
     });
     revalidatePath("/accounts/vouchers");
     revalidatePath("/accounts/vouchers/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to delete voucher" };

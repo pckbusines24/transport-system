@@ -8,6 +8,7 @@ import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
 import { settledByRef } from "@/lib/settlement";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
 
@@ -339,7 +340,7 @@ export async function processStaffSalary(
   }
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const staffParty = await tx.party.findFirst({ where: { id: d.partyId } });
       if (!staffParty) return { ok: false as const, error: "Staff member not found" };
       const existing = await tx.staffSalary.findFirst({
@@ -559,6 +560,8 @@ export async function processStaffSalary(
       revalidatePath(REVALIDATE);
       return { ok: true as const, id: salaryId, netSalary };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Save failed" };
   }
@@ -614,6 +617,7 @@ export async function payStaffSalary(input: {
       });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Payment failed" };
@@ -798,7 +802,7 @@ export async function deleteStaffSalary(
   const session = requireSession();
   await authorize(session, "office", "delete");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const s = await tx.staffSalary.findFirst({
         where: { id, firmId: session.firmId, deletedAt: null },
       });
@@ -822,6 +826,8 @@ export async function deleteStaffSalary(
       revalidatePath(REVALIDATE);
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Delete failed" };
   }

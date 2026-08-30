@@ -190,11 +190,11 @@ export function BillSubmissionClient({
 
   // ------- details dialog -------
   const [details, setDetails] = React.useState<SubmissionDetails | null>(null);
-  const openDetails = async (id: string) => {
+  const openDetails = React.useCallback(async (id: string) => {
     const res = await getSubmissionDetails(id);
     if (res.ok) setDetails(res.data);
     else toast({ variant: "destructive", title: res.error });
-  };
+  }, [toast]);
 
   // ack form inside details
   const [ackBusy, setAckBusy] = React.useState(false);
@@ -292,7 +292,7 @@ export function BillSubmissionClient({
   };
 
   // ------- register columns -------
-  const columns: ColumnDef<SubmissionRegisterRow>[] = [
+  const columns: ColumnDef<SubmissionRegisterRow>[] = React.useMemo(() => [
     {
       accessorKey: "submissionNo",
       header: "Submission No",
@@ -370,7 +370,7 @@ export function BillSubmissionClient({
         ),
     },
     { accessorKey: "remarks", header: "Remarks" },
-  ];
+  ], [openDetails]);
 
   return (
     <div className="space-y-4">

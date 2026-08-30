@@ -91,7 +91,7 @@ export function BillingRegisterTable({
     }
   };
 
-  const columns: ColumnDef<BillingRegisterRow>[] = [
+  const columns: ColumnDef<BillingRegisterRow>[] = React.useMemo(() => [
     { accessorKey: "invoiceNo", header: "Invoice No" },
     {
       accessorKey: "invoiceDate",
@@ -157,7 +157,7 @@ export function BillingRegisterTable({
         </div>
       ),
     } satisfies ColumnDef<BillingRegisterRow>,
-  ];
+  ], [canDelete, router]);
 
   return (
     <div className="space-y-2">

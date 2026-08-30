@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { withTenant } from "@/lib/db";
 import { getSession, setSessionCookie } from "@/lib/session";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 export async function selectFirm(formData: FormData) {
   const session = getSession();
@@ -67,6 +68,8 @@ export async function selectFirm(formData: FormData) {
   });
 
   if (!data) redirect("/select-firm");
+
+  revalidateOutstanding(session.tenantId);
 
   setSessionCookie({
     ...session,

@@ -19,6 +19,7 @@ export const lookupTag = {
   parties: (tenantId: string) => `lookup:parties:${tenantId}`,
   vehicles: (tenantId: string) => `lookup:vehicles:${tenantId}`,
   products: (tenantId: string) => `lookup:products:${tenantId}`,
+  units: (tenantId: string) => `lookup:units:${tenantId}`,
 };
 
 export interface CityLookup {
@@ -47,6 +48,8 @@ export interface PartyLookup {
   id: string;
   name: string;
   alias: string | null;
+  /** owner/broker trade name — the party combobox searches on it */
+  transportName: string | null;
   gstin: string | null;
   pan: string | null;
   address1: string | null;
@@ -65,6 +68,7 @@ export function getPartyLookup(tenantId: string): Promise<PartyLookup[]> {
             id: true,
             name: true,
             alias: true,
+            transportName: true,
             gstin: true,
             pan: true,
             address1: true,
@@ -83,6 +87,7 @@ export interface VehicleLookup {
   id: string;
   number: string;
   isOwn: boolean;
+  ownershipType: string;
   ownerNames: string | null;
   ownerName: string | null;
 }
@@ -97,6 +102,7 @@ export function getVehicleLookup(tenantId: string): Promise<VehicleLookup[]> {
             id: true,
             number: true,
             isOwn: true,
+            ownershipType: true,
             ownerNames: true,
             owner: { select: { name: true } },
           },
@@ -107,6 +113,7 @@ export function getVehicleLookup(tenantId: string): Promise<VehicleLookup[]> {
         id: v.id,
         number: v.number,
         isOwn: v.isOwn,
+        ownershipType: v.ownershipType,
         ownerNames: v.ownerNames,
         ownerName: v.owner?.name ?? null,
       }));
@@ -149,5 +156,21 @@ export function getProductLookup(tenantId: string): Promise<ProductLookup[]> {
     },
     ["lookup-products", tenantId],
     { revalidate: TTL, tags: [lookupTag.products(tenantId)] }
+  )();
+}
+
+export interface UnitLookup {
+  id: string;
+  name: string;
+}
+
+export function getUnitLookup(tenantId: string): Promise<UnitLookup[]> {
+  return unstable_cache(
+    async () =>
+      withTenant(tenantId, (tx) =>
+        tx.unit.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } })
+      ),
+    ["lookup-units", tenantId],
+    { revalidate: TTL, tags: [lookupTag.units(tenantId)] }
   )();
 }

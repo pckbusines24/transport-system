@@ -13,6 +13,7 @@ import { nextLrNumber, syncSequenceTo } from "@/lib/sequences";
 import { stateCodeFromGstin } from "@/lib/calc/gst";
 import { computeLrTotals, itemAmount } from "@/components/lr/lr-calc";
 import { resyncInvoicesForLr } from "@/app/(app)/billing/actions";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { loadLrFormData, type LrFormData } from "./form-data";
 
 const rateBasisSchema = z.enum(["QTY", "ACTUAL_WT", "CHARGE_WT", "FIXED"]);
@@ -308,6 +309,7 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
     // stale copy after an edit or delete
     revalidatePath("/reports/cancelled-lrs");
     revalidatePath("/reports/paper-change-lrs");
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -369,6 +371,7 @@ export async function deleteLr(id: string): Promise<{ ok: true } | { ok: false; 
     // stale copy after an edit or delete
     revalidatePath("/reports/cancelled-lrs");
     revalidatePath("/reports/paper-change-lrs");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to delete LR" };
@@ -431,14 +434,39 @@ export async function getLrLifecycle(id: string): Promise<LrLifecycle | null> {
       },
     });
     if (!lr) return null;
-    const [cities, parties, vehicles] = await Promise.all([
-      tx.city.findMany(),
-      tx.party.findMany(),
-      tx.vehicle.findMany(),
+    // only the masters this LR actually references — an unbounded findMany on
+    // city/party/vehicle loaded three whole tables to label a single LR
+    const ids = (values: (string | null)[]) => Array.from(new Set(values.filter(Boolean) as string[]));
+    const cityIds = ids([lr.sourceCityId, lr.destCityId]);
+    const partyIds = ids([
+      lr.consignorId,
+      lr.consigneeId,
+      ...lr.chalanLrs.map(({ chalan }) => chalan.brokerId),
+      ...lr.invoiceLrs.map(({ invoice }) => invoice.partyId),
     ]);
-    const cityName = (cid: string | null) => cities.find((c) => c.id === cid)?.name ?? "";
-    const partyName = (pid: string | null) => parties.find((p) => p.id === pid)?.name ?? "";
-    const vehicleNo = (vid: string | null) => vehicles.find((v) => v.id === vid)?.number ?? "";
+    const vehicleIds = ids([lr.vehicleId, ...lr.chalanLrs.map(({ chalan }) => chalan.vehicleId)]);
+    const [cities, parties, vehicles] = await Promise.all([
+      cityIds.length
+        ? tx.city.findMany({ where: { id: { in: cityIds } }, select: { id: true, name: true } })
+        : [],
+      partyIds.length
+        ? tx.party.findMany({ where: { id: { in: partyIds } }, select: { id: true, name: true } })
+        : [],
+      vehicleIds.length
+        ? tx.vehicle.findMany({
+            where: { id: { in: vehicleIds } },
+            select: { id: true, number: true },
+          })
+        : [],
+    ]);
+    // a master row that no longer resolves (deleted) still labels as "" — same
+    // fallback the previous .find() path produced
+    const cityById = new Map(cities.map((c) => [c.id, c.name]));
+    const partyById = new Map(parties.map((p) => [p.id, p.name]));
+    const vehicleById = new Map(vehicles.map((v) => [v.id, v.number]));
+    const cityName = (cid: string | null) => (cid && cityById.get(cid)) || "";
+    const partyName = (pid: string | null) => (pid && partyById.get(pid)) || "";
+    const vehicleNo = (vid: string | null) => (vid && vehicleById.get(vid)) || "";
     const n = (v: unknown) => toNum(String(v));
     return {
       booking: {
@@ -551,17 +579,47 @@ export async function saveLrBatch(
         };
       }
 
+      // the party GSTINs and ODC product flags for the WHOLE batch in two
+      // queries — fetching them per entry made a 50-LR batch ~150 serial
+      // round-trips inside one transaction
+      const partyIds = Array.from(
+        new Set(entries.flatMap((e) => [e.consignorId, e.consigneeId]))
+      );
+      const productIds = Array.from(
+        new Set(entries.flatMap((e) => e.items.map((i) => i.productId).filter(Boolean) as string[]))
+      );
+      const [batchParties, odcProducts] = await Promise.all([
+        partyIds.length
+          ? tx.party.findMany({ where: { id: { in: partyIds } }, select: { id: true, gstin: true } })
+          : [],
+        productIds.length
+          ? tx.product.findMany({
+              where: { id: { in: productIds }, productType: "ODC" },
+              select: { id: true },
+            })
+          : [],
+      ]);
+      const partyById = new Map(batchParties.map((p) => [p.id, p]));
+      const odcProductIds = new Set(odcProducts.map((p) => p.id));
+      // findUniqueOrThrow used to abort the batch on a missing party — keep
+      // that all-or-nothing behavior rather than silently booking without GST
+      const requireParty = (id: string, role: string) => {
+        const party = partyById.get(id);
+        if (!party) throw new Error(`${role} not found in this firm`);
+        return party;
+      };
+
       for (let i = 0; i < entries.length; i++) {
         const data = {
           ...entries[i],
           id: null,
           lrNo: assigned[i],
         };
-        const [consignor, consignee] = await Promise.all([
-          tx.party.findUniqueOrThrow({ where: { id: data.consignorId } }),
-          tx.party.findUniqueOrThrow({ where: { id: data.consigneeId } }),
-        ]);
-        data.cargoType = await deriveCargoType(tx, data.items);
+        const consignor = requireParty(data.consignorId, "Consignor");
+        const consignee = requireParty(data.consigneeId, "Consignee");
+        data.cargoType = data.items.some((i) => i.productId && odcProductIds.has(i.productId))
+          ? "ODC"
+          : "NORMAL";
         const totals = computeLrTotals({
           freight: data.freight,
           hamali: data.hamali,

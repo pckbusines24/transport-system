@@ -11,6 +11,7 @@ import { ensureAccountHead, postLedger, type LedgerPostEntry } from "@/lib/ledge
 import { resolveRelativeOwner } from "@/lib/relative-owner";
 import { round2 } from "@/lib/calc/tds";
 import { settledByRef, signedRemainder } from "@/lib/settlement";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { toNum } from "@/lib/utils";
 
 /**
@@ -126,7 +127,7 @@ export async function finalizeDriverFnf(
   await authorize(session, "vouchers", "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const driver = await tx.driver.findFirst({
         where: { id: d.driverId, firmId: session.firmId, deletedAt: null },
       });
@@ -411,6 +412,8 @@ export async function finalizeDriverFnf(
       revalidatePath("/masters/drivers");
       return { ok: true as const, settlementNo, finalPayable };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     // unique(driverId): two concurrent F&Fs for one driver — the second loses
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

@@ -12,6 +12,7 @@ import { tdsHead } from "@/lib/account-heads";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
 import { isLoanTaken, nextDueDate, suggestNextEmi, type EmiSuggestion } from "@/lib/loan";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 /**
  * Finance & Loan Management.
@@ -290,7 +291,7 @@ export async function payLoanEmi(
   await authorize(session, "finance", "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const loan = await tx.loan.findFirstOrThrow({
         // firm-scoped: paying an EMI on another firm's loan would post the
         // voucher and ledger legs into the wrong firm's books
@@ -501,6 +502,8 @@ export async function payLoanEmi(
       revalidatePath("/vehicle/management");
       return { ok: true as const, voucherNo };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Payment failed" };
   }
@@ -538,6 +541,7 @@ export async function deleteLoanEmi(
     });
     revalidatePath(REVALIDATE);
     revalidatePath("/accounts/vouchers/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
@@ -619,7 +623,7 @@ export async function saveFinanceTxn(
   await authorize(session, "finance", d.id ? "edit" : "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const date = toDate(d.date);
       const receipt = d.direction === "RECEIPT";
       const label = `${FINANCE_TXN_LABEL[d.txnType]} ${receipt ? "receipt" : "payment"}`;
@@ -751,6 +755,8 @@ export async function saveFinanceTxn(
       revalidatePath("/accounts/vouchers/register");
       return { ok: true as const, voucherNo };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -781,6 +787,7 @@ export async function deleteFinanceTxn(
     });
     revalidatePath(REVALIDATE);
     revalidatePath("/accounts/vouchers/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };

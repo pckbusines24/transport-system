@@ -94,7 +94,7 @@ export function CourierDispatchClient({
     setForm({ ...emptyForm, items: [{ ...emptyItem }] });
     setOpen(true);
   };
-  const openEdit = (row: CourierDispatchRow) => {
+  const openEdit = React.useCallback((row: CourierDispatchRow) => {
     setForm({
       id: row.id,
       dateText: formatDate(row.dispatchDate),
@@ -107,7 +107,7 @@ export function CourierDispatchClient({
       items: row.items.length ? row.items.map((it) => ({ ...it })) : [{ ...emptyItem }],
     });
     setOpen(true);
-  };
+  }, []);
 
   const uploadSlip = async (file: File | null) => {
     if (!file) return;
@@ -158,16 +158,16 @@ export function CourierDispatchClient({
     }
   };
 
-  const remove = async (row: CourierDispatchRow) => {
+  const remove = React.useCallback(async (row: CourierDispatchRow) => {
     if (!confirm(`Delete courier dispatch ${row.dispatchNo}?`)) return;
     const res = await deleteCourierDispatch(row.id);
     if (res.ok) {
       toast({ title: `${row.dispatchNo} deleted` });
       router.refresh();
     } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
-  };
+  }, [router, toast]);
 
-  const columns: ColumnDef<CourierDispatchRow>[] = [
+  const columns: ColumnDef<CourierDispatchRow>[] = React.useMemo(() => [
     { accessorKey: "dispatchNo", header: "Dispatch No" },
     {
       accessorKey: "dispatchDate",
@@ -233,7 +233,7 @@ export function CourierDispatchClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete, openEdit, remove]);
 
   return (
     <div className="space-y-4">

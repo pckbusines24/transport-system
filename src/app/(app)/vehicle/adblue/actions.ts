@@ -12,6 +12,7 @@ import {
   reverseLedger,
   type LedgerPostEntry,
 } from "@/lib/ledger";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { settledByRef } from "@/lib/settlement";
 import { toNum } from "@/lib/utils";
 
@@ -84,7 +85,7 @@ export async function saveAdblueTxn(
   }
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const isRefill = d.type === "REFILL";
       const billNo = isRefill ? d.billNo?.trim() || null : null;
       const supplierId = isRefill ? d.supplierId || null : null;
@@ -205,6 +206,8 @@ export async function saveAdblueTxn(
       revalidatePath(REVALIDATE);
       return { ok: true as const, id };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -244,6 +247,7 @@ export async function deleteAdblueTxn(
       await audit(tx, session, { entity: "AdblueTxn", entityId: id, action: "DELETE", before });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };

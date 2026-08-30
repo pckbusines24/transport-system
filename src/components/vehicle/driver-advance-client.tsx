@@ -124,16 +124,16 @@ export function DriverAdvanceClient({
     }
   };
 
-  const remove = async (row: DriverAdvanceRow) => {
+  const remove = React.useCallback(async (row: DriverAdvanceRow) => {
     if (!confirm(`Delete this advance of ${formatMoney(row.amount)} to ${row.driver}?`)) return;
     const res = await deleteDriverAdvance(row.id);
     if (res.ok) {
       toast({ title: "Advance deleted; ledger reversed" });
       router.refresh();
     } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
-  };
+  }, [router, toast]);
 
-  const columns: ColumnDef<DriverAdvanceRow>[] = [
+  const columns: ColumnDef<DriverAdvanceRow>[] = React.useMemo(() => [
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     { accessorKey: "driver", header: "Driver" },
     { accessorKey: "vehicle", header: "Vehicle" },
@@ -212,7 +212,7 @@ export function DriverAdvanceClient({
           </div>
         ) : null,
     },
-  ];
+  ], [canDelete, remove]);
 
   return (
     <div className="space-y-4">

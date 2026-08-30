@@ -146,7 +146,7 @@ export function AdblueClient({
     }
   };
 
-  const columns: ColumnDef<AdblueRow>[] = [
+  const columns: ColumnDef<AdblueRow>[] = React.useMemo(() => [
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     {
       accessorKey: "type",
@@ -250,7 +250,7 @@ export function AdblueClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete, router, toast]);
 
   return (
     <div className="space-y-4">

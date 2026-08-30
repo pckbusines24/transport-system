@@ -2,9 +2,11 @@ services:
   - type: web
     name: transport-system
     runtime: node
-    # free tier spins down after 15 min idle → 30-60s cold start on the next
-    # visit; move to "starter" the moment real users depend on this
-    plan: free
+    # starter keeps the instance warm: no 15-min spin-down, so no 30-60s cold
+    # start and — just as important — the in-process unstable_cache behind the
+    # master-data lookups and the outstanding tile survives between requests
+    # instead of being wiped on every idle
+    plan: starter
     # MUST match the database's region — the app runs many queries per page,
     # so cross-region round-trips multiply into seconds of latency. Create the
     # Supabase project in ap-southeast-1 (Singapore) to sit next to this.
@@ -14,6 +16,12 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /login
+    # uploads must NOT sit on the ephemeral filesystem — /tmp is wiped on every
+    # redeploy and restart, silently losing POD scans and bill attachments
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 5
     envVars:
       - key: NODE_VERSION
         value: 20.12.2
@@ -27,7 +35,10 @@ services:
         sync: false # paste the Supabase direct (5432) connection string
       - key: AUTH_SECRET
         generateValue: true
+      # persistent disk above; object storage (Supabase Storage / S3) is the
+      # longer-term option and is its own change, with its own parity test
+      # against the four routes in src/app/api/uploads/**
       - key: UPLOAD_DIR
-        value: /tmp/uploads # NOTE: free tier has no persistent disk — uploads are lost on redeploy
+        value: /var/data/uploads
       - key: NEXT_PUBLIC_APP_NAME
         value: TransportTMS

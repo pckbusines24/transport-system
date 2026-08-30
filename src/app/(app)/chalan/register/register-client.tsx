@@ -130,7 +130,7 @@ export function ChalanRegisterClient({
     }
   };
 
-  const openStatus = async (id: string) => {
+  const openStatus = React.useCallback(async (id: string) => {
     setStatusLoading(true);
     try {
       const res = await getChalanStatus(id);
@@ -139,9 +139,9 @@ export function ChalanRegisterClient({
     } finally {
       setStatusLoading(false);
     }
-  };
+  }, [toast]);
 
-  const columns: ColumnDef<ChalanRegisterRow>[] = [
+  const columns: ColumnDef<ChalanRegisterRow>[] = React.useMemo(() => [
     { accessorKey: "chalanNo", header: "Chalan No" },
     {
       accessorKey: "chalanDate",
@@ -392,7 +392,7 @@ export function ChalanRegisterClient({
         </div>
       ),
     },
-  ];
+  ], [isCancelledView, isMarket, searchParams, statusLoading, openStatus, canDelete, router, toast]);
 
   return (
     <div className="space-y-4">
