@@ -31,21 +31,18 @@ and this app peaks at 1.8 GB.
 
 ---
 
-## 1. Merge the deployment branch
+## 1. Which branch deploys
 
-```bash
-git checkout main && git pull
-git merge --no-ff feat/production-deployment
-git push origin main
-```
+**`feat/production-deployment`**, not `main`. `app.yaml` names it and
+`deploy_on_push: true` is set, so every push to that branch redeploys.
 
 `main` already carries the performance work, the Hinglish→English pass and the
-design system. `feat/production-deployment` adds the storage layer, `app.yaml`
-and the `output: "standalone"` removal.
+design system; this branch adds the storage layer, `app.yaml` and the
+`output: "standalone"` removal. Merge it to `main` whenever you want — the
+deploy does not depend on it.
 
-Once App Platform is connected with `deploy_on_push: true`, this push is what
-triggers the first deploy — so do steps 2–7 **before** merging, or the first
-build will run without its environment.
+Do steps 2–7 **before** connecting the app, or the first build runs without
+its environment.
 
 ---
 
@@ -69,7 +66,12 @@ build will run without its environment.
 
 ## 3. DO Managed PostgreSQL (BLR1)
 
-1. **Databases → Create Database Cluster** → PostgreSQL 16 → **Bangalore
+> **Already done on this cluster:** created in BLR1 running **PostgreSQL 18.6**,
+> schema applied (96 tables, 73 migrations, 181 RLS policies), demo data seeded,
+> a transaction-mode pool created, and the `tms_app` role from step 5 created
+> and granted. What remains is step 6 — binding the pool to `tms_app`.
+
+1. **Databases → Create Database Cluster** → PostgreSQL → **Bangalore
    (BLR1)** → smallest Basic node (1 GB / 1 vCPU).
 2. **Connection Pools** tab → create a pool, mode **Transaction**, over the
    application database.
@@ -140,45 +142,44 @@ build will run without its environment.
 
 ---
 
-## 4. Migrate the database from Supabase
+## 4. Get data into the database
 
-Run locally. Use Supabase's **session pooler** as the source — the
-`db.<ref>.supabase.co` direct host is IPv6-only and will fail from most
-networks.
-
-```bash
-# 1. dump
-pg_dump "$SUPABASE_SESSION_POOLER_URL" \
-  --no-owner --no-privileges -Fc -f supabase.dump
-
-# 2. restore into DO (DIRECT url, not the pool)
-pg_restore --no-owner --no-privileges --clean --if-exists \
-  -d "$DO_DIRECT_URL" supabase.dump
-
-# 3. bring the schema to the latest migration
-DIRECT_DATABASE_URL="$DO_DIRECT_URL" npx prisma migrate deploy
-```
-
-Verify before cutting over:
+Supabase held nothing but the demo seed, so this cluster was seeded fresh
+rather than migrated:
 
 ```bash
-DIRECT_DATABASE_URL="$DO_DIRECT_URL" npx tsx -e '
-const { PrismaClient } = require("@prisma/client");
-const p = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_DATABASE_URL } } });
-(async () => {
-  for (const m of ["tenant","firm","user","party","vehicle","lr","chalan","invoice","voucher"])
-    console.log(m, await p[m].count());
-  await p.$disconnect();
-})();'
+npm run db:seed
 ```
 
-Compare against the same counts on Supabase. They must match exactly.
+Result: 1 tenant, 1 firm, 2 users, 32 states, 6 cities, 9 parties, 4 vehicles,
+2 products, 4 account heads, FY 2026-2027.
+
+**Change both seeded passwords at first login.** `admin/admin123` and
+`operator/operator123` are public defaults from this repository.
+
+<details>
+<summary>If you ever do need to migrate from Supabase instead</summary>
+
+Use Supabase's **session pooler** as the source — `db.<ref>.supabase.co` is
+IPv6-only and unreachable from most networks. Note the target is PostgreSQL
+18.6, so run `pg_dump` with a client at least as new as the source.
+
+```bash
+pg_dump "$SUPABASE_SESSION_POOLER_URL" --no-owner --no-privileges -Fc -f supabase.dump
+pg_restore --no-owner --no-privileges --clean --if-exists -d "$DIRECT_DATABASE_URL" supabase.dump
+DIRECT_DATABASE_URL="$DIRECT_DATABASE_URL" npx prisma migrate deploy
+```
+
+Then compare row counts on both sides before cutting over; they must match
+exactly.
+
+</details>
 
 ---
 
 ## 5. Create the app
 
-**Apps → Create App** → GitHub → this repo → branch `main` → Autodeploy on.
+**Apps → Create App** → GitHub → this repo → branch **`feat/production-deployment`** → Autodeploy on.
 
 Or apply the spec, which encodes everything already:
 
