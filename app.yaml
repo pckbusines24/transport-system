@@ -24,6 +24,26 @@
 #    queries per page and a cross-region hop turns into seconds.
 name: transport-system
 region: blr1
+
+# Attaching the existing cluster is what tells App Platform this app depends on
+# it, and DigitalOcean manages the trusted-source/firewall side from there.
+#
+# IMPORTANT: attach it, but do NOT bind DATABASE_URL to the ${db.DATABASE_URL}
+# variable this exposes. That variable resolves to the cluster's DEFAULT direct
+# connection — doadmin on defaultdb, port 25060 — which would
+#   (a) connect as doadmin, whose rolbypassrls=true disables every RLS policy,
+#       re-opening the tenant-isolation hole this deployment closed, and
+#   (b) skip the connection pool, losing pgbouncer=true and bringing back the
+#       intermittent "prepared statement does not exist" failures under load.
+# The explicit DATABASE_URL / DIRECT_DATABASE_URL secrets below are the ones to
+# use: pooled as tms_app for request traffic, direct as doadmin for migrations.
+databases:
+  - name: db
+    engine: PG
+    production: true
+    # the cluster's name in the DO console, not its hostname
+    cluster_name: db-pgsql-blr1-47797
+
 services:
   - name: web
     github:

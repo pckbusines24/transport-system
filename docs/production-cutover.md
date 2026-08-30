@@ -220,8 +220,29 @@ want at a cutover, since those sessions belong to the old deployment.
 
 ## 7. Lock the database down
 
-Database cluster → **Settings → Trusted Sources** → add the App Platform app.
-Until you do, the cluster accepts connections from anywhere with the password.
+**Attach the cluster to the app** (Create App → *Add Managed Database* → pick the
+existing cluster, or the `databases:` block in `app.yaml`). That is how DO knows
+the app depends on the cluster and manages the trusted-source side.
+
+**But do not bind `DATABASE_URL` to the `${db.DATABASE_URL}` variable the
+attachment exposes.** It resolves to the cluster's *default direct* connection —
+`doadmin` on `defaultdb`, port 25060 — which would connect as the role with
+`rolbypassrls = true`, disabling every RLS policy, and would skip the pool,
+losing `pgbouncer=true`. Keep the explicit secrets from §6.
+
+Then confirm under **Databases → Settings → Trusted Sources** that the app is
+listed. Until something is listed there, the cluster accepts connections from
+anywhere with the password.
+
+### Optional: keep database traffic on the private network
+
+The attachment also exposes `${db.DATABASE_PRIVATE_URL}`, and the console shows
+a matching **private** hostname (`private-db-...`). Swapping the host in your
+own connection strings for the private one keeps app↔database traffic inside
+DigitalOcean's network instead of crossing the public internet, and it does not
+count against bandwidth. Change only the hostname — keep the pool name, the
+`tms_app` credentials and every query parameter exactly as they are, then
+re-run `scripts/check-env.ts` to confirm nothing was dropped in the edit.
 
 ---
 
