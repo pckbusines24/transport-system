@@ -71,7 +71,7 @@ export function EmiDueClient({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={10} className="h-20 text-center text-muted-foreground">
-                  No active EMI loans — sab chukta!
+                  No active EMI loans — all cleared!
                 </td>
               </tr>
             ) : (

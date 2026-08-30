@@ -19,7 +19,7 @@ const monthKey = (d: Date) =>
  *   SALE     = bills (netTotal) + broker slip PARTY side earnings;
  *              TDS = receipt-voucher TDS + slip party-side TDS
  *   PURCHASE = chalan lorry-hire earnings (Broker/Relative vehicles only —
- *              own gaadi has no payee) + broker slip OWNER side earnings;
+ *              an own vehicle has no payee) + broker slip OWNER side earnings;
  *              TDS = what we deducted (chalan + slip owner side)
  * Supplier purchases (diesel/tyre on credit) stay out — freight only.
  */
@@ -110,7 +110,7 @@ export default async function PurchaseSalePage({
             ...range("slipDate"),
           },
         }),
-        // party ne jo TDS kata — receipt vouchers carry it
+        // TDS the party deducted — receipt vouchers carry it
         tx.voucher.findMany({
           where: {
             firmId: session.firmId,
@@ -165,7 +165,7 @@ export default async function PurchaseSalePage({
         }),
       ]);
       for (const c of chalans) {
-        // own gaadi ka chalan purchase nahi hai — koi payee hi nahi
+        // an own vehicle's chalan is not a purchase — there is no payee at all
         if (vehicleOwnership.get(c.vehicleId) === "OWNER") continue;
         bump(
           c.brokerId,
@@ -215,9 +215,9 @@ export default async function PurchaseSalePage({
       <h1 className="text-xl font-semibold">Purchase &amp; Sale Register</h1>
       <p className="text-sm text-muted-foreground">
         {side === "SALE"
-          ? "Sale = bills + broker slip party side. TDS = party ne jo kata (receipts + slips)."
-          : "Purchase = chalan lorry hire (Broker/Relative gaadi) + broker slip owner side. TDS = aapne jo kata."}{" "}
-        Party par click karo — uske saare documents khul jayenge.
+          ? "Sale = bills + broker slip party side. TDS = what the party deducted (receipts + slips)."
+          : "Purchase = chalan lorry hire (Broker/Relative vehicle) + broker slip owner side. TDS = what you deducted."}{" "}
+        Click a Party — all of its documents open.
       </p>
       <FilterBar
         filters={[
@@ -226,8 +226,8 @@ export default async function PurchaseSalePage({
             key: "side",
             label: "Side",
             options: [
-              { value: "SALE", label: "Sale (lena)" },
-              { value: "PURCHASE", label: "Purchase (dena)" },
+              { value: "SALE", label: "Sale (receivable)" },
+              { value: "PURCHASE", label: "Purchase (payable)" },
             ],
           },
           { type: "daterange", key: "date", label: "Period" },

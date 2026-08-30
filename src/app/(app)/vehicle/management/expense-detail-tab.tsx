@@ -16,7 +16,7 @@ function monthKey(d: Date): string {
 
 /**
  * Vehicle Expense Detail — per vehicle, per head, down to every entry:
- * "Diesel par click karo, kab-kab dalwaya sab dikhe". Reads the same
+ * "click Diesel and every fill-up, date by date, shows up". Reads the same
  * vehicle-wise allocation items as the Expense Summary (allocDate decides the
  * period) plus vehicle-loan EMIs, exactly as the Vehicle P&L counts them.
  */
@@ -43,9 +43,9 @@ export async function VehicleExpenseDetailTab({
                 },
               }
             : {}),
-          // EXPENSE and INCOME vouchers both — income (scrap sale, kiraya)
+          // EXPENSE and INCOME vouchers both — income (scrap sale, rent)
           // shows as its own section and nets off the vehicle's cost.
-          // FY continuity: shuru-se view like the Vehicle P&L — the date
+          // FY continuity: since-inception view like the Vehicle P&L — the date
           // filter alone narrows the period, no FY wall.
           voucher: {
             firmId: session.firmId,

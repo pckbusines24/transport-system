@@ -575,7 +575,7 @@ export function VehicleExpenseClient({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <Label className="text-xs">
-                Head-wise Split (optional — same bill, alag heads; jaise Spare Parts + Repair
+                Head-wise Split (optional — same bill, different heads; e.g. Spare Parts + Repair
                 Labour)
               </Label>
               <Button

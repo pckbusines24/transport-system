@@ -84,13 +84,13 @@ export interface VehiclePnlRow {
   vehExpDetails: { date: string; head: string; voucherNo: string; amount: number }[];
   /** booked salary months attributed to this vehicle */
   salaryDetails: { month: string; driver: string; amount: number }[];
-  /** malik nikasi in the selected period */
+  /** owner withdrawals in the selected period */
   wdPeriod: number;
-  /** malik nikasi since the beginning */
+  /** owner withdrawals since the beginning */
   wdLifetime: number;
   /** net profit since the beginning (all FYs), behind the running balance */
   lifetimeNet: number;
-  /** lifetime net − lifetime nikasi — continues across periods */
+  /** lifetime net − lifetime withdrawals — continues across periods */
   runningBalance: number;
   wdEntries: {
     id: string;
@@ -99,7 +99,7 @@ export interface VehiclePnlRow {
     payParty: string;
     amount: number;
     remarks: string;
-    /** net through the entry's month − nikasi up to & incl. this entry */
+    /** net through the entry's month − withdrawals up to & incl. this entry */
     balanceAfter: number;
   }[];
   trips: PnlTrip[];
@@ -176,7 +176,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
     const expenses = parts.reduce((s, v) => s + v, 0);
     const net = sum((r) => r.net);
     const trips = sum((r) => r.tripCount);
-    const nikasi = sum((r) => r.wdPeriod);
+    const withdrawals = sum((r) => r.wdPeriod);
     const runningBalance = sum((r) => r.runningBalance);
     const sorted = [...rows].sort((a, b) => b.net - a.net);
     const monthly = new Map<string, number>();
@@ -186,7 +186,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-12)
       .map(([month, m]) => ({ month, net: Math.round(m) }));
-    return { freight, parts, expenses, net, trips, nikasi, runningBalance, sorted, months };
+    return { freight, parts, expenses, net, trips, withdrawals, runningBalance, sorted, months };
   }, [rows]);
 
   if (!rows.length) return null;
@@ -234,12 +234,12 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Malik Nikasi
+            Owner Withdrawal
           </div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-orange-600 dark:text-orange-400">
-            {lakh(t.nikasi)}
+            {lakh(t.withdrawals)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">is period mein</div>
+          <div className="mt-1 text-xs text-muted-foreground">in this period</div>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -250,7 +250,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
           >
             {lakh(t.runningBalance)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">shuru se: profit − nikasi</div>
+          <div className="mt-1 text-xs text-muted-foreground">since inception: profit − withdrawals</div>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -334,7 +334,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
         {/* month-wise net */}
         <div className="rounded-lg border bg-card p-4">
           <div className="text-sm font-semibold">Month-wise Net</div>
-          <p className="mb-2 text-xs text-muted-foreground">har mahine ka net profit</p>
+          <p className="mb-2 text-xs text-muted-foreground">net profit for each month</p>
           {t.months.length ? (
             <>
               <div className="flex h-36 items-end gap-2 border-b px-1">
@@ -431,7 +431,7 @@ export function VehiclePnlClient({
   const [tripOf, setTripOf] = React.useState<{ vehicle: VehiclePnlRow; trip: PnlTrip } | null>(null);
   const [emiOf, setEmiOf] = React.useState<VehiclePnlRow | null>(null);
   const [wdListOf, setWdListOf] = React.useState<VehiclePnlRow | null>(null);
-  // malik nikasi entry form
+  // owner withdrawal entry form
   const [wdOpen, setWdOpen] = React.useState(false);
   const [wdSaving, setWdSaving] = React.useState(false);
   const [wdVehicleId, setWdVehicleId] = React.useState<string | null>(null);
@@ -449,7 +449,7 @@ export function VehiclePnlClient({
   const saveWd = async () => {
     const iso = textToIso(wdDateText);
     if (!wdVehicleId || !wdPartyId || !wdPayPartyId || !iso || wdAmount <= 0) {
-      toast({ variant: "destructive", title: "Vehicle, malik, paid-from, date aur amount sab required hain" });
+      toast({ variant: "destructive", title: "Vehicle, owner, paid-from, date and amount are all required" });
       return;
     }
     setWdSaving(true);
@@ -463,7 +463,7 @@ export function VehiclePnlClient({
         remarks: wdRemarks,
       });
       if (res.ok) {
-        toast({ title: "Nikasi saved — ledger & running balance updated" });
+        toast({ title: "Withdrawal saved — ledger & running balance updated" });
         setWdOpen(false);
         setWdAmount(0);
         setWdRemarks("");
@@ -479,7 +479,7 @@ export function VehiclePnlClient({
   const removeWd = async (id: string) => {
     const res = await deleteVehicleWithdrawal(id);
     if (res.ok) {
-      toast({ title: "Nikasi entry deleted — ledger reversed" });
+      toast({ title: "Withdrawal entry deleted — ledger reversed" });
       setWdListOf(null);
       router.refresh();
     } else {
@@ -597,7 +597,7 @@ export function VehiclePnlClient({
           <button
             type="button"
             className="tabular-nums text-orange-600 underline-offset-2 hover:underline dark:text-orange-400"
-            title="Malik nikasi entries dekho"
+            title="View owner withdrawal entries"
             onClick={(e) => {
               e.stopPropagation();
               setWdListOf(row.original);
@@ -619,7 +619,7 @@ export function VehiclePnlClient({
       cell: ({ row }) => (
         <span
           className={`font-semibold tabular-nums ${row.original.runningBalance < 0 ? "text-destructive" : ""}`}
-          title={`Lifetime net ${formatMoney(row.original.lifetimeNet)} − nikasi ${formatMoney(row.original.wdLifetime)}`}
+          title={`Lifetime net ${formatMoney(row.original.lifetimeNet)} − withdrawals ${formatMoney(row.original.wdLifetime)}`}
         >
           {formatMoney(row.original.runningBalance)}
         </span>
@@ -637,7 +637,7 @@ export function VehiclePnlClient({
         <h1 className="text-xl font-semibold">Trip Profit &amp; Loss with Expenses</h1>
         <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => setWdOpen(true)}>
-          <Plus className="h-4 w-4" /> Malik Nikasi
+          <Plus className="h-4 w-4" /> Owner Withdrawal
         </Button>
         <ExportButton
           rows={rows}
@@ -1132,23 +1132,23 @@ export function VehiclePnlClient({
         </DialogContent>
       </Dialog>
 
-      {/* -------- malik nikasi list (lifetime, with balance-after) -------- */}
+      {/* -------- owner withdrawal list (lifetime, with balance-after) -------- */}
       <Dialog open={!!wdListOf} onOpenChange={(o) => !o && setWdListOf(null)}>
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Malik Nikasi — {wdListOf?.vehicle}</DialogTitle>
+            <DialogTitle>Owner Withdrawal — {wdListOf?.vehicle}</DialogTitle>
             <DialogDescription>
               Running Balance {formatMoney(wdListOf?.runningBalance ?? 0)} = lifetime net{" "}
-              {formatMoney(wdListOf?.lifetimeNet ?? 0)} − total nikasi{" "}
-              {formatMoney(wdListOf?.wdLifetime ?? 0)}. Balance After = us mahine tak ka profit −
-              tab tak ki nikasi.
+              {formatMoney(wdListOf?.lifetimeNet ?? 0)} − total withdrawals{" "}
+              {formatMoney(wdListOf?.wdLifetime ?? 0)}. Balance After = profit through that month −
+              withdrawals up to then.
             </DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr>
-                  {["Date", "Malik", "Paid From", "Remarks", "Amount", "Balance After", ""].map((h) => (
+                  {["Date", "Owner", "Paid From", "Remarks", "Amount", "Balance After", ""].map((h) => (
                     <th key={h} className="border px-1.5 py-1 text-left font-semibold">
                       {h}
                     </th>
@@ -1175,7 +1175,7 @@ export function VehiclePnlClient({
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 text-destructive"
-                        title="Delete — ledger entry bhi reverse hogi"
+                        title="Delete — the ledger entry is reversed too"
                         onClick={() => void removeWd(w.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1188,7 +1188,7 @@ export function VehiclePnlClient({
                 <tfoot>
                   <tr className="font-semibold">
                     <td colSpan={4} className="border px-1.5 py-1">
-                      Total Nikasi
+                      Total Withdrawals
                     </td>
                     <td className="border px-1.5 py-1 text-right tabular-nums">
                       {formatMoney(wdListOf.wdLifetime)}
@@ -1210,14 +1210,14 @@ export function VehiclePnlClient({
         </DialogContent>
       </Dialog>
 
-      {/* -------- malik nikasi entry form -------- */}
+      {/* -------- owner withdrawal entry form -------- */}
       <Dialog open={wdOpen} onOpenChange={setWdOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Malik Nikasi</DialogTitle>
+            <DialogTitle>Owner Withdrawal</DialogTitle>
             <DialogDescription>
-              Save hote hi malik ke ledger mein debit, bank/cash book mein credit, aur gaadi ka
-              running balance ghatega. Net profit par koi asar nahi — nikasi kharcha nahi hai.
+              On save it debits the owner&rsquo;s ledger, credits the bank/cash book, and drops the
+              vehicle&rsquo;s running balance. No effect on net profit — a withdrawal is not an expense.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1231,12 +1231,12 @@ export function VehiclePnlClient({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Malik (Party) *</Label>
+              <Label className="text-xs">Owner (Party) *</Label>
               <MasterCombobox
                 options={malikOptions}
                 value={wdPartyId}
                 onChange={setWdPartyId}
-                placeholder="Select malik..."
+                placeholder="Select owner..."
               />
             </div>
             <div className="space-y-1">
@@ -1279,7 +1279,7 @@ export function VehiclePnlClient({
               Cancel
             </Button>
             <Button onClick={() => void saveWd()} disabled={wdSaving}>
-              {wdSaving ? "Saving..." : "Save Nikasi"}
+              {wdSaving ? "Saving..." : "Save Withdrawal"}
             </Button>
           </DialogFooter>
         </DialogContent>

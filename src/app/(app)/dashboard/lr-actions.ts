@@ -115,7 +115,7 @@ export async function getLrSummary(): Promise<
   try {
     const firmScope = { firmId: session.firmId };
     const cards = await withTenant(session.tenantId, async (tx) => {
-      // FY continuity: "is saal" cards (Total / Received / Billed) count the
+      // FY continuity: "this year" cards (Total / Received / Billed) count the
       // session FY's LRs; PENDING cards (chalan-pending, POD-pending,
       // received-but-unbilled) count EVERY year's LRs — pending work never
       // disappears at the year change, it stays counted until done

@@ -29,7 +29,7 @@ export default async function PartiesPage({
         { gstin: { contains: q, mode: "insensitive" } },
         { pan: { contains: q, mode: "insensitive" } },
         { alias: { contains: q, mode: "insensitive" } },
-        // owner/broker aksar trade name se yaad rehta hai — usse bhi milna chahiye
+        // an owner/broker is often remembered by trade name — that must match too
         { transportName: { contains: q, mode: "insensitive" } },
         { tallyName: { contains: q, mode: "insensitive" } },
       ];

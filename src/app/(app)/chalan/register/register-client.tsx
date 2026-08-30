@@ -276,7 +276,7 @@ export function ChalanRegisterClient({
           : "",
       meta: { numeric: true, total: (r: ChalanRegisterRow[]) => sum(r, "roundOff") },
     },
-    // payment status is a MARKET concept — own/relative hisab lives in the ledger
+    // payment status is a MARKET concept — own/relative settlement lives in the ledger
     ...(isMarket
       ? [
           {

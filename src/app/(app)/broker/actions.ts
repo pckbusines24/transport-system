@@ -645,7 +645,7 @@ export async function deleteBrokerSlip(
         where: { id, firmId: session.firmId },
       });
       if (!before) throw new Error("Broker slip not found");
-      // chain lock: a slip inside a trip sheet's hishab goes only after the
+      // chain lock: a slip inside a trip sheet's accounts goes only after the
       // trip releases it
       const tripGuard = await tripLockError(tx, "BROKER_SLIP", id, "broker slip");
       if (tripGuard) throw new Error(tripGuard);
@@ -809,8 +809,8 @@ export async function saveBrokerBalancePayment(
           ok: false as const,
           error:
             data.side === "P"
-              ? "Slip par party/transporter set nahi hai — pehle slip mein party daalo, fir settle karo."
-              : "Slip par owner set nahi hai — pehle slip mein owner daalo, fir settle karo.",
+              ? "No party/transporter is set on the slip — add the party to the slip first, then settle."
+              : "No owner is set on the slip — add the owner to the slip first, then settle.",
         };
       }
 

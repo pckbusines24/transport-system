@@ -175,7 +175,7 @@ export function RatesClient({
           size="sm"
           disabled={importing}
           onClick={() => fileRef.current?.click()}
-          title="Excel with headers: Party, Product, Source, Destination, Rate, Basis, Hamali, Pre Bhada, D Charge, Stationery, Crossing. Product cell mein comma se kai products ek saath likh sakte ho (PLATE, ANGLE, CHANNEL)"
+          title="Excel with headers: Party, Product, Source, Destination, Rate, Basis, Hamali, Pre Bhada, D Charge, Stationery, Crossing. In the Product cell you can write several products at once, separated by commas (PLATE, ANGLE, CHANNEL)"
         >
           <Upload className="h-4 w-4" />
           {importing ? "Importing..." : "Import from Excel"}
@@ -209,7 +209,7 @@ export function RatesClient({
         { name: "partyId", label: "Party *", type: "combobox", options: partyOptions, span2: true },
         {
           name: "productIds",
-          label: "Products (tick karke multiple chuno · blank = all)",
+          label: "Products (tick to select multiple · blank = all)",
           type: "multicombobox",
           options: productOptions,
           placeholder: "Type to search & tick products...",

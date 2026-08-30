@@ -462,8 +462,8 @@ export function DocStatusClient({
             </div>
             {form.status === "DONE" && (
               <p className="text-xs text-muted-foreground sm:col-span-2">
-                Done tabhi tikega jab NAYI expiry date daali ho — purani expiry reminder window ke
-                andar ho to status apne aap wapas Pending ho jayega.
+                Done sticks only when a NEW expiry date has been entered — if the old expiry is
+                inside the reminder window, the status goes back to Pending on its own.
               </p>
             )}
             <div className="space-y-1 sm:col-span-2">

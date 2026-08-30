@@ -47,7 +47,7 @@ export async function assertDateInFy(
     const t = new Date(date.getTime() + IST_MS);
     const label = `${String(t.getUTCDate()).padStart(2, "0")}/${String(t.getUTCMonth() + 1).padStart(2, "0")}/${t.getUTCFullYear()}`;
     throw new Error(
-      `Ye date (${label}) FY ${fy.label} ki nahi hai — uss FY mein jaakar ${what} karein.`
+      `This date (${label}) does not fall in FY ${fy.label} — switch to that FY to make this ${what}.`
     );
   }
 }

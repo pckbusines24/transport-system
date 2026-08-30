@@ -42,27 +42,27 @@ export default async function TallyMappingPage() {
   const sections: MapSection[] = [
     {
       title: "📦 Chalan",
-      desc: "Purchase component-wise + TDS alag journal + Commission-Mamool ek saath + Courier alag",
+      desc: "Purchase component-wise + TDS as a separate journal + Commission-Mamool together + Courier separate",
       rows: concepts("CHALAN", CHALAN_CONCEPTS),
     },
     {
       title: "📄 Billing",
-      desc: "Sales mein pura bill amount ek saath; receipt mein TDS Receivable / Shortage alag lines",
+      desc: "Sales carries the full bill amount in one line; receipt has separate TDS Receivable / Shortage lines",
       rows: concepts("BILLING", BILLING_CONCEPTS),
     },
     {
       title: "🚛 Broker Slip — Party Side",
-      desc: "Owner side chalan wale hi ledgers use karta hai (upar wale)",
+      desc: "Owner side uses the same ledgers as Chalan (the ones above)",
       rows: concepts("SLIP_P", SLIP_P_CONCEPTS),
     },
     {
       title: "💳 Receipt / Payment Vouchers",
-      desc: "Accounts ke vouchers ki katauti lines (TDS, shortage, other, round off)",
+      desc: "Deduction lines on the Accounts vouchers (TDS, shortage, other, round off)",
       rows: concepts("VOUCHER", VOUCHER_CONCEPTS),
     },
     {
       title: "⛽ Income / Expense Heads",
-      desc: "Vehicle & office kharche aur chalan ke head-wale advances — sab yahi mapping use karte hain",
+      desc: "Vehicle & office expenses and the head-wise advances on Chalan — all of them use this mapping",
       rows: heads.map((h) => ({
         module: "HEAD",
         sourceKey: h.id,
@@ -73,7 +73,7 @@ export default async function TallyMappingPage() {
     },
     {
       title: "🏦 Bank / Cash / Card",
-      desc: "Tally mein in accounts ke exact naam (auto-create nahi hote — pakka naam bharo)",
+      desc: "Exact names of these accounts in Tally (not auto-created — enter the exact name)",
       rows: moneyParties.map((p) => ({
         module: "BANKCASH",
         sourceKey: p.id,
@@ -88,10 +88,10 @@ export default async function TallyMappingPage() {
     <div className="space-y-4 p-4">
       <h1 className="text-xl font-semibold">Tally Ledger Mapping</h1>
       <p className="text-sm text-muted-foreground">
-        Har software head ke saamne Tally ka ledger naam likho — export usi mein entry banayega.
-        Khaali chhoda toh software wala naam jayega aur Tally import par woh ledger apne aap ban
-        jayega. Parties same naam se jati hain (alag naam chahiye toh Party Master mein
-        &quot;Tally Name&quot; bharo).
+        Against each software head, write the Tally ledger name — the export will post the entry
+        into it. Left blank, the software name goes across and that ledger is created automatically
+        on Tally import. Parties go across with the same name (for a different name, fill
+        &quot;Tally Name&quot; in Party Master).
       </p>
       <TallyMappingClient
         sections={sections}

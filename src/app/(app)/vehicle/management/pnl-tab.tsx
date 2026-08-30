@@ -64,7 +64,7 @@ export async function VehiclePnlTab({
   const data = await withTenant(session.tenantId, async (tx) => {
     // everything is fetched LIFETIME (firm-scoped, no FY/date filter) and the
     // period figures are carved out in JS below: the running balance needs
-    // "shuru se ab tak" nets no matter what period the filters show
+    // since-inception nets no matter what period the filters show
     const [
       vehicles,
       allTrips,
@@ -175,8 +175,8 @@ export async function VehiclePnlTab({
   } = data;
 
   // ---- carve the selected period out of the lifetime data ----
-  // FY continuity: this report is the vehicle's WHOLE story (shuru se aaj
-  // tak) — no FY wall. The date filter alone narrows it to a saal/period.
+  // FY continuity: this report is the vehicle's WHOLE story (since
+  // inception) — no FY wall. The date filter alone narrows it to a period.
   const inPeriod = (d: Date) => (!dateFrom || d >= dateFrom) && (!dateTo || d <= dateTo);
   const trips = allTrips.filter(
     (t) =>
@@ -318,7 +318,7 @@ export async function VehiclePnlTab({
     emiDetailsByVehicle.set(vehicleId, list);
   }
 
-  // ---- lifetime nets ("shuru se ab tak") — they drive the running balance,
+  // ---- lifetime nets (since inception) — they drive the running balance,
   // independent of whatever period/driver the filters currently show ----
   const lifeMonthly = new Map<string, Map<string, number>>();
   const bumpLife = (vid: string, m: string, amt: number) => bumpMonthly(lifeMonthly, vid, m, amt);
@@ -370,7 +370,7 @@ export async function VehiclePnlTab({
     if (total > 0) bumpLife(vid, monthKey(emi.payDate), -total);
   }
 
-  // malik nikasi per vehicle, lifetime, dates ascending
+  // owner withdrawals per vehicle, lifetime, dates ascending
   const wdByVehicle = new Map<string, typeof withdrawals>();
   for (const w of withdrawals) {
     const list = wdByVehicle.get(w.vehicleId) ?? [];
@@ -465,7 +465,7 @@ export async function VehiclePnlTab({
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([month, m]) => ({ month, net: m }));
 
-      // running balance: lifetime net − lifetime nikasi, continues across
+      // running balance: lifetime net − lifetime withdrawals, continues across
       // periods/FYs regardless of the filters above
       const lm = lifeMonthly.get(v.id) ?? new Map<string, number>();
       const lifetimeNet = r2(Array.from(lm.values()).reduce((s, x) => s + x, 0));
@@ -475,7 +475,7 @@ export async function VehiclePnlTab({
       const wdPeriod = r2(
         wds.filter((w) => inPeriod(w.date)).reduce((s, w) => s + toNum(String(w.amount)), 0)
       );
-      // balance after each entry ≈ net through the entry's month − nikasi so far
+      // balance after each entry ≈ net through the entry's month − withdrawals so far
       const monthsAsc = Array.from(lm.keys()).sort();
       const cumByMonth = new Map<string, number>();
       let cum = 0;

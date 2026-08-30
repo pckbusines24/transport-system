@@ -853,7 +853,7 @@ export async function deleteChalan(
         };
       }
 
-      // chain lock: a chalan sitting inside a trip sheet's hishab must not
+      // chain lock: a chalan sitting inside a trip sheet's settlement must not
       // vanish underneath it — the trip releases it first
       const tripGuard = await tripLockError(tx, "CHALAN", chalanId, "chalan");
       if (tripGuard) return { ok: false as const, error: tripGuard };
@@ -970,7 +970,7 @@ export async function cancelChalan(
       });
       if (!chalan) return { ok: false as const, error: "Chalan not found" };
       if (chalan.cancelledAt) return { ok: false as const, error: "Chalan is already cancelled" };
-      // chain lock: cancelling a trip-linked chalan would orphan the trip's hishab
+      // chain lock: cancelling a trip-linked chalan would orphan the trip's settlement
       const tripGuard = await tripLockError(tx, "CHALAN", chalanId, "chalan");
       if (tripGuard) return { ok: false as const, error: tripGuard };
 
@@ -1267,7 +1267,7 @@ export async function saveBalancePayment(
       }
       // balance payment is a MARKET-vehicle concept: an own vehicle has no
       // payee, and a relative vehicle settles through the owner's ledger —
-      // paying here would double the hisab
+      // paying here would double the settlement
       const chalanVehicle = await tx.vehicle.findFirst({
         where: { id: chalan.vehicleId },
         select: { ownershipType: true, number: true },
@@ -1275,7 +1275,7 @@ export async function saveBalancePayment(
       if (chalanVehicle && chalanVehicle.ownershipType !== "BROKER") {
         return {
           ok: false as const,
-          error: `${chalanVehicle.number} is a${chalanVehicle.ownershipType === "OWNER" ? "n OWN" : " RELATIVE"} vehicle — balance payment does not apply; its hisab flows through the ${chalanVehicle.ownershipType === "OWNER" ? "vehicle P&L" : "relative owner's ledger"}.`,
+          error: `${chalanVehicle.number} is a${chalanVehicle.ownershipType === "OWNER" ? "n OWN" : " RELATIVE"} vehicle — balance payment does not apply; its settlement flows through the ${chalanVehicle.ownershipType === "OWNER" ? "vehicle P&L" : "relative owner's ledger"}.`,
         };
       }
       // all attached LRs must have a confirmed POD before balance can be paid

@@ -802,7 +802,7 @@ export async function saveInvoice(input: unknown): Promise<SaveInvoiceResult> {
 
       // bill after delivery, never before: the bill's date must not precede
       // the latest delivery (POD) among its LRs — blocks back-dating a bill
-      // into an earlier year when the maal actually reached in a later one
+      // into an earlier year when the goods actually arrived in a later one
       if (data.lrIds.length) {
         const pods = await tx.pod.findMany({
           where: { lrId: { in: data.lrIds } },
@@ -820,7 +820,7 @@ export async function saveInvoice(input: unknown): Promise<SaveInvoiceResult> {
           const dd = `${String(deliveredAt.getUTCDate()).padStart(2, "0")}/${String(deliveredAt.getUTCMonth() + 1).padStart(2, "0")}/${deliveredAt.getUTCFullYear()}`;
           return {
             ok: false,
-            error: `Delivery ${dd} ko hui hai — bill ki date usse pehle ki nahi ho sakti. Delivery wale FY mein jaakar bill banao.`,
+            error: `Delivery was on ${dd} — the bill date cannot be earlier than that. Switch to the delivery's FY to make the bill.`,
           };
         }
       }

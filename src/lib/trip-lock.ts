@@ -2,7 +2,7 @@ import type { Tx } from "@/lib/db";
 
 /**
  * Chain lock, trip side: a chalan / broker slip that a trip sheet has taken
- * into its hishab must not be deleted (or cancelled) underneath it — the trip
+ * into its accounts must not be deleted (or cancelled) underneath it — the trip
  * sheet releases the document first. Returns the error message, or null when
  * the document is free.
  */
@@ -19,5 +19,5 @@ export async function tripLockError(
     select: { tripNo: true },
   });
   if (!trip) return null; // stale link of a deleted trip — not a lock
-  return `Ye ${what} trip sheet ${trip.tripNo} ke hishab mein juda hai — pehle woh trip sheet edit karke isse hatao (ya trip delete karo), fir ye ${what} delete hoga.`;
+  return `This ${what} is tied into trip sheet ${trip.tripNo}'s accounts — edit that trip sheet to remove it (or delete the trip) first, then this ${what} can be deleted.`;
 }

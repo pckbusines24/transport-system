@@ -87,7 +87,7 @@ export async function runTallyExport(
         return {
           ok: false as const,
           error:
-            "Sab kuch pehle se exported hai — naya kuch nahi mila. (Full re-export chahiye toh 'include already exported' tick karo.)",
+            "Everything is already exported — nothing new found. (For a full re-export, tick 'include already exported'.)",
         };
       }
       await audit(tx, session, {
@@ -129,7 +129,7 @@ export async function runTallyMasters(
         toRange(parsed.data.dateFrom, parsed.data.dateTo)
       );
       if (!masters.length) {
-        return { ok: false as const, error: "Is period mein koi party nahi mili." };
+        return { ok: false as const, error: "No party found in this period." };
       }
       return {
         ok: true as const,

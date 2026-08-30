@@ -129,7 +129,7 @@ export default async function SelectFirmPage() {
                             <input type="hidden" name="fyId" value="__next__" />
                             <FyButton
                               label={`FY ${y}-${y + 1}`}
-                              sub="naya saal — select karte hi ban jayega"
+                              sub="new year — created as soon as you select it"
                               dashed
                             />
                           </form>

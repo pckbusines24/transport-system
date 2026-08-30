@@ -21,7 +21,7 @@ export default async function ChalanRegisterPage({
   const { date_from, date_to, q, broker, vehicle, status, payment, ownership, shortage } =
     searchParams;
   // two registers in one screen: MARKET (payable workflow, the default) and
-  // OWNREL (own + relative vehicles — no payment actions, hisab via ledger)
+  // OWNREL (own + relative vehicles — no payment actions, settlement via ledger)
   const tab = searchParams.type === "OWNREL" ? ("OWNREL" as const) : ("MARKET" as const);
   // each tab has its own Cancel Register: cancelled chalans leave the normal
   // register entirely and live here until restored

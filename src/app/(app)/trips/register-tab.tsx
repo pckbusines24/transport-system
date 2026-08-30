@@ -27,7 +27,7 @@ export async function TripRegisterTab({
     session.tenantId,
     async (tx) => {
       // FY-scoped list, but an UNSETTLED trip from an earlier year stays
-      // visible until its hishab closes (FY continuity for pending work)
+      // visible until its accounts close (FY continuity for pending work)
       const openSettlements = await tx.driverSettlement.findMany({
         where: { firmId: session.firmId, deletedAt: null, status: "PENDING", tripId: { not: null } },
         select: { tripId: true },

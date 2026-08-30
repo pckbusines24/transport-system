@@ -40,7 +40,7 @@ export async function loadSalaryTab(filters: DriverFilters) {
   const { salaries, shortages, drivers, banks } = await withTenant(
     session.tenantId,
     async (tx) => {
-      // FY continuity: driver hisab is lifetime — old-year dues stay visible
+      // FY continuity: the driver account is lifetime — old-year dues stay visible
       const where: Prisma.DriverSalaryWhereInput = {
         firmId: session.firmId,
         deletedAt: null,
@@ -222,7 +222,7 @@ export async function loadSettlementTab(filters: DriverFilters) {
 export async function loadAdvanceTab(filters: DriverFilters) {
   const session = requireSession();
   const { advances, drivers, vehicles, banks } = await withTenant(session.tenantId, async (tx) => {
-    // FY continuity: driver hisab is lifetime — the FY filter here left the
+    // FY continuity: the driver account is lifetime — the FY filter here left the
     // "All" view empty in a fresh year (missed when salary/settlement tabs
     // were widened). No status filter → PENDING and ADJUSTED both show.
     const where: Prisma.DriverAdvanceWhereInput = {
