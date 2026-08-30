@@ -88,6 +88,56 @@ build will run without its environment.
 
 4. Confirm **automatic daily backups** are on (default; PITR included).
 
+5. **Create a restricted role for the application.** This step is not optional.
+
+   DO's `doadmin` has `rolbypassrls = true`, and `BYPASSRLS` overrides even
+   `FORCE ROW LEVEL SECURITY`. Connecting the app as `doadmin` means every
+   `tenant_isolation` policy in the schema is silently skipped — the app's own
+   `where` clauses would be the only thing separating tenants, and RLS would be
+   decorative. Verified against this cluster: as `doadmin`, a query scoped to a
+   nonexistent tenant still returned another tenant's rows.
+
+   Connected as `doadmin` on the DIRECT url:
+
+   ```sql
+   CREATE ROLE tms_app LOGIN PASSWORD '<generated>';
+   GRANT CONNECT ON DATABASE defaultdb TO tms_app;
+   GRANT USAGE ON SCHEMA public TO tms_app;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tms_app;
+   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO tms_app;
+   -- migrations run as doadmin, so future tables need this or the app breaks
+   -- the next time a migration adds one
+   ALTER DEFAULT PRIVILEGES FOR ROLE doadmin IN SCHEMA public
+     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tms_app;
+   ALTER DEFAULT PRIVILEGES FOR ROLE doadmin IN SCHEMA public
+     GRANT USAGE, SELECT ON SEQUENCES TO tms_app;
+   ```
+
+   The role defaults are already `NOSUPERUSER NOBYPASSRLS`, which is the point.
+   `doadmin` cannot set `NOSUPERUSER` explicitly (it is not a superuser itself),
+   and does not need to.
+
+6. **Bind the connection pool to `tms_app`.** A DigitalOcean pool belongs to one
+   user, so a pool created for `doadmin` will keep connecting as `doadmin`
+   whatever the URL says. Either re-point the existing pool at `tms_app` or
+   create a second pool for it, then use that pool name in `DATABASE_URL`.
+
+   Split of responsibilities afterwards:
+
+   | URL | Role | Why |
+   |---|---|---|
+   | `DATABASE_URL` (pooled) | `tms_app` | request traffic — RLS must apply |
+   | `DIRECT_DATABASE_URL` | `doadmin` | migrations need CREATE; seed and orphan sweep are deliberately cross-tenant |
+
+   Confirm it took effect:
+
+   ```
+   npx tsx scripts/check-env.ts
+   ```
+
+   Expected once correct: reading as a bogus tenant returns 0 rows, and a
+   cross-tenant INSERT is refused by `WITH CHECK`.
+
 ---
 
 ## 4. Migrate the database from Supabase
