@@ -47,7 +47,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
       },
       borderRadius: {
         sm: "calc(var(--radius) - 6px)",

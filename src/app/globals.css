@@ -193,11 +193,26 @@
     background: hsl(var(--primary) / 0.3);
   }
 
-  /* Numerals line up in columns — money and dates must never jitter between
-     rows because a 1 is narrower than an 8. */
+  /* Figures in COLUMNS must not jitter: money and dates have to line up row to
+     row, and a total has to sit under the digits it totals.
+     `font-variant-numeric` alone cannot deliver that here — Poppins has no
+     tabular figure set, so the property is silently ignored. The font swap is
+     what actually does the work; the property stays for fonts that do support
+     it. Scoped to tables and .tabular, so prose keeps Poppins numerals. */
+  /* NOT .text-metric: a headline figure stands alone with no column to align
+     to, and the text face reads better at display size. */
   table,
   .tabular {
+    font-family: var(--font-numeric), ui-monospace, SFMono-Regular, Menlo, monospace;
     font-variant-numeric: tabular-nums;
+    /* Roboto Mono runs wider than Poppins at the same size; a hair tighter
+       keeps dense registers from gaining a column's worth of width */
+    letter-spacing: -0.01em;
+  }
+  /* headers are words, not figures — keep them in the text face */
+  table th {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    letter-spacing: normal;
   }
 
   /*
