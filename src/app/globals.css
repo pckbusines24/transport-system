@@ -51,8 +51,12 @@
     --inverted-foreground: 45 30% 96%;
     --inverted-muted: 225 8% 62%;
 
-    /* ---- brand --------------------------------------------------------- */
-    --primary: 44 96% 56%;
+    /* ---- brand ---------------------------------------------------------
+       This is #F5C842 expressed as HSL — the exact hex the logo mark uses.
+       They MUST stay identical: the mark sits next to a primary button in the
+       header, and two yellows a few percent apart read as a mistake rather
+       than as a palette. Change one, change the other. */
+    --primary: 45 90% 61%;
     --primary-foreground: 30 45% 10%;
     --secondary: 45 55% 93%;
     --secondary-foreground: 30 38% 18%;
@@ -127,7 +131,7 @@
     --inverted-foreground: 44 22% 95%;
     --inverted-muted: 220 10% 66%;
 
-    --primary: 44 94% 60%;
+    --primary: 45 90% 61%; /* same #F5C842 — the mark does not change with the theme */
     --primary-foreground: 30 50% 10%;
     --secondary: 225 12% 20%;
     --secondary-foreground: 44 22% 92%;

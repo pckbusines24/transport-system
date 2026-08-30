@@ -62,7 +62,10 @@ function DesktopMenu({ pathname }: { pathname: string }) {
     // means adding or removing a menu item redistributes the row on its own -
     // no gap opening up on the right. Once the groups no longer fit,
     // justify-between stops applying and the row scrolls instead.
-    <nav className="no-print mx-auto hidden w-full max-w-[1400px] items-center justify-between gap-0.5 overflow-x-auto px-4 md:px-6 lg:flex">
+    // One inset track rather than a full-width bar: the group reads as a single
+    // control, and the active item is a filled pill inside it. A bar spanning
+    // the window is what made this look like a 2010 admin panel.
+    <nav className="no-print hidden w-fit max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-sunken p-1 lg:flex">
       {NAV.map((group) => {
         const active = isGroupActive(group, pathname);
         if (group.href) {
@@ -71,10 +74,10 @@ function DesktopMenu({ pathname }: { pathname: string }) {
               key={group.label}
               href={group.href}
               className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-fast",
                 active
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  ? "bg-inverted text-inverted-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-card hover:text-foreground"
               )}
             >
               <group.icon className="h-4 w-4" />
@@ -86,14 +89,14 @@ function DesktopMenu({ pathname }: { pathname: string }) {
           <DropdownMenu key={group.label}>
             <DropdownMenuTrigger
               className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium outline-none transition-colors",
+                "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium outline-none transition-colors duration-fast",
                 active
-                  ? "bg-primary/15 text-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                "data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                  ? "bg-inverted text-inverted-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-card hover:text-foreground",
+                "data-[state=open]:bg-card data-[state=open]:text-foreground"
               )}
             >
-              <group.icon className={cn("h-4 w-4", active && "text-primary")} />
+              <group.icon className="h-4 w-4" />
               {group.label}
               <ChevronDown className="h-3.5 w-3.5 opacity-60" />
             </DropdownMenuTrigger>
@@ -333,13 +336,15 @@ export function TopNav({ firmName, fyLabel, userName, role }: TopNavProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   return (
-    <header className="no-print sticky top-0 z-40 border-b bg-card/95 shadow-card backdrop-blur supports-[backdrop-filter]:bg-card/80">
-      {/* Row 1 — brand, firm, search, user */}
+    <header className="no-print sticky top-0 z-40 border-b border-border/60 bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/75">
+      {/* ONE row: brand, nav pill, search, user. The old layout stacked a
+          full-width menu bar under the header, which cost 48px of vertical
+          space on every screen and made the chrome heavier than the content. */}
       <div
-        className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4"
+        className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-3 sm:px-4"
         style={{
           paddingTop: "env(safe-area-inset-top)",
-          height: "calc(3.5rem + env(safe-area-inset-top))",
+          height: "calc(4rem + env(safe-area-inset-top))",
         }}
       >
         <button

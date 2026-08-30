@@ -6,7 +6,7 @@ import { formatMoney } from "@/lib/utils";
 import { getLrSummary } from "./lr-actions";
 import { getOutstandingAgeing } from "./outstanding-actions";
 import { getTdsMonitor } from "./tds-actions";
-import { LR_VIEW_META } from "./lr-views";
+import { LrPipeline } from "./lr-pipeline";
 import type { OpsMetrics } from "./ops-metrics";
 
 /**
@@ -92,35 +92,7 @@ export async function OutstandingSection() {
 export async function LrSummarySection() {
   const lrSummary = await getLrSummary();
   if (!lrSummary.ok) return null;
-  return (
-    <Card>
-      <CardContent className="space-y-3 p-5">
-        <span className="text-lg font-semibold">LR Summary</span>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {lrSummary.cards.map((c) => (
-            <a
-              key={c.view}
-              href={`/dashboard/lr-detail?view=${c.view}`}
-              target="_blank"
-              rel="noreferrer"
-              className="group/lr rounded-md border p-3 transition-all hover:border-primary/40 hover:shadow-card"
-            >
-              <div className="flex items-center gap-1 text-[11px] font-medium uppercase text-muted-foreground">
-                <span className="group-hover/lr:text-primary">{LR_VIEW_META[c.view].title}</span>
-                <InfoHint>{LR_VIEW_META[c.view].info}</InfoHint>
-              </div>
-              <div className="text-xl font-bold tabular-nums">{c.count}</div>
-              {c.amount !== null && (
-                <div className="text-xs tabular-nums text-muted-foreground">
-                  {formatMoney(c.amount)}
-                </div>
-              )}
-            </a>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <LrPipeline cards={lrSummary.cards} />;
 }
 
 /* ---------------------------- operational cards ---------------------------- */

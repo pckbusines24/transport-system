@@ -115,9 +115,12 @@ export function FinanceCardsSection({ defaultFrom, defaultTo }: { defaultFrom: s
         {error ? (
           <p className="text-sm text-muted-foreground">{error}</p>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          // Inline figures, not four bordered boxes. A box inside a box, four
+          // times over, is what made this section read as filler — the card
+          // already groups them, so the borders only added noise.
+          <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
             {(data ? cards : Array.from({ length: 4 }, () => null)).map((c, i) => (
-              <div key={c?.label ?? i} className={`rounded-md border p-3 ${loading ? "opacity-60" : ""}`}>
+              <div key={c?.label ?? i} className={loading ? "opacity-60" : ""}>
                 {c ? (
                   <>
                     <div className="flex items-center gap-1 text-[11px] font-medium uppercase text-muted-foreground">
