@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 /**
@@ -170,5 +171,49 @@ export function Meter({
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * A headline figure in a card — the "label over a big number" tile that every
+ * register and report page had rebuilt by hand.
+ *
+ * Those copies had drifted: different paddings, different type sizes, some
+ * bold and some not. One component means a change to the pattern lands
+ * everywhere at once, which is the whole point of having a design system
+ * rather than a set of conventions.
+ */
+export function StatCard({
+  label,
+  value,
+  hint,
+  tone = "default",
+  className,
+}: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  /** colours the FIGURE only — the card stays neutral so a row of these reads
+   *  as one group rather than as a traffic light */
+  tone?: "default" | "success" | "destructive" | "muted";
+  className?: string;
+}) {
+  return (
+    <Card className={className}>
+      <CardContent className="p-5">
+        <div className="text-eyebrow">{label}</div>
+        <div
+          className={cn(
+            "mt-2 text-3xl font-light leading-none tracking-[-0.02em] tabular-nums",
+            tone === "success" && "text-success",
+            tone === "destructive" && "text-destructive",
+            tone === "muted" && "text-muted-foreground"
+          )}
+        >
+          {value}
+        </div>
+        {hint && <div className="mt-1.5 text-xs text-muted-foreground">{hint}</div>}
+      </CardContent>
+    </Card>
   );
 }

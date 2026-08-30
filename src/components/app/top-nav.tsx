@@ -76,8 +76,10 @@ function DesktopMenu({ pathname }: { pathname: string }) {
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-fast",
                 active
-                  ? "bg-inverted text-inverted-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-card hover:text-foreground"
+                  // a raised light pill on the sunken track — the segmented
+                  // control pattern. Emphasis by elevation, not by going black.
+                  ? "bg-card text-foreground shadow-sm ring-1 ring-border/60"
+                  : "text-muted-foreground hover:bg-card/60 hover:text-foreground"
               )}
             >
               <group.icon className="h-4 w-4" />
@@ -91,8 +93,10 @@ function DesktopMenu({ pathname }: { pathname: string }) {
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium outline-none transition-colors duration-fast",
                 active
-                  ? "bg-inverted text-inverted-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-card hover:text-foreground",
+                  // a raised light pill on the sunken track — the segmented
+                  // control pattern. Emphasis by elevation, not by going black.
+                  ? "bg-card text-foreground shadow-sm ring-1 ring-border/60"
+                  : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
                 "data-[state=open]:bg-card data-[state=open]:text-foreground"
               )}
             >

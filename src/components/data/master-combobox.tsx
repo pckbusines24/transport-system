@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -140,6 +141,36 @@ export function MasterCombobox({
     [onChange]
   );
 
+  /**
+   * The list is rendered into a PORTAL, positioned against the input's screen
+   * rect, rather than absolutely inside this wrapper.
+   *
+   * Several call sites put this combobox inside a horizontally scrolling
+   * container — the LR product rows are the obvious one. An absolutely
+   * positioned list inside `overflow-x-auto` gets clipped by that ancestor and
+   * makes the whole panel scroll to reveal itself, which is what the product
+   * picker was doing. A fixed-position portal has no clipping ancestor.
+   */
+  const [rect, setRect] = React.useState<DOMRect | null>(null);
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => setRect(inputRef.current?.getBoundingClientRect() ?? null);
+    measure();
+    // capture: the scroll may happen on any ancestor, not just the window
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [open]);
+
+  // flip above when there is not enough room below, so the list is never
+  // half off-screen on a row near the bottom of the viewport
+  const MAX_LIST = 256;
+  const below = rect ? window.innerHeight - rect.bottom - 8 : 0;
+  const flip = rect !== null && below < 180 && rect.top > below;
+
   return (
     <div className={cn("relative", className)}>
       <Input
@@ -196,10 +227,19 @@ export function MasterCombobox({
         aria-hidden
       />
 
-      {open && !disabled && (
+      {open && !disabled && rect && createPortal(
         <div
           ref={listRef}
-          className="absolute z-50 mt-1 max-h-64 w-full min-w-[240px] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          style={{
+            position: "fixed",
+            left: rect.left,
+            width: Math.max(rect.width, 240),
+            ...(flip
+              ? { bottom: window.innerHeight - rect.top + 4 }
+              : { top: rect.bottom + 4 }),
+            maxHeight: flip ? Math.min(MAX_LIST, rect.top - 8) : Math.min(MAX_LIST, below),
+          }}
+          className="z-50 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-overlay"
         >
           {visible.length === 0 && !renderCreateDialog && (
             <div className="px-2 py-2 text-sm text-muted-foreground">No match found.</div>
@@ -255,7 +295,8 @@ export function MasterCombobox({
               )}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
       {creating && renderCreateDialog?.(closeAndSelect)}

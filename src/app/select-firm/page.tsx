@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { Building2, LogOut, MapPin, Truck } from "lucide-react";
+import { Building2, LogOut, MapPin } from "lucide-react";
+import { LogoMark } from "@/components/brand/logo";
 import { withTenant } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { formatDate } from "@/lib/utils";
@@ -40,22 +41,27 @@ export default async function SelectFirmPage() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background p-4">
-      {/* decorative top band */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/15 via-primary/5 to-transparent" />
-      <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
-      <div className="pointer-events-none absolute -left-24 top-40 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
+      {/* One wash, anchored top-right to match the app canvas. The previous
+          version stacked a gradient band and two blurred blobs, which is three
+          decorations competing on a page whose entire job is one choice. */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(60rem 34rem at 85% -10%, hsl(var(--primary) / 0.20), transparent 60%)",
+        }}
+        aria-hidden
+      />
 
-      <div className="relative w-full max-w-2xl space-y-6">
+      <div className="relative w-full max-w-2xl space-y-8">
         {/* brand + user strip */}
-        <div className="flex flex-col items-center gap-4 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-card">
-            <Truck className="h-7 w-7 text-primary-foreground" />
-          </span>
+        <div className="flex flex-col items-center gap-5 text-center">
+          <LogoMark className="h-14 w-14" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
+            <h1 className="text-3xl font-light tracking-[-0.02em]">
               Welcome back, {session.name.split(/\s+/)[0]}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-2 text-sm text-muted-foreground">
               Choose a firm and financial year to start working
             </p>
           </div>
@@ -90,7 +96,7 @@ export default async function SelectFirmPage() {
                     )}
                   </div>
                   {firm.gstin && (
-                    <Badge variant="outline" className="hidden shrink-0 font-mono text-[10px] sm:inline-flex">
+                    <Badge variant="outline" className="tabular hidden shrink-0 text-[10px] sm:inline-flex">
                       {firm.gstin}
                     </Badge>
                   )}

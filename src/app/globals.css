@@ -199,13 +199,16 @@
 
   /* Figures in COLUMNS must not jitter: money and dates have to line up row to
      row, and a total has to sit under the digits it totals.
-     `font-variant-numeric` alone cannot deliver that here — Poppins has no
-     tabular figure set, so the property is silently ignored. The font swap is
-     what actually does the work; the property stays for fonts that do support
-     it. Scoped to tables and .tabular, so prose keeps Poppins numerals. */
-  /* NOT .text-metric: a headline figure stands alone with no column to align
-     to, and the text face reads better at display size. */
-  table,
+
+     `font-variant-numeric` alone cannot deliver that here — Poppins ships no
+     tabular figure set, so the property is silently ignored and the font swap
+     is what actually does the work.
+
+     Targeted at `.tabular-nums` (Tailwind's own utility, already on every
+     numeric cell in the app) rather than at `table`. An earlier version styled
+     the whole table and turned party names, routes and empty-state sentences
+     into monospace, which is not what any of this was for. */
+  .tabular-nums,
   .tabular {
     font-family: var(--font-numeric), ui-monospace, SFMono-Regular, Menlo, monospace;
     font-variant-numeric: tabular-nums;
@@ -213,8 +216,8 @@
        keeps dense registers from gaining a column's worth of width */
     letter-spacing: -0.01em;
   }
-  /* headers are words, not figures — keep them in the text face */
-  table th {
+  /* a column header is a word, not a figure, even when its column is numeric */
+  th.tabular-nums {
     font-family: var(--font-sans), system-ui, sans-serif;
     letter-spacing: normal;
   }

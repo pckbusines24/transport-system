@@ -42,16 +42,18 @@ export function LrPipeline({ cards }: { cards: LrSummaryCard[] }) {
               className={cn(
                 "group/lr flex min-w-[8.5rem] flex-1 flex-col rounded-xl px-4 py-3 transition-colors duration-fast",
                 // the first stage is the whole population, so it carries the
-                // emphasis and the rest read as what happened to it
+                // emphasis and the rest read as what happened to it. Emphasis
+                // is a warm tint plus a ring, not a black slab: a near-black
+                // panel in a light UI reads as a hole punched in the page.
                 i === 0
-                  ? "bg-inverted text-inverted-foreground hover:bg-inverted/90"
+                  ? "bg-primary/15 ring-1 ring-primary/35 hover:bg-primary/20"
                   : "bg-sunken hover:bg-accent/60"
               )}
             >
               <span
                 className={cn(
                   "flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.06em]",
-                  i === 0 ? "text-inverted-muted" : "text-muted-foreground"
+                  "text-muted-foreground"
                 )}
               >
                 {LR_VIEW_META[c.view].title}
@@ -61,8 +63,7 @@ export function LrPipeline({ cards }: { cards: LrSummaryCard[] }) {
               {c.amount !== null && (
                 <span
                   className={cn(
-                    "mt-1 text-xs tabular-nums",
-                    i === 0 ? "text-inverted-muted" : "text-muted-foreground"
+                    "mt-1 text-xs tabular-nums text-muted-foreground"
                   )}
                 >
                   {formatMoney(c.amount)}

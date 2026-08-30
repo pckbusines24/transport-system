@@ -3,6 +3,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { formatMoney, toNum } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat";
 import { InfoHint } from "@/components/ui/info-hint";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport, type ReportRow } from "@/components/accounts/simple-report";
@@ -380,30 +381,16 @@ export default async function OperationalPnlPage({
 
       {/* ---- KPI ---- */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm text-muted-foreground">Total Operational Revenue</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-bold tabular-nums">{money(totalRevenue)}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm text-muted-foreground">Total Operational Expenses</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-bold tabular-nums">
-            {money(r2(lorryHire + ledgerExpense))}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm text-muted-foreground">Company Operational Profit / Loss</CardTitle>
-          </CardHeader>
-          <CardContent
-            className={`text-2xl font-bold tabular-nums ${profit >= 0 ? "text-emerald-600" : "text-destructive"}`}
-          >
-            {money(profit)}
-          </CardContent>
-        </Card>
+        <StatCard label="Total Operational Revenue" value={money(totalRevenue)} />
+        <StatCard
+          label="Total Operational Expenses"
+          value={money(r2(lorryHire + ledgerExpense))}
+        />
+        <StatCard
+          label="Company Operational Profit / Loss"
+          value={money(profit)}
+          tone={profit >= 0 ? "success" : "destructive"}
+        />
       </div>
 
       {/* ---- sections ---- */}

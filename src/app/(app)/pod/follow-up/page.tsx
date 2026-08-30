@@ -6,6 +6,7 @@ import { waLink } from "@/lib/phone";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 
 export const dynamic = "force-dynamic";
@@ -208,26 +209,12 @@ export default async function PodFollowUpPage({
       <FilterBar filters={filters} />
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm text-muted-foreground">
-              {stage === "POD" ? "POD Pending LRs" : "Bill Pending LRs"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-bold tabular-nums">{filtered.length}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm text-muted-foreground">Freight on Hold</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-bold tabular-nums">{formatMoney(totalAmount)}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm text-muted-foreground">Follow-up People</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-bold tabular-nums">{contactGroups.length}</CardContent>
-        </Card>
+        <StatCard
+          label={stage === "POD" ? "POD Pending LRs" : "Bill Pending LRs"}
+          value={filtered.length}
+        />
+        <StatCard label="Freight on Hold" value={formatMoney(totalAmount)} />
+        <StatCard label="Follow-up People" value={contactGroups.length} />
       </div>
 
       {stage === "POD" && contactGroups.length > 0 && (
