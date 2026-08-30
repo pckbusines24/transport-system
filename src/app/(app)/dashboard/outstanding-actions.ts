@@ -1,7 +1,9 @@
 "use server";
 
+import { unstable_cache } from "next/cache";
 import { requireSession } from "@/lib/session";
 import { withTenant, type Tx } from "@/lib/db";
+import { outstandingTag } from "@/lib/outstanding-cache";
 import { toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 import { invoiceSettlement, payableSettlement, refPositions } from "@/lib/settlement";
@@ -43,6 +45,118 @@ export interface OutstandingData {
 
 const dayMs = 24 * 3600 * 1000;
 
+/**
+ * Column projections for the aggregation reads below.
+ *
+ * These tables are wide (Chalan alone has ~50 columns) and `collect` scans all
+ * of them unbounded, so pulling whole rows moved megabytes over the pooler to
+ * compute a handful of sums. Each list is exactly the fields the settlement
+ * math and the RawDoc labels consume — TypeScript fails the build if one is
+ * dropped, so a missing column can never silently zero a figure.
+ */
+const INVOICE_COLS = {
+  id: true,
+  partyId: true,
+  invoiceNo: true,
+  invoiceDate: true,
+  kind: true,
+  netTotal: true,
+  advance: true,
+} as const;
+
+const SLIP_PARTY_COLS = {
+  id: true,
+  partyId: true,
+  slipNo: true,
+  slipDate: true,
+  pNetAmt: true,
+  pAdvance: true,
+  pPaidAmount: true,
+  pShortage: true,
+  pRoundOff: true,
+  pPaymentDate: true,
+} as const;
+
+const SLIP_OWNER_COLS = {
+  id: true,
+  vehicleId: true,
+  ownerId: true,
+  ownerName: true,
+  slipNo: true,
+  slipDate: true,
+  vNetAmt: true,
+  vAdvance: true,
+  vPaidAmount: true,
+  vShortage: true,
+  vRoundOff: true,
+  vPaymentDate: true,
+} as const;
+
+const OFFICE_TXN_COLS = {
+  id: true,
+  partyId: true,
+  voucherNo: true,
+  refNo: true,
+  date: true,
+  amount: true,
+} as const;
+
+const ADVANCE_COLS = {
+  id: true,
+  partyId: true,
+  voucherNo: true,
+  date: true,
+  source: true,
+  amount: true,
+  consumedAmount: true,
+  uses: { select: { date: true, amount: true } },
+} as const;
+
+const DRIVER_SETTLEMENT_COLS = {
+  id: true,
+  driverId: true,
+  date: true,
+  amount: true,
+  status: true,
+  settledDate: true,
+  tripRef: true,
+  voucherNo: true,
+} as const;
+
+const CHALAN_COLS = {
+  id: true,
+  brokerId: true,
+  vehicleId: true,
+  chalanNo: true,
+  chalanDate: true,
+  grandTotal: true,
+  advanceTotal: true,
+  balPaidAmount: true,
+  balShortage: true,
+  balRoundOff: true,
+  balAdvanceAdjusted: true,
+  balPaymentDate: true,
+} as const;
+
+const HIRE_COLS = {
+  id: true,
+  slipNo: true,
+  slipDate: true,
+  ownerName: true,
+  brokerName: true,
+  totalHire: true,
+  advance: true,
+} as const;
+
+const SALARY_COLS = {
+  id: true,
+  partyId: true,
+  month: true,
+  netSalary: true,
+  paidAmount: true,
+  paymentDate: true,
+} as const;
+
 type RawDoc = {
   partyId: string | null;
   partyName: string | null; // fallback label when there is no party link (hire slips)
@@ -74,10 +188,13 @@ async function collect(
       : round2(toNum(String(a.consumedAmount)));
   if (side === "RECV") {
     const [invoices, slips, officeIncome, advances, settlements, drivers] = await Promise.all([
-      tx.invoice.findMany({ where: { ...scope, deletedAt: null } }),
+      tx.invoice.findMany({ where: { ...scope, deletedAt: null }, select: INVOICE_COLS }),
       // party/broker side of slips — what the party still owes after its own
       // balance-received figures
-      tx.brokerSlip.findMany({ where: { ...scope, deletedAt: null, partyId: { not: null } } }),
+      tx.brokerSlip.findMany({
+        where: { ...scope, deletedAt: null, partyId: { not: null } },
+        select: SLIP_PARTY_COLS,
+      }),
       // income booked on credit — the Outstanding register carries these, so
       // the tile must too or the two totals disagree
       tx.officeTransaction.findMany({
@@ -88,12 +205,13 @@ async function collect(
           paymentMode: null,
           partyId: { not: null },
         },
+        select: OFFICE_TXN_COLS,
       }),
       // advances we PAID that nothing consumed yet — the party owes them back
       // (chalan-cancel advances included, labelled apart)
       tx.partyAdvance.findMany({
         where: { ...scope, deletedAt: null, kind: "PAID" },
-        include: { uses: { select: { date: true, amount: true } } },
+        select: ADVANCE_COLS,
       }),
       // a negative settlement = the driver owes the company. As-on mode also
       // fetches rows settled LATER — on the date they were still open.
@@ -104,6 +222,7 @@ async function collect(
           amount: { lt: 0 },
           ...(asOf ? {} : { status: "PENDING" }),
         },
+        select: DRIVER_SETTLEMENT_COLS,
       }),
       tx.driver.findMany({ select: { id: true, partyId: true, name: true } }),
     ]);
@@ -211,16 +330,21 @@ async function collect(
     await Promise.all([
       // draft chalans owe their hire too — the Outstanding register carries
       // them, so hiding them here made the tile and the register disagree
-      tx.chalan.findMany({ where: { ...scope, deletedAt: null, cancelledAt: null } }),
-      tx.brokerSlip.findMany({ where: { ...scope, deletedAt: null } }),
-      tx.hireSlip.findMany({ where: { ...scope, deletedAt: null } }),
+      tx.chalan.findMany({
+        where: { ...scope, deletedAt: null, cancelledAt: null },
+        select: CHALAN_COLS,
+      }),
+      tx.brokerSlip.findMany({ where: { ...scope, deletedAt: null }, select: SLIP_OWNER_COLS }),
+      tx.hireSlip.findMany({ where: { ...scope, deletedAt: null }, select: HIRE_COLS }),
       tx.vehicle.findMany({ where: { ownershipType: "BROKER" }, select: { id: true } }),
       // supplier bills booked on credit (no payment mode at entry)
       tx.officeTransaction.findMany({
         where: { ...scope, deletedAt: null, txnType: "EXPENSE", paymentMode: null, partyId: { not: null } },
+        select: OFFICE_TXN_COLS,
       }),
       tx.vehicleExpenseVoucher.findMany({
         where: { ...scope, deletedAt: null, txnType: "EXPENSE", paymentMode: null, partyId: { not: null } },
+        select: { id: true, partyId: true, voucherNo: true, date: true, amount: true },
       }),
       tx.adblueTxn.findMany({
         where: {
@@ -232,8 +356,17 @@ async function collect(
           supplierId: { not: null },
           amount: { gt: 0 },
         },
+        select: {
+          id: true,
+          supplierId: true,
+          billNo: true,
+          refNo: true,
+          billDate: true,
+          date: true,
+          amount: true,
+        },
       }),
-      tx.staffSalary.findMany({ where: { ...scope, deletedAt: null } }),
+      tx.staffSalary.findMany({ where: { ...scope, deletedAt: null }, select: SALARY_COLS }),
       // a positive settlement = the company owes the driver; as-on mode also
       // fetches rows settled LATER (still open on that date)
       tx.driverSettlement.findMany({
@@ -243,6 +376,7 @@ async function collect(
           amount: { gt: 0 },
           ...(asOf ? {} : { status: "PENDING" }),
         },
+        select: DRIVER_SETTLEMENT_COLS,
       }),
       tx.driver.findMany({ select: { id: true, partyId: true, name: true } }),
     ]);
@@ -456,7 +590,7 @@ async function collect(
   // advances RECEIVED that nothing consumed — we owe them back to the party
   const advRecv = await tx.partyAdvance.findMany({
     where: { ...scope, deletedAt: null, kind: "RECEIVED" },
-    include: { uses: { select: { date: true, amount: true } } },
+    select: ADVANCE_COLS,
   });
   for (const a of advRecv) {
     const consumed = consumedAsOf(a);
@@ -476,6 +610,139 @@ async function collect(
   return out;
 }
 
+/**
+ * Cache backstop. Every action that writes a document this tile reads calls
+ * `revalidateOutstanding`, so the TTL only covers a missed path or a second
+ * instance — keep it short enough that any such gap self-heals in a minute.
+ */
+const CACHE_TTL = 60; // seconds
+
+type OutstandingParams = {
+  tenantId: string;
+  firmId: string;
+  /** the session's FY — the fallback when `fyId` names nothing real */
+  sessionFyId: string;
+  side: OutSide;
+  fyId?: string | null;
+  asOf?: string | null;
+};
+
+async function computeOutstanding(
+  params: OutstandingParams
+): Promise<OutstandingData & { fys: { id: string; label: string }[] }> {
+  const session = { tenantId: params.tenantId, firmId: params.firmId, fyId: params.sessionFyId };
+  const input = { fyId: params.fyId, asOf: params.asOf, side: params.side };
+  // "As on" reporting: with an FY or a custom date picked, the WHOLE
+  // position rewinds to that date — documents up to it, settlements up to
+  // it, ageing buckets measured FROM it. A bill paid after the date shows
+  // PENDING, exactly as it stood then. No selection → live as of today
+  // (docs still bounded to the session FY's end — no forward leak).
+  const scope = { firmId: session.firmId };
+  const data = await withTenant(session.tenantId, async (tx) => {
+    const fys = await tx.financialYear.findMany({
+      where: { firmId: session.firmId },
+      orderBy: { startDate: "desc" },
+      select: { id: true, label: true, endDate: true },
+    });
+    // unknown fyId falls back to the SESSION year, never silently the newest
+    const viewFy =
+      fys.find((f) => f.id === (input.fyId || session.fyId)) ??
+      fys.find((f) => f.id === session.fyId) ??
+      fys[0];
+    // validated here too — the action is callable directly, and a malformed
+    // string would otherwise become Invalid Date and silently empty the report
+    const asOfStr =
+      input.asOf && /^\d{4}-\d{2}-\d{2}$/.test(input.asOf) ? input.asOf : null;
+    // FY pick = the WHOLE of 31 March: seeded FYs stamp endDate at
+    // midnight, which would drop that day's intraday settlements
+    const fyEndFull = viewFy ? new Date(viewFy.endDate) : null;
+    fyEndFull?.setHours(23, 59, 59, 999);
+    const asOfDate = asOfStr
+      ? new Date(asOfStr + "T23:59:59")
+      : input.fyId && fyEndFull
+        ? fyEndFull
+        : null;
+    const collected = await collect(tx, scope, input.side, asOfDate);
+    const bound = asOfDate ?? viewFy?.endDate ?? null;
+    const docs = bound ? collected.filter((d) => d.date <= bound) : collected;
+    // only the parties these documents actually name — reading the whole
+    // party master to label a handful of rows scaled with the firm's
+    // address book, not with its outstanding. (Sequenced after collect on
+    // purpose: an interactive transaction runs on one connection, so the
+    // old Promise.all bought no parallelism anyway.)
+    const namedPartyIds = Array.from(new Set(docs.map((d) => d.partyId).filter(Boolean) as string[]));
+    const parties = namedPartyIds.length
+      ? await tx.party.findMany({
+          where: { id: { in: namedPartyIds } },
+          select: { id: true, name: true, mobile: true },
+        })
+      : [];
+    const partyById = new Map(parties.map((p) => [p.id, p]));
+    // ageing buckets measure from the AS-ON date, not today — the report
+    // reads exactly as if it had been printed that day
+    const now = (asOfDate ?? new Date()).getTime();
+
+    const byParty = new Map<string, AgeingRow>();
+    for (const d of docs) {
+      const key = d.partyId ?? `name:${(d.partyName ?? "").toLowerCase()}`;
+      const p = d.partyId ? partyById.get(d.partyId) : null;
+      let row = byParty.get(key);
+      if (!row) {
+        row = {
+          partyId: d.partyId,
+          party: p?.name ?? d.partyName ?? "(unknown)",
+          mobile: p?.mobile ?? null,
+          b0: 0,
+          b31: 0,
+          b61: 0,
+          b90: 0,
+          total: 0,
+          oldestDays: 0,
+          docs: [],
+        };
+        byParty.set(key, row);
+      }
+      const days = Math.max(0, Math.floor((now - d.date.getTime()) / dayMs));
+      if (days <= 30) row.b0 += d.outstanding;
+      else if (days <= 60) row.b31 += d.outstanding;
+      else if (days <= 90) row.b61 += d.outstanding;
+      else row.b90 += d.outstanding;
+      row.total += d.outstanding;
+      row.oldestDays = Math.max(row.oldestDays, days);
+      row.docs.push({
+        refNo: d.refNo,
+        date: d.date.toISOString(),
+        type: d.type,
+        amount: round2(d.amount),
+        settled: round2(d.settled),
+        outstanding: round2(d.outstanding),
+        days,
+      });
+    }
+    const rows = Array.from(byParty.values())
+      .map((r) => ({
+        ...r,
+        b0: round2(r.b0),
+        b31: round2(r.b31),
+        b61: round2(r.b61),
+        b90: round2(r.b90),
+        total: round2(r.total),
+        docs: r.docs.sort((a, b) => b.days - a.days),
+      }))
+      .sort((a, b) => b.total - a.total);
+    const totals = {
+      b0: round2(rows.reduce((s, r) => s + r.b0, 0)),
+      b31: round2(rows.reduce((s, r) => s + r.b31, 0)),
+      b61: round2(rows.reduce((s, r) => s + r.b61, 0)),
+      b90: round2(rows.reduce((s, r) => s + r.b90, 0)),
+      total: round2(rows.reduce((s, r) => s + r.total, 0)),
+      parties: rows.length,
+    };
+    return { rows, totals, fys: fys.map((f) => ({ id: f.id, label: f.label })) };
+  });
+  return data;
+}
+
 export async function getOutstandingAgeing(input: {
   side: OutSide;
   /** view another FY's AS-ON position — everything as it stood on 31 March */
@@ -483,107 +750,33 @@ export async function getOutstandingAgeing(input: {
   /** custom "as on" date (yyyy-mm-dd) — beats the FY choice */
   asOf?: string | null;
 }): Promise<{ ok: true; data: OutstandingData; fys: { id: string; label: string }[] } | { ok: false; error: string }> {
+  // the session is read out here on purpose: `unstable_cache` may not touch
+  // cookies, and the tenant/firm/FY it yields are part of the cache key
   const session = requireSession();
+  const params: OutstandingParams = {
+    tenantId: session.tenantId,
+    firmId: session.firmId,
+    sessionFyId: session.fyId,
+    side: input.side,
+    fyId: input.fyId ?? null,
+    asOf: input.asOf ?? null,
+  };
   try {
-    // "As on" reporting: with an FY or a custom date picked, the WHOLE
-    // position rewinds to that date — documents up to it, settlements up to
-    // it, ageing buckets measured FROM it. A bill paid after the date shows
-    // PENDING, exactly as it stood then. No selection → live as of today
-    // (docs still bounded to the session FY's end — no forward leak).
-    const scope = { firmId: session.firmId };
-    const data = await withTenant(session.tenantId, async (tx) => {
-      const fys = await tx.financialYear.findMany({
-        where: { firmId: session.firmId },
-        orderBy: { startDate: "desc" },
-        select: { id: true, label: true, endDate: true },
-      });
-      // unknown fyId falls back to the SESSION year, never silently the newest
-      const viewFy =
-        fys.find((f) => f.id === (input.fyId || session.fyId)) ??
-        fys.find((f) => f.id === session.fyId) ??
-        fys[0];
-      // validated here too — the action is callable directly, and a malformed
-      // string would otherwise become Invalid Date and silently empty the report
-      const asOfStr =
-        input.asOf && /^\d{4}-\d{2}-\d{2}$/.test(input.asOf) ? input.asOf : null;
-      // FY pick = the WHOLE of 31 March: seeded FYs stamp endDate at
-      // midnight, which would drop that day's intraday settlements
-      const fyEndFull = viewFy ? new Date(viewFy.endDate) : null;
-      fyEndFull?.setHours(23, 59, 59, 999);
-      const asOfDate = asOfStr
-        ? new Date(asOfStr + "T23:59:59")
-        : input.fyId && fyEndFull
-          ? fyEndFull
-          : null;
-      const [collected, parties] = await Promise.all([
-        collect(tx, scope, input.side, asOfDate),
-        tx.party.findMany({ select: { id: true, name: true, mobile: true } }),
-      ]);
-      const bound = asOfDate ?? viewFy?.endDate ?? null;
-      const docs = bound ? collected.filter((d) => d.date <= bound) : collected;
-      const partyById = new Map(parties.map((p) => [p.id, p]));
-      // ageing buckets measure from the AS-ON date, not today — the report
-      // reads exactly as if it had been printed that day
-      const now = (asOfDate ?? new Date()).getTime();
-
-      const byParty = new Map<string, AgeingRow>();
-      for (const d of docs) {
-        const key = d.partyId ?? `name:${(d.partyName ?? "").toLowerCase()}`;
-        const p = d.partyId ? partyById.get(d.partyId) : null;
-        let row = byParty.get(key);
-        if (!row) {
-          row = {
-            partyId: d.partyId,
-            party: p?.name ?? d.partyName ?? "(unknown)",
-            mobile: p?.mobile ?? null,
-            b0: 0,
-            b31: 0,
-            b61: 0,
-            b90: 0,
-            total: 0,
-            oldestDays: 0,
-            docs: [],
-          };
-          byParty.set(key, row);
-        }
-        const days = Math.max(0, Math.floor((now - d.date.getTime()) / dayMs));
-        if (days <= 30) row.b0 += d.outstanding;
-        else if (days <= 60) row.b31 += d.outstanding;
-        else if (days <= 90) row.b61 += d.outstanding;
-        else row.b90 += d.outstanding;
-        row.total += d.outstanding;
-        row.oldestDays = Math.max(row.oldestDays, days);
-        row.docs.push({
-          refNo: d.refNo,
-          date: d.date.toISOString(),
-          type: d.type,
-          amount: round2(d.amount),
-          settled: round2(d.settled),
-          outstanding: round2(d.outstanding),
-          days,
-        });
-      }
-      const rows = Array.from(byParty.values())
-        .map((r) => ({
-          ...r,
-          b0: round2(r.b0),
-          b31: round2(r.b31),
-          b61: round2(r.b61),
-          b90: round2(r.b90),
-          total: round2(r.total),
-          docs: r.docs.sort((a, b) => b.days - a.days),
-        }))
-        .sort((a, b) => b.total - a.total);
-      const totals = {
-        b0: round2(rows.reduce((s, r) => s + r.b0, 0)),
-        b31: round2(rows.reduce((s, r) => s + r.b31, 0)),
-        b61: round2(rows.reduce((s, r) => s + r.b61, 0)),
-        b90: round2(rows.reduce((s, r) => s + r.b90, 0)),
-        total: round2(rows.reduce((s, r) => s + r.total, 0)),
-        parties: rows.length,
-      };
-      return { rows, totals, fys: fys.map((f) => ({ id: f.id, label: f.label })) };
-    });
+    // every field the result varies by is in the key, so an as-on view can
+    // never be served for a live one (or one firm's figures for another's)
+    const data = await unstable_cache(
+      () => computeOutstanding(params),
+      [
+        "outstanding-ageing",
+        params.tenantId,
+        params.firmId,
+        params.sessionFyId,
+        params.side,
+        params.fyId ?? "",
+        params.asOf ?? "",
+      ],
+      { revalidate: CACHE_TTL, tags: [outstandingTag(params.tenantId)] }
+    )();
     const { fys, ...rest } = data;
     return { ok: true, data: rest, fys };
   } catch (err) {

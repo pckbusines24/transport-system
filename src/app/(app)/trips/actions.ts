@@ -12,6 +12,7 @@ import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { round2 } from "@/lib/calc/tds";
 import { tripLegTotal, tripLegBalance } from "@/lib/calc/trip";
 import { chalanTotals, slipTotals } from "@/lib/trip-docs";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 const TRIP_EXPENSE_CATEGORIES = [
   "DIESEL",
@@ -539,6 +540,7 @@ export async function saveTrip(input: unknown): Promise<SaveResult> {
     });
 
     revalidatePath("/trips");
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -587,6 +589,7 @@ export async function deleteTrip(id: string): Promise<{ ok: true } | { ok: false
       await audit(tx, session, { entity: "Trip", entityId: id, action: "DELETE", before });
     });
     revalidatePath("/trips");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to delete trip" };

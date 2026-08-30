@@ -124,7 +124,7 @@ export function FinanceTxnClient({
     }
   };
 
-  const columns: ColumnDef<FinanceTxnRow>[] = [
+  const columns: ColumnDef<FinanceTxnRow>[] = React.useMemo(() => [
     { accessorKey: "voucherNo", header: "Voucher No" },
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     {
@@ -197,7 +197,7 @@ export function FinanceTxnClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete]);
 
   return (
     <div className="space-y-3">

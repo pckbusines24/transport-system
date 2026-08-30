@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +33,7 @@ const money = (key: "gross" | "tdsAmt" | "netPayment", header: string): ColumnDe
 });
 
 export function TdsReportTable({ rows }: { rows: TdsReportRow[] }) {
-  const columns: ColumnDef<TdsReportRow>[] = [
+  const columns: ColumnDef<TdsReportRow>[] = React.useMemo(() => [
     { accessorKey: "voucherNo", header: "Voucher No" },
     {
       accessorKey: "voucherDate",
@@ -52,7 +53,7 @@ export function TdsReportTable({ rows }: { rows: TdsReportRow[] }) {
     money("netPayment", "Net Payment"),
     { accessorKey: "financialYear", header: "FY" },
     { accessorKey: "remarks", header: "Remarks" },
-  ];
+  ], []);
 
   return (
     <div className="space-y-2">

@@ -8,6 +8,7 @@ import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { actionError, optStr, zodError, type ActionResult } from "../_lib/util";
 
 const schema = z
@@ -64,6 +65,7 @@ export async function saveVehicle(input: unknown): Promise<ActionResult> {
     });
     revalidatePath("/masters/vehicles");
     revalidateTag(lookupTag.vehicles(session.tenantId));
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (e) {
     return actionError(e);
@@ -82,6 +84,7 @@ export async function deleteVehicle(id: string): Promise<ActionResult> {
     });
     revalidatePath("/masters/vehicles");
     revalidateTag(lookupTag.vehicles(session.tenantId));
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (e) {
     return actionError(e);
@@ -138,5 +141,6 @@ export async function importVehicles(formData: FormData): Promise<ImportSummary>
     })
   );
   revalidateTag(lookupTag.vehicles(session.tenantId));
+  revalidateOutstanding(session.tenantId);
   return summary;
 }

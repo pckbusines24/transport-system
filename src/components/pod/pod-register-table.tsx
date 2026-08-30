@@ -84,7 +84,7 @@ export function PodRegisterTable({
   const [toDelete, setToDelete] = React.useState<PodRegisterRow | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  const openEdit = (r: PodRegisterRow) =>
+  const openEdit = React.useCallback((r: PodRegisterRow) =>
     setEditing({
       id: r.id,
       docNo: r.docNo,
@@ -95,7 +95,7 @@ export function PodRegisterTable({
       poNumber: r.poNumber,
       gateEntryNo: r.gateEntryNo,
       remarks: r.remarks,
-    });
+    }), []);
 
   const saveEdit = async () => {
     if (!editing) return;
@@ -148,7 +148,7 @@ export function PodRegisterTable({
     }
   };
 
-  const columns: ColumnDef<PodRegisterRow>[] = [
+  const columns: ColumnDef<PodRegisterRow>[] = React.useMemo(() => [
     { accessorKey: "docNo", header: "Doc No" },
     {
       accessorKey: "docDate",
@@ -247,7 +247,7 @@ export function PodRegisterTable({
         </div>
       ),
     },
-  ];
+  ], [canDelete, openEdit]);
 
   return (
     <div className="space-y-2">

@@ -116,7 +116,7 @@ export function OfficeTxnClient({
     setForm({ ...emptyForm, txnType });
     setOpen(true);
   };
-  const openEdit = (row: OfficeTxnRow) => {
+  const openEdit = React.useCallback((row: OfficeTxnRow) => {
     setForm({
       id: row.id,
       dateText: formatDate(row.date),
@@ -135,7 +135,7 @@ export function OfficeTxnClient({
       lines: row.lines.map((l) => ({ headId: l.headId, amount: l.amount, remarks: l.remarks })),
     });
     setOpen(true);
-  };
+  }, []);
 
   const uploadAttachment = async (file: File | null) => {
     if (!file) return;
@@ -201,16 +201,16 @@ export function OfficeTxnClient({
     }
   };
 
-  const remove = async (row: OfficeTxnRow) => {
+  const remove = React.useCallback(async (row: OfficeTxnRow) => {
     if (!confirm(`Delete ${row.voucherNo}? Ledger postings will be reversed.`)) return;
     const res = await deleteOfficeTransaction(row.id);
     if (res.ok) {
       toast({ title: `${row.voucherNo} deleted` });
       router.refresh();
     } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
-  };
+  }, [router, toast]);
 
-  const columns: ColumnDef<OfficeTxnRow>[] = [
+  const columns: ColumnDef<OfficeTxnRow>[] = React.useMemo(() => [
     { accessorKey: "voucherNo", header: "Voucher No" },
     {
       accessorKey: "date",
@@ -326,7 +326,7 @@ export function OfficeTxnClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete, openEdit, remove]);
 
   return (
     <div className="space-y-4">

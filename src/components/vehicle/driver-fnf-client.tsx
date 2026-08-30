@@ -130,7 +130,7 @@ export function DriverFnfClient({
       )
     : 0;
 
-  const columns: ColumnDef<FnfRow>[] = [
+  const columns: ColumnDef<FnfRow>[] = React.useMemo(() => [
     { accessorKey: "settlementNo", header: "Settlement No" },
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     { accessorKey: "driver", header: "Driver" },
@@ -191,7 +191,7 @@ export function DriverFnfClient({
         </Button>
       ),
     },
-  ];
+  ], []);
 
   return (
     <div className="space-y-4">

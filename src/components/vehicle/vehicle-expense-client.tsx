@@ -149,7 +149,7 @@ export function VehicleExpenseClient({
     setForm((f) => ({ ...f, items: f.items.map((it) => ({ ...it, amount: share })) }));
   };
 
-  const openEdit = (row: VehicleExpenseRow) => {
+  const openEdit = React.useCallback((row: VehicleExpenseRow) => {
     setForm({
       id: row.id,
       dateText: formatDate(row.date),
@@ -171,7 +171,7 @@ export function VehicleExpenseClient({
       lines: row.lines.map((l) => ({ headId: l.headId, amount: l.amount, remarks: l.remarks })),
     });
     setOpen(true);
-  };
+  }, []);
 
   const submit = async () => {
     setBusy(true);
@@ -214,7 +214,7 @@ export function VehicleExpenseClient({
     }
   };
 
-  const columns: ColumnDef<VehicleExpenseRow>[] = [
+  const columns: ColumnDef<VehicleExpenseRow>[] = React.useMemo(() => [
     { accessorKey: "voucherNo", header: "Voucher No" },
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     { accessorKey: "head", header: "Head" },
@@ -303,7 +303,7 @@ export function VehicleExpenseClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete, openEdit, router, toast]);
 
   return (
     <div className="space-y-4">

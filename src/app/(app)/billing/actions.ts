@@ -12,6 +12,7 @@ import { consumeAdvances, partyAdvanceBalance, restoreAdvanceUses } from "@/lib/
 import { gstSplit, stateCodeFromGstin } from "@/lib/calc/gst";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import type { InvoiceKind } from "@prisma/client";
 
 // ---------------------------------------------------------------- types
@@ -582,9 +583,11 @@ export async function resyncInvoicesForLr(
   }
 }
 
-export async function saveInvoice(
-  input: unknown
-): Promise<{ ok: true; id: string } | { ok: false; error: string; alreadyBilledLr?: string }> {
+type SaveInvoiceResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; alreadyBilledLr?: string };
+
+export async function saveInvoice(input: unknown): Promise<SaveInvoiceResult> {
   const session = requireSession();
   const parsed = invoiceSchema.safeParse(input);
   if (!parsed.success) {
@@ -601,7 +604,9 @@ export async function saveInvoice(
   }
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    // annotated because binding the result to a const drops the contextual
+    // typing that was narrowing one inner `return { ok: false, ... }`
+    const res: SaveInvoiceResult = await withTenant(session.tenantId, async (tx) => {
       const before = data.id
         ? await tx.invoice.findFirst({
             where: { id: data.id, firmId: session.firmId, deletedAt: null },
@@ -1028,6 +1033,8 @@ export async function saveInvoice(
 
       return { ok: true as const, id: invoiceId };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Save failed";
     if (msg.includes("Unique constraint")) {
@@ -1051,7 +1058,7 @@ export async function deleteInvoice(
   } catch {
     return { ok: false, error: "Only ADMIN/OWNER may delete invoices." };
   }
-  return withTenant(session.tenantId, async (tx) => {
+  const res = await withTenant(session.tenantId, async (tx) => {
     const invoice = await tx.invoice.findFirst({
       where: { id, firmId: session.firmId, deletedAt: null },
       include: { lrs: true },
@@ -1076,6 +1083,8 @@ export async function deleteInvoice(
     });
     return { ok: true as const };
   });
+  if (res.ok) revalidateOutstanding(session.tenantId);
+  return res;
 }
 
 // ---------------------------------------------------------------- edit load

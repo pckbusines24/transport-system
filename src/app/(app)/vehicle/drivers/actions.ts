@@ -1,11 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
 import { withTenant, type Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
+import { lookupTag } from "@/lib/cached-lookups";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 /**
  * Driver Master — profile + fixed document slots + extra documents + vehicle
@@ -62,7 +64,7 @@ export async function saveDriver(
   await authorize(session, "driver", d.id ? "edit" : "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const slot = (s: { path?: string | null; name?: string | null } | null | undefined) => ({
         path: s?.path || null,
         name: s?.name || null,
@@ -183,6 +185,16 @@ export async function saveDriver(
       revalidatePath(REVALIDATE);
       return { ok: true as const, id, driverCode };
     });
+    if (res.ok) {
+      revalidateOutstanding(session.tenantId);
+      // a driver carries a linked ledger Party: a new driver CREATES one and an
+      // edit renames it, so the cached party dropdowns must be dropped too —
+      // same pair the parties master busts, since vehicle meta prints an owner
+      // party's name
+      revalidateTag(lookupTag.parties(session.tenantId));
+      revalidateTag(lookupTag.vehicles(session.tenantId));
+    }
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -286,6 +298,7 @@ export async function exitDriver(
       });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Exit failed" };
@@ -305,6 +318,7 @@ export async function reactivateDriver(
       });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Update failed" };
@@ -324,7 +338,7 @@ export async function deleteDriver(
   }
   await authorize(session, "driver", "delete");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driver.findFirst({ where: { id: driverId, deletedAt: null } });
       if (!before) return { ok: false as const, error: "Driver not found" };
       const [advances, settlements, salaries, trips] = await Promise.all([
@@ -350,6 +364,8 @@ export async function deleteDriver(
       revalidatePath(REVALIDATE);
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
   }

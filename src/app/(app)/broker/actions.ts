@@ -21,6 +21,7 @@ import {
   type OpenAdvance,
 } from "@/lib/party-advance";
 import { raiseShortage, recoverShortage, releaseShortage } from "@/lib/shortage";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import {
   ADVANCE_TYPES,
   advanceAmount,
@@ -620,6 +621,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
     });
 
     revalidatePath("/broker/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -689,6 +691,7 @@ export async function deleteBrokerSlip(
       await audit(tx, session, { entity: "BrokerSlip", entityId: id, action: "DELETE", before });
     });
     revalidatePath("/broker/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return {
@@ -724,6 +727,7 @@ export async function setBrokerSlipPodAttached(
       });
     });
     revalidatePath("/broker/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Update failed" };
@@ -763,7 +767,7 @@ export async function saveBrokerBalancePayment(
   }
   const data = parsed.data;
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const slip = await tx.brokerSlip.findFirst({
         where: { id: data.slipId, firmId: session.firmId, deletedAt: null },
       });
@@ -1036,6 +1040,8 @@ export async function saveBrokerBalancePayment(
       revalidatePath("/broker/register");
       return { ok: true as const, paidAmount };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Balance payment failed" };
   }
@@ -1076,6 +1082,7 @@ export async function setBrokerSlipPodFile(
       });
     });
     revalidatePath("/broker/register");
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Upload failed" };

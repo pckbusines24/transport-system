@@ -473,6 +473,17 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
             ...refNoLike("invoiceNo"),
             ...(input.partyId ? { partyId: input.partyId } : {}),
           },
+          // these tables are wide; the settlement math and the row labels
+          // below need only these columns
+          select: {
+            id: true,
+            kind: true,
+            invoiceNo: true,
+            invoiceDate: true,
+            partyId: true,
+            netTotal: true,
+            advance: true,
+          },
         });
         const settle = await invoiceSettlement(tx, { ...scope, invoices });
         for (const i of invoices) {
@@ -503,6 +514,19 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
               ...refNoLike("chalanNo"),
               ...(input.partyId ? { brokerId: input.partyId } : {}),
             },
+            select: {
+              id: true,
+              chalanNo: true,
+              chalanDate: true,
+              brokerId: true,
+              vehicleId: true,
+              grandTotal: true,
+              advanceTotal: true,
+              balPaidAmount: true,
+              balShortage: true,
+              balRoundOff: true,
+              balAdvanceAdjusted: true,
+            },
           }),
           tx.brokerSlip.findMany({
             where: {
@@ -512,11 +536,32 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
               ...refNoLike("slipNo"),
               ...(input.partyId ? { ownerId: input.partyId } : {}),
             },
+            select: {
+              id: true,
+              slipNo: true,
+              slipDate: true,
+              ownerId: true,
+              vehicleId: true,
+              vNetAmt: true,
+              vAdvance: true,
+              vPaidAmount: true,
+              vShortage: true,
+              vRoundOff: true,
+            },
           }),
           // a hire slip has no party link — with a party filter it is matched
           // below by the typed owner/broker name instead of dropped silently
           tx.hireSlip.findMany({
             where: { ...scope, deletedAt: null, ...dateIn("slipDate"), ...refNoLike("slipNo") },
+            select: {
+              id: true,
+              slipNo: true,
+              slipDate: true,
+              ownerName: true,
+              brokerName: true,
+              totalHire: true,
+              advance: true,
+            },
           }),
         ]);
         // only market vehicles are payable through the chalan

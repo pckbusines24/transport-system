@@ -1,8 +1,17 @@
 "use server";
 
+import { revalidateTag } from "next/cache";
 import { authorize } from "@/lib/authz";
 import { requireSession } from "./session";
 import { withTenant } from "./db";
+import {
+  getCityLookup,
+  getPartyLookup,
+  getProductLookup,
+  getUnitLookup,
+  getVehicleLookup,
+  lookupTag,
+} from "./cached-lookups";
 import { LedgerGroup } from "@prisma/client";
 
 export interface Option {
@@ -13,45 +22,38 @@ export interface Option {
 
 export async function getCityOptions(): Promise<Option[]> {
   const s = requireSession();
-  const cities = await withTenant(s.tenantId, (tx) =>
-    tx.city.findMany({ include: { state: true }, orderBy: { name: "asc" } })
-  );
-  return cities.map((c) => ({ value: c.id, label: c.name, meta: c.state.name }));
+  const cities = await getCityLookup(s.tenantId);
+  return cities.map((c) => ({ value: c.id, label: c.name, meta: c.stateName }));
 }
 
 export async function getPartyOptions(groups?: LedgerGroup[]): Promise<Option[]> {
   const s = requireSession();
-  const parties = await withTenant(s.tenantId, (tx) =>
-    tx.party.findMany({
-      where: {
-        isActive: true,
-        // Bank & Cash are maintained in their own master; never offer them as parties
-        // unless a caller (getBankOptions) asks for those groups explicitly.
-        ...(groups?.length
-          ? { ledgerGroup: { in: groups } }
-          : { ledgerGroup: { notIn: ["BANK", "CASH", "CARD"] } }),
-      },
-      orderBy: { name: "asc" },
-    })
-  );
-  return parties.map((p) => ({
-    value: p.id,
-    label: p.name,
-    // alias & transport name first: the combobox searches label+meta, so the
-    // short name or the transport's trade name both find the party
-    meta: [p.alias, p.transportName, p.gstin, p.pan].filter(Boolean).join(" · ") || undefined,
-  }));
+  // one cached read of the active party master, filtered here — the cached
+  // list is already ordered by name, so slicing it preserves the old order
+  const parties = await getPartyLookup(s.tenantId);
+  // Bank & Cash are maintained in their own master; never offer them as parties
+  // unless a caller (getBankOptions) asks for those groups explicitly.
+  const wanted = groups?.length
+    ? (g: string) => (groups as string[]).includes(g)
+    : (g: string) => g !== "BANK" && g !== "CASH" && g !== "CARD";
+  return parties
+    .filter((p) => wanted(p.ledgerGroup))
+    .map((p) => ({
+      value: p.id,
+      label: p.name,
+      // alias & transport name first: the combobox searches label+meta, so the
+      // short name or the transport's trade name both find the party
+      meta: [p.alias, p.transportName, p.gstin, p.pan].filter(Boolean).join(" · ") || undefined,
+    }));
 }
 
 export async function getVehicleOptions(): Promise<Option[]> {
   const s = requireSession();
-  const vehicles = await withTenant(s.tenantId, (tx) =>
-    tx.vehicle.findMany({ where: { isActive: true }, include: { owner: true }, orderBy: { number: "asc" } })
-  );
+  const vehicles = await getVehicleLookup(s.tenantId);
   return vehicles.map((v) => ({
     value: v.id,
     label: v.number,
-    meta: vehicleMeta(v),
+    meta: vehicleMeta({ ...v, owner: v.ownerName ? { name: v.ownerName } : null }),
   }));
 }
 
@@ -63,10 +65,8 @@ function vehicleMeta(v: { isOwn: boolean; ownershipType: string; ownerNames: str
 
 export async function getProductOptions(): Promise<Option[]> {
   const s = requireSession();
-  const products = await withTenant(s.tenantId, (tx) =>
-    tx.product.findMany({ include: { group: true }, orderBy: { name: "asc" } })
-  );
-  return products.map((p) => ({ value: p.id, label: p.name, meta: p.group.name }));
+  const products = await getProductLookup(s.tenantId);
+  return products.map((p) => ({ value: p.id, label: p.name, meta: p.groupName }));
 }
 
 /**
@@ -75,15 +75,19 @@ export async function getProductOptions(): Promise<Option[]> {
  */
 export async function getBankOptions(): Promise<Option[]> {
   const s = requireSession();
-  const heads = await withTenant(s.tenantId, (tx) =>
-    tx.party.findMany({
-      where: { isActive: true, ledgerGroup: { in: ["BANK", "CASH", "CARD"] } },
-      orderBy: { name: "asc" },
-    })
-  );
-  return heads.map((p) => ({ value: p.id, label: p.name, meta: p.ledgerGroup }));
+  const parties = await getPartyLookup(s.tenantId);
+  return parties
+    .filter((p) => p.ledgerGroup === "BANK" || p.ledgerGroup === "CASH" || p.ledgerGroup === "CARD")
+    .map((p) => ({ value: p.id, label: p.name, meta: p.ledgerGroup }));
 }
 
+/**
+ * Deliberately NOT cached, unlike its sibling lookups: the states master is
+ * lazily seeded during the /masters/states page RENDER when the table is empty
+ * (after a data wipe), and a page render cannot revalidate a cache tag — so a
+ * form opened before that seed would serve an empty list until the TTL lapsed.
+ * It is 30-odd tiny rows; the read is not worth that failure mode.
+ */
 export async function getStateOptions(): Promise<Option[]> {
   const s = requireSession();
   const states = await withTenant(s.tenantId, (tx) =>
@@ -94,14 +98,14 @@ export async function getStateOptions(): Promise<Option[]> {
 
 export async function getUnitOptions(): Promise<Option[]> {
   const s = requireSession();
-  const units = await withTenant(s.tenantId, (tx) => tx.unit.findMany({ orderBy: { name: "asc" } }));
+  const units = await getUnitLookup(s.tenantId);
   return units.map((u) => ({ value: u.id, label: u.name }));
 }
 
 /** Unit options keyed by NAME — for fields that store the unit name (e.g. Product.unit). */
 export async function getUnitNameOptions(): Promise<Option[]> {
   const s = requireSession();
-  const units = await withTenant(s.tenantId, (tx) => tx.unit.findMany({ orderBy: { name: "asc" } }));
+  const units = await getUnitLookup(s.tenantId);
   return units.map((u) => ({ value: u.name, label: u.name }));
 }
 
@@ -121,6 +125,9 @@ export async function createCityInline(input: {
       include: { state: true },
     })
   );
+  // the dropdowns read the cached master now — an inline create that skipped
+  // this would leave the new row invisible until the TTL lapsed
+  revalidateTag(lookupTag.cities(s.tenantId));
   return { value: city.id, label: city.name, meta: city.state.name };
 }
 
@@ -144,6 +151,9 @@ export async function createPartyInline(input: {
       data: { tenantId: s.tenantId, ...input, name: input.name.toUpperCase().trim() },
     })
   );
+  revalidateTag(lookupTag.parties(s.tenantId));
+  // vehicle meta prints the owner party's name, so it goes stale too
+  revalidateTag(lookupTag.vehicles(s.tenantId));
   return {
     value: party.id,
     label: party.name,
@@ -188,6 +198,7 @@ export async function createVehicleInline(input: {
     });
     return created;
   });
+  revalidateTag(lookupTag.vehicles(s.tenantId));
   return { value: v.id, label: v.number, meta: vehicleMeta(v) };
 }
 
@@ -229,6 +240,7 @@ export async function createProductInline(input: {
       include: { group: true },
     });
   });
+  revalidateTag(lookupTag.products(s.tenantId));
   return { value: p.id, label: p.name, meta: p.group.name };
 }
 

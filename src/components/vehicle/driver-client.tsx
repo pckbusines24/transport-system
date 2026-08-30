@@ -152,7 +152,7 @@ export function DriverClient({
 
   const [viewOf, setViewOf] = React.useState<DriverRow | null>(null);
 
-  const run = async (fn: () => Promise<{ ok: boolean; error?: string }>, done: () => void) => {
+  const run = React.useCallback(async (fn: () => Promise<{ ok: boolean; error?: string }>, done: () => void) => {
     setBusy(true);
     try {
       const res = await fn();
@@ -163,13 +163,13 @@ export function DriverClient({
     } finally {
       setBusy(false);
     }
-  };
+  }, [router, toast]);
 
   const openNew = () => {
     setForm(emptyForm);
     setFormOpen(true);
   };
-  const openEdit = (r: DriverRow) => {
+  const openEdit = React.useCallback((r: DriverRow) => {
     setForm({
       id: r.id,
       name: r.name,
@@ -189,13 +189,13 @@ export function DriverClient({
       otherDocs: r.otherDocs,
     });
     setFormOpen(true);
-  };
+  }, []);
 
-  const docCount = (r: DriverRow) =>
+  const docCount = React.useCallback((r: DriverRow) =>
     [r.licence, r.aadhaar, r.pan, r.photo, r.medical, r.police].filter((s) => s.path).length +
-    r.otherDocs.length;
+    r.otherDocs.length, []);
 
-  const columns: ColumnDef<DriverRow>[] = [
+  const columns: ColumnDef<DriverRow>[] = React.useMemo(() => [
     { accessorKey: "driverCode", header: "Code" },
     { accessorKey: "name", header: "Driver Name" },
     {
@@ -391,7 +391,7 @@ export function DriverClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete, docCount, openEdit, router, run, toast]);
 
   return (
     <div className="space-y-4">

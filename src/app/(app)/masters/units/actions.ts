@@ -1,10 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
 import { runImport, num as importNum, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
+import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { actionError, zodError, type ActionResult } from "../_lib/util";
@@ -35,6 +36,7 @@ export async function saveUnit(input: unknown): Promise<ActionResult> {
       return row.id;
     });
     revalidatePath("/masters/units");
+    revalidateTag(lookupTag.units(session.tenantId));
     return { ok: true, id };
   } catch (e) {
     return actionError(e);
@@ -51,6 +53,7 @@ export async function deleteUnit(id: string): Promise<ActionResult> {
       await audit(tx, session, { entity: "Unit", entityId: id, action: "DELETE", before });
     });
     revalidatePath("/masters/units");
+    revalidateTag(lookupTag.units(session.tenantId));
     return { ok: true, id };
   } catch (e) {
     return actionError(e);
@@ -62,7 +65,7 @@ export async function importUnits(formData: FormData): Promise<ImportSummary> {
   const session = requireSession();
   await authorize(session, "masters", "create");
   const file = formData.get("file");
-  return withTenant(session.tenantId, async (tx) =>
+  const summary = await withTenant(session.tenantId, async (tx) =>
     runImport(file instanceof File ? file : null, ["UNIT"], async (rec) => {
       const name = rec["UNIT"].toUpperCase();
       if (!name) throw new Error("Unit name is required");
@@ -76,4 +79,6 @@ export async function importUnits(formData: FormData): Promise<ImportSummary> {
       return "created";
     })
   );
+  revalidateTag(lookupTag.units(session.tenantId));
+  return summary;
 }

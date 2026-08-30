@@ -22,6 +22,7 @@ import {
 import { invoiceSettlement, payableSettlement, settledByRef } from "@/lib/settlement";
 import { round2 } from "@/lib/calc/tds";
 import { recoverShortage, releaseShortage, releaseShortageRecoveries } from "@/lib/shortage";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 /** Money figure for error messages. */
 const formatOpen = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-IN");
@@ -314,7 +315,7 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
   await authorize(session, "chalan", data.id ? "edit" : "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const existing = data.id
         ? await tx.chalan.findFirst({
             where: { id: data.id, firmId: session.firmId, deletedAt: null },
@@ -590,6 +591,8 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
       });
       return { ok: true as const, id };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -607,7 +610,7 @@ export async function saveChalanAdvances(
   const rows = parsed.data;
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const chalan = await tx.chalan.findFirst({
         where: { id: chalanId, firmId: session.firmId, deletedAt: null },
       });
@@ -778,6 +781,8 @@ export async function saveChalanAdvances(
       });
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -790,7 +795,7 @@ export async function finalizeChalan(
   const session = requireSession();
   await authorize(session, "chalan", "edit");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const chalan = await tx.chalan.findFirst({
         where: { id: chalanId, firmId: session.firmId, deletedAt: null },
         include: { lrs: true },
@@ -816,6 +821,8 @@ export async function finalizeChalan(
       });
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Finalize failed" };
   }
@@ -828,7 +835,7 @@ export async function deleteChalan(
   const session = requireSession();
   await authorize(session, "chalan", "delete");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const chalan = await tx.chalan.findFirst({
         where: { id: chalanId, firmId: session.firmId, deletedAt: null },
         include: { lrs: { include: { lr: { include: { invoiceLrs: true } } } } },
@@ -929,6 +936,8 @@ export async function deleteChalan(
       });
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
   }
@@ -954,7 +963,7 @@ export async function cancelChalan(
   const session = requireSession();
   await authorize(session, "chalan", "delete");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const chalan = await tx.chalan.findFirst({
         where: { id: chalanId, firmId: session.firmId, deletedAt: null },
         include: { lrs: { include: { lr: { include: { invoiceLrs: true } } } }, advances: true },
@@ -1081,6 +1090,8 @@ export async function cancelChalan(
       revalidatePath("/chalan/register");
       return { ok: true as const, advanceCreated };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Cancel failed" };
   }
@@ -1098,7 +1109,7 @@ export async function restoreChalan(
   const session = requireSession();
   await authorize(session, "chalan", "delete");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const chalan = await tx.chalan.findFirst({
         where: { id: chalanId, firmId: session.firmId, deletedAt: null },
       });
@@ -1202,6 +1213,8 @@ export async function restoreChalan(
       revalidatePath("/chalan/register");
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Restore failed" };
   }
@@ -1241,7 +1254,7 @@ export async function saveBalancePayment(
   }
   const data = parsed.data;
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const chalan = await tx.chalan.findFirst({
         where: { id: data.chalanId, firmId: session.firmId, deletedAt: null },
       });
@@ -1516,6 +1529,8 @@ export async function saveBalancePayment(
       revalidatePath("/chalan/register");
       return { ok: true as const, paidAmount };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Balance payment failed" };
   }

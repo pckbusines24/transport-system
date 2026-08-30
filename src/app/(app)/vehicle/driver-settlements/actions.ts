@@ -11,6 +11,7 @@ import { resolveRelativeOwner } from "@/lib/relative-owner";
 import { nextDocNumber } from "@/lib/sequences";
 import { round2 } from "@/lib/calc/tds";
 import { settledByRef, signedRemainder } from "@/lib/settlement";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { toNum } from "@/lib/utils";
 
 /**
@@ -41,7 +42,7 @@ export async function saveDriverSettlement(
   const d = parsed.data;
   await authorize(session, "driver", "create");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const created = await tx.driverSettlement.create({
         data: {
           tenantId: session.tenantId,
@@ -64,6 +65,8 @@ export async function saveDriverSettlement(
       revalidatePath(REVALIDATE);
       return { ok: true as const, id: created.id };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -89,7 +92,7 @@ export async function settleDriverSettlement(
   await authorize(session, "vouchers", "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const s = await tx.driverSettlement.findFirst({
         where: { id: d.id, firmId: session.firmId, deletedAt: null },
       });
@@ -123,6 +126,9 @@ export async function settleDriverSettlement(
         revalidatePath(REVALIDATE);
         return {
           ok: false as const,
+          // this branch REPORTS a failure but has still written: the row moved
+          // to SETTLED, which drops it out of the dashboard's pending payables
+          wrote: true as const,
           error: "Already fully settled through voucher allocation(s) — row closed, nothing to pay.",
         };
       }
@@ -228,6 +234,8 @@ export async function settleDriverSettlement(
       revalidatePath("/accounts/vouchers/register");
       return { ok: true as const, voucherNo };
     });
+    if (res.ok || "wrote" in res) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Settlement failed" };
   }
@@ -249,6 +257,7 @@ export async function deleteDriverSettlement(
       await audit(tx, session, { entity: "DriverSettlement", entityId: id, action: "DELETE", before });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
@@ -281,7 +290,7 @@ export async function settleDriverRunningBalance(
   await authorize(session, "vouchers", "create");
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const pending = await tx.driverSettlement.findMany({
         where: { firmId: session.firmId, driverId: d.driverId, status: "PENDING", deletedAt: null },
         orderBy: { date: "asc" },
@@ -392,6 +401,8 @@ export async function settleDriverRunningBalance(
       revalidatePath("/accounts/vouchers/register");
       return { ok: true as const, voucherNo, amount: net };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Settlement failed" };
   }
@@ -420,7 +431,7 @@ export async function updateDriverSettlement(
   const d = parsed.data;
   await authorize(session, "driver", "edit");
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const before = await tx.driverSettlement.findFirst({
         where: { id: d.id, firmId: session.firmId, deletedAt: null },
       });
@@ -451,6 +462,8 @@ export async function updateDriverSettlement(
       revalidatePath(REVALIDATE);
       return { ok: true as const };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Update failed" };
   }

@@ -101,7 +101,7 @@ export function LoanRegisterClient({
     setLoanOpen(true);
   };
 
-  const openEdit = (l: LoanRow) => {
+  const openEdit = React.useCallback((l: LoanRow) => {
     setLoanForm({
       id: l.id,
       loanNo: l.loanNo,
@@ -127,11 +127,11 @@ export function LoanRegisterClient({
       remarks: l.remarks,
     });
     setLoanOpen(true);
-  };
+  }, []);
 
   /** Open the shared EMI popup with every figure pre-calculated. */
-  const openEmi = (l: LoanRow, settlement: boolean) =>
-    setEmiTarget({ loanId: l.id, loanNo: l.loanNo, settlement });
+  const openEmi = React.useCallback((l: LoanRow, settlement: boolean) =>
+    setEmiTarget({ loanId: l.id, loanNo: l.loanNo, settlement }), []);
 
   const submitLoan = async () => {
     setBusy(true);
@@ -183,9 +183,9 @@ export function LoanRegisterClient({
     }
   };
 
-  const money = { numeric: true } satisfies DataTableColumnMeta<LoanRow>;
+  const money = React.useMemo(() => ({ numeric: true } satisfies DataTableColumnMeta<LoanRow>), []);
 
-  const columns: ColumnDef<LoanRow>[] = [
+  const columns: ColumnDef<LoanRow>[] = React.useMemo(() => [
     { accessorKey: "loanNo", header: "Loan No" },
     { accessorKey: "date", header: "Date", cell: ({ row }) => formatDate(row.original.date) },
     { accessorKey: "party", header: "Party" },
@@ -291,7 +291,7 @@ export function LoanRegisterClient({
         );
       },
     },
-  ];
+  ], [canDelete, money, openEdit, openEmi]);
 
   const isVehicleLoan = loanForm.loanType === "VEHICLE";
 

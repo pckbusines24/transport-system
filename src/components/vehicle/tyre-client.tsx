@@ -152,7 +152,7 @@ export function TyreClient({
     }
   };
 
-  const columns: ColumnDef<TyreRow>[] = [
+  const columns: ColumnDef<TyreRow>[] = React.useMemo(() => [
     { accessorKey: "tyreNo", header: "Tyre No" },
     { accessorKey: "tyreName", header: "Tyre Name" },
     {
@@ -303,7 +303,7 @@ export function TyreClient({
         </div>
       ),
     },
-  ];
+  ], [canDelete, canEdit, router, toast]);
 
   const openCycle = (t: TyreRow | null) => t?.cycles.find((c) => !c.removalDate);
 

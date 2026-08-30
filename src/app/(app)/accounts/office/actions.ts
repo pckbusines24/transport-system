@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { assertDateInFy } from "@/lib/fy-guard";
 import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
 import { settledByRef } from "@/lib/settlement";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 /**
  * Office Income & Expense — automatic double-entry posting (refType
@@ -97,7 +98,7 @@ export async function saveOfficeTransaction(
   }
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const head = await tx.accountHead.findFirst({ where: { id: d.headId } });
       if (!head) return { ok: false as const, error: "Head not found" };
       if (head.kind !== d.txnType) {
@@ -354,6 +355,8 @@ export async function saveOfficeTransaction(
       revalidatePath(REVALIDATE);
       return { ok: true as const, id, voucherNo };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Save failed" };
   }
@@ -396,6 +399,7 @@ export async function deleteOfficeTransaction(
       });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Delete failed" };

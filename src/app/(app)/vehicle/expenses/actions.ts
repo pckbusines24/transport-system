@@ -11,6 +11,7 @@ import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
 import { settledByRef } from "@/lib/settlement";
+import { revalidateOutstanding } from "@/lib/outstanding-cache";
 
 /**
  * Vehicle Expenses — office-I&E-style accounting voucher with vehicle-wise
@@ -133,7 +134,7 @@ export async function saveVehicleExpenseTxn(
   }
 
   try {
-    return await withTenant(session.tenantId, async (tx) => {
+    const res = await withTenant(session.tenantId, async (tx) => {
       const head = await tx.accountHead.findFirst({ where: { id: d.headId } });
       if (!head) return { ok: false as const, error: "Head not found" };
       const lineHeads = d.lines.length
@@ -477,6 +478,8 @@ export async function saveVehicleExpenseTxn(
       revalidatePath(REVALIDATE);
       return { ok: true as const, id, voucherNo };
     });
+    if (res.ok) revalidateOutstanding(session.tenantId);
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
   }
@@ -518,6 +521,7 @@ export async function deleteVehicleExpenseTxn(
       await audit(tx, session, { entity: "VehicleExpenseVoucher", entityId: id, action: "DELETE", before });
     });
     revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
