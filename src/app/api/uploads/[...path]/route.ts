@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "fs/promises";
-import path from "path";
 import { requireSession } from "@/lib/session";
+import { safeTenantKey, storage } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
-const CONTENT_TYPES: Record<string, string> = {
-  ".pdf": "application/pdf",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  // the firm logo/seal upload accepts webp, so serving has to know it too —
-  // without this it went out as octet-stream and no browser rendered it
-  ".webp": "image/webp",
-};
-
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { path: string[] } }
-) {
+/**
+ * Serve an uploaded file.
+ *
+ * The URL shape, the auth check and the tenant isolation are unchanged from
+ * the disk-backed version — only where the bytes come from has moved. Reads
+ * are proxied through this route rather than handed out as public or presigned
+ * URLs, so the bucket stays entirely private and one tenant can never be given
+ * a link to another's document.
+ *
+ * The proxy costs bandwidth. On Cloudflare R2 that egress is free, which is
+ * what makes this the right trade rather than a lazy one. If the app ever
+ * moves to a store that bills egress, short-TTL presigned URLs are the
+ * optimisation — but they weaken the isolation story, so they should be a
+ * deliberate decision, not a default.
+ */
+export async function GET(_req: NextRequest, { params }: { params: { path: string[] } }) {
   let session;
   try {
     session = requireSession();
@@ -26,54 +27,19 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const forbidden = () =>
-    NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  // decodes twice, rejects dot-segments, separators, NULs and empty segments,
+  // and requires the key to sit under this session's own tenant prefix
+  const key = safeTenantKey(params.path, session.tenantId);
+  if (!key) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
 
-  // Harden every segment BEFORE any path math: decode (twice, to catch
-  // double-encoding), then reject dot-segments, separators, NULs and empties —
-  // an encoded ".." must never survive into the resolved path.
-  const segments: string[] = [];
-  for (const raw of params.path) {
-    let seg = raw;
-    try {
-      for (let i = 0; i < 2; i++) seg = decodeURIComponent(seg);
-    } catch {
-      return forbidden();
-    }
-    if (
-      !seg ||
-      seg === "." ||
-      seg === ".." ||
-      seg.includes("/") ||
-      seg.includes("\\") ||
-      seg.includes("\0")
-    ) {
-      return forbidden();
-    }
-    segments.push(seg);
-  }
-  // tenant isolation: only serve files under the session tenant's directory
-  if (segments[0] !== session.tenantId) return forbidden();
+  const obj = await storage().get(key);
+  if (!obj) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
 
-  const uploadRoot = path.resolve(process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads"));
-  const tenantRoot = path.resolve(uploadRoot, session.tenantId);
-  const absPath = path.resolve(uploadRoot, segments.join("/"));
-  // belt and braces: the RESOLVED path must stay inside the TENANT directory
-  if (absPath !== tenantRoot && !absPath.startsWith(tenantRoot + path.sep)) {
-    return forbidden();
-  }
-
-  try {
-    const data = await readFile(absPath);
-    const ext = path.extname(absPath).toLowerCase();
-    return new NextResponse(new Uint8Array(data), {
-      headers: {
-        "Content-Type": CONTENT_TYPES[ext] ?? "application/octet-stream",
-        "Content-Disposition": `inline; filename="${path.basename(absPath)}"`,
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
-  } catch {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-  }
+  return new NextResponse(new Uint8Array(obj.body), {
+    headers: {
+      "Content-Type": obj.contentType,
+      "Content-Disposition": `inline; filename="${key.split("/").pop()}"`,
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
 }

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { requireSession } from "@/lib/session";
+import { buildKey, contentTypeFor, storage } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -52,12 +50,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const uploadDir = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
-  const relPath = `${session.tenantId}/pod/${randomUUID()}.${ext}`;
-  const absPath = path.join(uploadDir, relPath);
-  await mkdir(path.dirname(absPath), { recursive: true });
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(absPath, buffer);
+  // The object is stored here and its key returned; the caller writes that key
+  // into the Pod row. Object first, row second — an unreferenced object is a
+  // harmless orphan the sweep collects, whereas a row pointing at a file that
+  // was never written is a broken document in an audit trail.
+  const key = buildKey(session.tenantId, "pod", ext);
+  await storage().put(key, Buffer.from(await file.arrayBuffer()), contentTypeFor(key));
 
-  return NextResponse.json({ ok: true, path: relPath, size: file.size });
+  return NextResponse.json({ ok: true, path: key, size: file.size });
 }

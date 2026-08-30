@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { requireSession } from "@/lib/session";
+import { buildKey, contentTypeFor, storage } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -47,11 +45,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const uploadDir = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
-  const relPath = `${session.tenantId}/docreg/${randomUUID()}.${ext}`;
-  const absPath = path.join(uploadDir, relPath);
-  await mkdir(path.dirname(absPath), { recursive: true });
-  await writeFile(absPath, Buffer.from(await file.arrayBuffer()));
+  const key = buildKey(session.tenantId, "docreg", ext);
+  await storage().put(key, Buffer.from(await file.arrayBuffer()), contentTypeFor(key));
 
-  return NextResponse.json({ ok: true, path: relPath, name: file.name, size: file.size });
+  return NextResponse.json({ ok: true, path: key, name: file.name, size: file.size });
 }

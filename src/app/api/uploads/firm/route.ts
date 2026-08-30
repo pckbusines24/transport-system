@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "fs/promises";
 import path from "path";
 import { requireSession } from "@/lib/session";
+import { safeTenantKey, storage } from "@/lib/storage";
 import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
@@ -26,7 +26,8 @@ const LEGACY_TYPES: Record<string, string> = {
 
 /**
  * POST multipart: { file, kind: "logo" | "seal" }
- * Saves under UPLOAD_DIR/<tenantId>/firm/ and updates Firm.logoPath / sealPath.
+ * Stores the bytes on the Firm row itself; Firm.logoPath / sealPath remain only
+ * for reading uploads made before that change.
  * Serving is handled by the shared /api/uploads/[...path] route.
  */
 export async function POST(req: NextRequest) {
@@ -132,15 +133,17 @@ export async function GET(req: NextRequest) {
   let contentType = mime;
 
   if (!body && legacyPath) {
-    const uploadDir = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
-    const absPath = path.resolve(uploadDir, legacyPath);
-    if (absPath.startsWith(path.resolve(uploadDir) + path.sep)) {
-      try {
-        body = await readFile(absPath);
-        contentType = LEGACY_TYPES[path.extname(absPath).toLowerCase()] ?? contentType;
-      } catch {
-        // the file is gone — the usual case, and why this moved into the DB
+    // uploads made before logo/seal bytes moved onto the Firm row. legacyPath
+    // comes from this firm's own record, but it is still a stored string, so
+    // it goes through the same validation as any caller-supplied key.
+    const key = safeTenantKey(legacyPath.split("/"), session.tenantId);
+    if (key) {
+      const legacy = await storage().get(key);
+      if (legacy) {
+        body = legacy.body;
+        contentType = LEGACY_TYPES[path.extname(key).toLowerCase()] ?? contentType;
       }
+      // otherwise the file is gone — the usual case, and why this moved into the DB
     }
   }
 

@@ -1,0 +1,60 @@
+# DigitalOcean App Platform spec — the equivalent of render.yaml.
+#
+# Apply with:
+#   doctl apps create --spec app.yaml
+#   doctl apps update <app-id> --spec app.yaml
+#
+# Notes that matter:
+#  - App Platform is STATELESS. There is no persistent disk, which is exactly
+#    why uploads move to object storage; STORAGE_DRIVER=s3 is not optional here.
+#  - Builds get 4 vCPU / 10 GiB regardless of instance size, so the 1.8 GB
+#    `next build` fits on any tier. The RUNTIME is the constraint: this app
+#    holds ~375 MB resident at idle, so the 512 MB instance is too tight —
+#    basic-xs (1 GB) is the smallest safe size.
+#  - `npm start` already runs `prisma migrate deploy` before `next start`, so
+#    migrations apply on every release, as they did on Render.
+#  - Put the app in the SAME region as the database. This app issues many
+#    queries per page and a cross-region hop turns into seconds.
+name: transport-system
+region: blr1
+services:
+  - name: web
+    github:
+      repo: pckbusines24/transport-system
+      branch: main
+      deploy_on_push: true
+    build_command: npm ci && npm run build
+    run_command: npm start
+    instance_size_slug: basic-xs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /login
+    envs:
+      - key: NODE_VERSION
+        value: "20.12.2"
+      # pooled connection; keep connection_limit low — one instance, one pool
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      # direct connection, used by prisma migrate deploy
+      - key: DIRECT_DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: AUTH_SECRET
+        type: SECRET
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: S3_BUCKET
+        value: transport-tms-uploads
+      # R2: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+      - key: S3_ENDPOINT
+        type: SECRET
+      - key: S3_REGION
+        value: auto
+      - key: S3_ACCESS_KEY_ID
+        type: SECRET
+      - key: S3_SECRET_ACCESS_KEY
+        type: SECRET
+      - key: NEXT_PUBLIC_APP_NAME
+        value: TransportTMS
