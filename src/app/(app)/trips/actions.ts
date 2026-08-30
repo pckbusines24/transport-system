@@ -316,14 +316,14 @@ export async function saveTrip(input: unknown): Promise<SaveResult> {
           include: { expenses: true },
         });
         if (before.deletedAt) throw new Error("Trip has been deleted");
-        // chain lock: a paid hishab is frozen — editing it would desync the
+        // chain lock: paid accounts are frozen — editing them would desync the
         // money already handed over via the settlement
         const settled = await tx.driverSettlement.findFirst({
           where: { tripId: data.id, deletedAt: null, status: "SETTLED" },
         });
         if (settled) {
           throw new Error(
-            "Is trip ka driver settlement PAID ho chuka hai — pehle woh settlement/voucher reverse karo, fir trip sheet ka hishab badlega."
+            "This trip's driver settlement is already PAID — reverse that settlement/voucher first, then the trip sheet's accounts can change."
           );
         }
         await tx.tripExpense.deleteMany({ where: { tripId: data.id } });
@@ -500,7 +500,7 @@ export async function saveTrip(input: unknown): Promise<SaveResult> {
       }
 
       // ---- ACTUAL method, relative vehicle: the sheet's manual operating
-      // expenses were spent on the owner's gaadi — each component lands on
+      // expenses were spent on the owner's vehicle — each component lands on
       // HIS ledger (urea/diesel/toll keep their own existing routes)
       await reverseLedger(tx, "TRIP_OPEX", savedId);
       if (
@@ -567,7 +567,7 @@ export async function deleteTrip(id: string): Promise<{ ok: true } | { ok: false
       });
       if (settled) {
         throw new Error(
-          "Is trip ka driver settlement PAID ho chuka hai — pehle woh settlement/voucher reverse karo, fir trip delete hoga."
+          "This trip's driver settlement is already PAID — reverse that settlement/voucher first, then the trip can be deleted."
         );
       }
       await tx.trip.update({ where: { id }, data: { deletedAt: new Date() } });

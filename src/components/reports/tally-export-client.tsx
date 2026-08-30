@@ -63,7 +63,7 @@ export function TallyExportClient({
 
   const doExport = async () => {
     if (!selected.size) {
-      toast({ variant: "destructive", title: "Kuch select nahi hai" });
+      toast({ variant: "destructive", title: "Nothing selected" });
       return;
     }
     setBusy(true);
@@ -80,7 +80,7 @@ export function TallyExportClient({
         toast({
           title: `${res.exported} vouchers exported`,
           description:
-            res.skipped > 0 ? `${res.skipped} pehle se exported the — skip hue` : undefined,
+            res.skipped > 0 ? `${res.skipped} were already exported — skipped` : undefined,
         });
         router.refresh();
       } else {
@@ -182,7 +182,7 @@ export function TallyExportClient({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
-                  Is period mein is module ka kuch nahi mila.
+                  Nothing found for this module in this period.
                 </td>
               </tr>
             )}

@@ -154,7 +154,7 @@ export function ChalanForm({
   const router = useRouter();
   const searchParams = useSearchParams();
   // the register view's filters, carried in so we can land back EXACTLY
-  // where the user left (date range, broker, vehicle, tab, page — sab)
+  // where the user left (date range, broker, vehicle, tab, page — everything)
   const registerReturn = `/chalan/register${searchParams.get("ret") ? `?${searchParams.get("ret")}` : ""}`;
   const { toast } = useToast();
 

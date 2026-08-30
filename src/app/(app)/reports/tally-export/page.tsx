@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const MODULES: { value: TallyModule; label: string }[] = [
   { value: "CHALAN", label: "Chalan (Purchase side)" },
   { value: "BILLING", label: "Billing (Sales)" },
-  { value: "SLIP", label: "Broker Slip (dono side)" },
+  { value: "SLIP", label: "Broker Slip (both sides)" },
   { value: "VOUCHERS", label: "Receipts / Payments (Accounts)" },
   { value: "EXPENSES", label: "Vehicle Expenses" },
   { value: "OFFICE", label: "Office Income / Expenses" },
@@ -21,15 +21,15 @@ const MODULES: { value: TallyModule; label: string }[] = [
 
 const HINTS: Record<TallyModule, string> = {
   CHALAN:
-    "Sirf Broker / Relative gaadiyon ke FINAL chalan — own gaadi ka chalan Tally mein nahi jata. Period chalan/advance/balance kisi bhi entry se match karta hai.",
+    "Only FINAL chalans of Broker / Relative vehicles — an own vehicle's chalan does not go to Tally. The period matches on any chalan/advance/balance entry.",
   BILLING:
-    "Har bill ek Sales voucher — pura amount ek saath, ref = bill no. Paisa aane ki entries 'Receipts / Payments' module se jayengi.",
-  SLIP: "Party side (Sales + katauti journals + receipts) hamesha; owner side sirf Broker/Relative gaadi par — own gaadi ki sirf party side.",
+    "Each bill is one Sales voucher — full amount in a single line, ref = bill no. Money-received entries go from the 'Receipts / Payments' module.",
+  SLIP: "Party side (Sales + deduction journals + receipts) always; owner side only on Broker/Relative vehicles — an own vehicle gets the party side only.",
   VOUCHERS:
-    "Accounts ke Receipt/Payment vouchers — TDS/Shortage/Other/Round-off alag lines, allocations se bill-wise Agst Refs (billing receipts, voucher-settled chalans, supplier payments sab yahi).",
+    "Receipt/Payment vouchers from Accounts — separate TDS/Shortage/Other/Round-off lines, bill-wise Agst Refs from the allocations (billing receipts, voucher-settled chalans and supplier payments all come from here).",
   EXPENSES:
-    "Vehicle expense vouchers — paid wale Payment (Dr head / Cr bank-cash-card), udhaar wale Journal (Cr supplier). Gaadi-wise allocation ki koi entry nahi jati.",
-  OFFICE: "Office income/expense entries — paid → Payment/Receipt, udhaar → Journal supplier ke saath.",
+    "Vehicle expense vouchers — paid ones as Payment (Dr head / Cr bank-cash-card), credit ones as Journal (Cr supplier). No entry goes across for the vehicle-wise allocation.",
+  OFFICE: "Office income/expense entries — paid → Payment/Receipt, credit → Journal with the supplier.",
 };
 
 /** Reports → Tally Export: all modules in the user's exact Tally entry style,
@@ -92,9 +92,9 @@ export default async function TallyExportPage({
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        {HINTS[activeModule]} Download ke baad Tally Prime mein: <b>Alt+O → Import → Transactions</b>;
-        pehli baar &quot;Party Masters&quot; bhi. Har voucher ek hi baar jata hai — badla hua
-        document &quot;CHANGED&quot; dikhega aur dobara chala jayega.
+        {HINTS[activeModule]} After the download, in Tally Prime: <b>Alt+O → Import → Transactions</b>;
+        the first time, &quot;Party Masters&quot; as well. Each voucher goes across only once — a changed
+        document shows as &quot;CHANGED&quot; and goes across again.
       </p>
       <FilterBar
         filters={[
@@ -104,7 +104,7 @@ export default async function TallyExportPage({
             label: "Module",
             options: MODULES.map((m) => ({ value: m.value, label: m.label })),
           },
-          { type: "daterange", key: "date", label: "Period (koi bhi entry)" },
+          { type: "daterange", key: "date", label: "Period (any entry)" },
         ]}
       />
       {/* key: filter/module change remounts the client so the selection resets */}

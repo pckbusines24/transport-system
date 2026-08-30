@@ -1895,7 +1895,7 @@ model TripExpense {
   @@index([tenantId])
 }
 
-// Malik Nikasi: an owner drawing money out of a vehicle's earnings. Not an
+// Owner Withdrawal: an owner drawing money out of a vehicle's earnings. Not an
 // expense — it never touches the vehicle P&L's net; it only reduces the
 // vehicle's running balance (lifetime net − lifetime withdrawals). Posts to
 // the owner party's ledger (DEBIT) and the paying bank/cash book (CREDIT).
@@ -1905,7 +1905,7 @@ model VehicleWithdrawal {
   firmId        String
   fyId          String
   vehicleId     String
-  partyId       String // the malik (owner party) who took the money
+  partyId       String // the owner party who took the money
   payPartyId    String // BANK / CASH / CARD party the money left from
   date          DateTime
   amount        Decimal   @db.Decimal(14, 2)

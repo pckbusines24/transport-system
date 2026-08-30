@@ -562,7 +562,7 @@ export function OfficeTxnClient({
             <div className="space-y-1 sm:col-span-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">
-                  Head-wise Split (optional — same bill, alag-alag heads; jaise Spare Parts +
+                  Head-wise Split (optional — same bill, different heads; e.g. Spare Parts +
                   Repair Labour)
                 </Label>
                 <Button

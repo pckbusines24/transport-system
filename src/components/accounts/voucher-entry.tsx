@@ -1257,7 +1257,7 @@ export function VoucherEntry({
       <div className="flex flex-wrap items-center justify-end gap-2">
         {edit && (
           <span className="mr-auto rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-medium">
-            Editing voucher {edit.voucherNo} — Save par purani entries reverse hokar nayi post hongi
+            Editing voucher {edit.voucherNo} — on Save the old entries are reversed and new ones posted
           </span>
         )}
         <Button

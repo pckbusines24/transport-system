@@ -112,7 +112,7 @@ export function PurchaseSaleClient({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={monthKeys.length + 4} className="px-3 py-6 text-center text-muted-foreground">
-                  Is period mein kuch nahi mila.
+                  Nothing found in this period.
                 </td>
               </tr>
             )}

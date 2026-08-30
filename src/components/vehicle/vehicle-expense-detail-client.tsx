@@ -30,7 +30,7 @@ export interface VehicleExpenseDetailRow {
   ownershipType: string;
   /** expense total */
   total: number;
-  /** INCOME vouchers allocated to the vehicle (scrap sale, kiraya, ...) */
+  /** INCOME vouchers allocated to the vehicle (scrap sale, rent, ...) */
   income: number;
   incomeEntries: HeadDetail["entries"];
   /** total − income */
@@ -193,7 +193,7 @@ export function VehicleExpenseDetailClient({
           <div className="mt-1 text-2xl font-semibold tabular-nums text-emerald-600">
             {lakh(t.income)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">scrap / kiraya (INCOME vouchers)</div>
+          <div className="mt-1 text-xs text-muted-foreground">scrap / rent (INCOME vouchers)</div>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -228,7 +228,7 @@ export function VehicleExpenseDetailClient({
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="rounded-lg border bg-card p-4">
           <div className="text-sm font-semibold">Month-wise Expenses — all vehicles</div>
-          <div className="mb-2 text-xs text-muted-foreground">kaunse mahine kitna kharcha</div>
+          <div className="mb-2 text-xs text-muted-foreground">expense by month</div>
           {t.months.length ? (
             <>
               <div className="flex h-32 items-end gap-2 border-b px-1">
@@ -286,7 +286,7 @@ export function VehicleExpenseDetailClient({
       {/* overall share bar */}
       <div className="rounded-lg border bg-card p-4">
         <div className="text-sm font-semibold">Where the money went — all vehicles</div>
-        <div className="mb-2 text-xs text-muted-foreground">har head ka hissa</div>
+        <div className="mb-2 text-xs text-muted-foreground">share of each head</div>
         <div className="flex h-4 gap-[2px] overflow-hidden rounded">
           {t.sorted.map(([name, amt]) => (
             <i

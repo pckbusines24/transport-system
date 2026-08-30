@@ -27,9 +27,9 @@ export interface RouteRow {
   avgFreight: number;
   /** avg per-MT rate the party pays (from LR items / slip party rate) */
   avgPartyRate: number;
-  /** avg market gaadi cost per trip on this lane */
+  /** avg market vehicle cost per trip on this lane */
   avgVehicleAmt: number;
-  /** avg party freight − avg gaadi cost; null when either side has no data */
+  /** avg party freight − avg vehicle cost; null when either side has no data */
   marginPerTrip: number | null;
   status: "ALIVE" | "COOLING" | "SLEEPING" | "OCCASIONAL";
   topParties: { name: string; mobile: string | null; trips: number }[];
@@ -160,7 +160,7 @@ export function RoutesClient({ rows }: { rows: RouteRow[] }) {
                   <td className="whitespace-nowrap px-2 py-1.5">
                     {formatDate(r.lastTripDate)}
                     <span className={`ml-1 text-xs ${r.daysSince > 20 ? "font-bold text-destructive" : "text-muted-foreground"}`}>
-                      ({r.daysSince} din)
+                      ({r.daysSince} days)
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
@@ -198,7 +198,7 @@ export function RoutesClient({ rows }: { rows: RouteRow[] }) {
         </table>
       </div>
 
-      {/* Bhav Memory: rate history both sides + top parties with call links */}
+      {/* Rate Memory: rate history both sides + top parties with call links */}
       <Dialog open={!!partiesFor} onOpenChange={(o) => !o && setPartiesFor(null)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
@@ -233,7 +233,7 @@ export function RoutesClient({ rows }: { rows: RouteRow[] }) {
                   {partiesFor.avgPartyRate > 0 && ` (@${partiesFor.avgPartyRate.toFixed(2)}/MT)`}
                 </div>
               </div>
-              {/* gaadi side */}
+              {/* vehicle side */}
               <div className="rounded-md border p-2">
                 <div className="mb-1 text-xs font-black uppercase text-muted-foreground">
                   Vehicle Side — last {partiesFor.vehicleHistory.length} market vehicles

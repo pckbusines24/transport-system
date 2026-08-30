@@ -535,7 +535,7 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
           )
         ) {
           throw new Error(
-            "Ye chalan/broker-slip ka settlement voucher hai — ise yahan se DELETE karke document se dobara settle karein; register se edit nahi hota."
+            "This is a chalan/broker-slip settlement voucher — DELETE it here and settle again from the document; it cannot be edited from the register."
           );
         }
         prevRowShortage = round2(

@@ -9,7 +9,7 @@ import { audit } from "@/lib/audit";
 import { postLedger, reverseLedger } from "@/lib/ledger";
 
 /**
- * Malik Nikasi — an owner drawing money out of a vehicle's earnings.
+ * Owner Withdrawal — an owner drawing money out of a vehicle's earnings.
  * Not an expense: net profit stays untouched; only the vehicle's running
  * balance (lifetime net − lifetime withdrawals) goes down. Ledger: DEBIT the
  * owner party, CREDIT the paying bank/cash party — so the owner's ledger and
@@ -17,7 +17,7 @@ import { postLedger, reverseLedger } from "@/lib/ledger";
  */
 const withdrawalSchema = z.object({
   vehicleId: z.string().min(1, "Vehicle is required"),
-  partyId: z.string().min(1, "Malik (party) is required"),
+  partyId: z.string().min(1, "Owner (party) is required"),
   payPartyId: z.string().min(1, "Paid-from bank/cash is required"),
   date: z.string().min(1, "Date is required"), // ISO yyyy-mm-dd
   amount: z.number().min(0.01, "Amount must be positive"),
@@ -47,7 +47,7 @@ export async function saveVehicleWithdrawal(
         }),
       ]);
       if (!vehicle) return { ok: false as const, error: "Vehicle not found (Own/Relative only)." };
-      if (!party) return { ok: false as const, error: "Malik party not found." };
+      if (!party) return { ok: false as const, error: "Owner party not found." };
       if (!payParty) return { ok: false as const, error: "Paid-from must be a Bank/Cash/Card party." };
 
       const created = await tx.vehicleWithdrawal.create({
@@ -66,7 +66,7 @@ export async function saveVehicleWithdrawal(
       });
 
       const refNo = `NIK-${created.id.slice(-6).toUpperCase()}`;
-      const narration = `Malik nikasi — ${vehicle.number}${d.remarks ? ` (${d.remarks})` : ""}`;
+      const narration = `Owner withdrawal — ${vehicle.number}${d.remarks ? ` (${d.remarks})` : ""}`;
       await postLedger(tx, session, [
         {
           date: new Date(d.date),

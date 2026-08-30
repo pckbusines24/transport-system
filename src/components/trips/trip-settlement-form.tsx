@@ -185,7 +185,7 @@ export function TripSettlementForm({
           setPendingError(
             e instanceof Error && e.message
               ? e.message
-              : "Pending chalans load nahi hue — page refresh karke dobara try karein."
+              : "Pending chalans could not be loaded — refresh the page and try again."
           );
         }
       });
@@ -686,7 +686,7 @@ export function TripSettlementForm({
                   <tr>
                     {pendingError ? (
                       <td colSpan={12} className={`${cell} py-2 text-center text-destructive`}>
-                        Pending list load nahi hui: {pendingError}
+                        Pending list could not be loaded: {pendingError}
                       </td>
                     ) : (
                       <td colSpan={12} className={`${cell} py-2 text-center text-muted-foreground`}>

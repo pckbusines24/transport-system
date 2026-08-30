@@ -127,7 +127,7 @@ export function VoucherRegisterTable({
             // slip — delete here and re-settle from the document instead
             <span
               className="px-1 text-[10px] text-muted-foreground"
-              title="Chalan/slip ka settlement voucher — edit ke liye delete karke document se dobara settle karo"
+              title="Settlement voucher of a Chalan/slip — to edit, delete it and settle again from the document"
             >
               settle
             </span>

@@ -8,8 +8,8 @@ import { RoutesClient, type RouteRow } from "./routes-client";
 export const dynamic = "force-dynamic";
 
 /**
- * Route Heartbeat + Rate Memory — which lanes are alive, and at what bhav.
- * Party side comes from LRs and broker-slip party amounts; the vehicle (gaadi)
+ * Route Heartbeat + Rate Memory — which lanes are alive, and at what rate.
+ * Party side comes from LRs and broker-slip party amounts; the vehicle
  * side comes from market chalans (lorry hire, lane derived from the chalan's
  * LRs) and broker-slip owner amounts. Everything is derived from data already
  * entered; nothing new to key in.
@@ -72,7 +72,7 @@ async function computeRouteRows(tenantId: string, firmId: string): Promise<Route
           vehicleId: true,
         },
       }),
-      // market chalans: lorry hire is the gaadi bhav; the lane comes from the
+      // market chalans: lorry hire is the vehicle rate; the lane comes from the
       // chalan's own LRs (first linked LR decides the route)
       tx.chalan.findMany({
         where: { ...scope, cancelledAt: null },
@@ -157,7 +157,7 @@ async function computeRouteRows(tenantId: string, firmId: string): Promise<Route
   }
   for (const c of data.chalans) {
     const v = vehicleOf.get(c.vehicleId);
-    // own/relative hire is internal hisab, not the market bhav
+    // own/relative hire is an internal settlement, not the market rate
     if (!v || v.ownershipType !== "BROKER") continue;
     const first = c.lrs[0]?.lr;
     const key = first ? laneOf(first.sourceCityId, first.destCityId) : null;
@@ -195,7 +195,7 @@ async function computeRouteRows(tenantId: string, firmId: string): Promise<Route
       const avgVehicleAmt = r.vehicle.length
         ? r2(r.vehicle.reduce((s, t) => s + t.amount, 0) / r.vehicle.length)
         : 0;
-      // per-trip margin: what the party pays vs what a market gaadi costs here
+      // per-trip margin: what the party pays vs what a market vehicle costs here
       const marginPerTrip = avgFreight > 0 && avgVehicleAmt > 0 ? r2(avgFreight - avgVehicleAmt) : null;
       const status =
         Math.max(total, r.vehicle.length) < MIN_TRIPS

@@ -158,7 +158,7 @@ export function PartiesClient({
           label: "Tally Name",
           type: "text",
           uppercase: true,
-          placeholder: "sirf tab bharo jab Tally mein naam alag ho",
+          placeholder: "fill only when the name differs in Tally",
         },
         { name: "address1", label: "Address 1", type: "text", span2: true },
         { name: "address2", label: "Address 2", type: "text", span2: true },

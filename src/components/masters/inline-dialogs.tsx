@@ -229,7 +229,7 @@ export function PartyCreateDialog({
               <Input
                 value={transportName}
                 onChange={(e) => setTransportName(e.target.value.toUpperCase())}
-                placeholder="Firm / transport ka naam"
+                placeholder="Firm / transport name"
               />
             </Field>
           )}

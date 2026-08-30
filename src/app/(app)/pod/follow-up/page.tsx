@@ -169,9 +169,9 @@ export default async function PodFollowUpPage({
 
   const ageBadge = (d: number) =>
     d > days + 7 ? (
-      <Badge variant="destructive">{d} din</Badge>
+      <Badge variant="destructive">{d} days</Badge>
     ) : (
-      <Badge variant="outline">{d} din</Badge>
+      <Badge variant="outline">{d} days</Badge>
     );
 
   const filters: FilterDef[] = [
@@ -257,7 +257,7 @@ export default async function PodFollowUpPage({
               {[
                 "LR No",
                 "LR Date",
-                "Din",
+                "Days",
                 "Party",
                 "Route",
                 "Freight",

@@ -203,7 +203,7 @@ export function LrRegisterTable({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 cursor-not-allowed text-muted-foreground"
-                  title="Bill ban chuka hai — edit Billing Register se bill kholkar, preview ke Edit se karein"
+                  title="Bill already created — to edit, open the bill from the Billing Register and use Edit in its preview"
                 >
                   <Lock className="h-3.5 w-3.5" />
                 </Button>

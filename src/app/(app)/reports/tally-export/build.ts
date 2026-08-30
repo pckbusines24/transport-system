@@ -280,7 +280,7 @@ export async function buildChalanDocs(
 
   for (const c of chalans) {
     const vehicle = ctx.vehicleById.get(c.vehicleId);
-    if (!vehicle || vehicle.ownershipType === "OWNER") continue; // own gaadi: never
+    if (!vehicle || vehicle.ownershipType === "OWNER") continue; // own vehicle: never
     const broker = ctx.partyById.get(c.brokerId);
     if (!broker) continue;
     const brokerLedger = broker.tallyName?.trim() || broker.name;
@@ -967,7 +967,7 @@ export async function buildSlipDocs(
       refNo: s.slipNo,
       dateIso: s.slipDate.toISOString(),
       party: s.partyId ? ctx.partyById.get(s.partyId)?.name ?? "" : "",
-      detail: `${vehicle ? `${vehicle.number} · ` : ""}${ownVehicle ? "Own gaadi (party side only)" : "dono side"}`,
+      detail: `${vehicle ? `${vehicle.number} · ` : ""}${ownVehicle ? "Own vehicle (party side only)" : "both sides"}`,
       amount: toNum(s.pNetAmt) || toNum(s.vNetAmt),
       vouchers,
     });
@@ -1050,7 +1050,7 @@ export async function buildExpenseDocs(
             lines: [drLine(money, amount), crLine(head, amount)],
           };
     } else if (v.partyId) {
-      // udhaar — supplier's ledger carries it until the payment voucher
+      // on credit — supplier's ledger carries it until the payment voucher
       const supplier = partyLedger(ctx, v.partyId);
       masterIds.add(v.partyId);
       voucher = isExpense

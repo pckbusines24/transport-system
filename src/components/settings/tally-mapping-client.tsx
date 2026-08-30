@@ -66,7 +66,7 @@ export function TallyMappingClient({
           </CardHeader>
           <CardContent className="space-y-1.5 p-4 pt-2">
             {s.rows.length === 0 && (
-              <p className="text-sm text-muted-foreground">Koi row nahi.</p>
+              <p className="text-sm text-muted-foreground">No rows.</p>
             )}
             {s.rows.map((r) => {
               const k = `${r.module}:${r.sourceKey}`;
@@ -101,7 +101,7 @@ export function TallyMappingClient({
           {saving ? "Saving..." : "Save Mapping"}
         </Button>
         <span className="text-xs text-muted-foreground">
-          Khaali = placeholder wala naam jayega (Tally mein apne aap banega)
+          Blank = the placeholder name goes across (created automatically in Tally)
         </span>
       </div>
     </div>
