@@ -55,6 +55,7 @@ export interface SideValues {
   detention: number;
   odcAmt: number;
   fineAmt: number;
+  otherAmt: number;
   ldCharge: number;
   shortageAmt: number;
   tdsPct: number;
@@ -126,6 +127,7 @@ const emptySide = (): SideValues => ({
   detention: 0,
   odcAmt: 0,
   fineAmt: 0,
+  otherAmt: 0,
   ldCharge: 0,
   shortageAmt: 0,
   tdsPct: 0,
@@ -299,6 +301,7 @@ export function BrokerSlipForm({
       detention: s.detention,
       odcAmt: s.odcAmt,
       fineAmt: s.fineAmt,
+      otherAmt: s.otherAmt,
       ldCharge: s.ldCharge,
       shortageAmt: s.shortageAmt,
       tdsPct: s.tdsPct,
@@ -331,6 +334,7 @@ export function BrokerSlipForm({
       detention: 0,
       odcAmt: 0,
       fineAmt: 0,
+      otherAmt: 0,
       ldCharge: 0,
       shortageAmt: 0,
       tdsPct: 0,
@@ -352,6 +356,7 @@ export function BrokerSlipForm({
         detention: f.p.detention,
         odcAmt: f.p.odcAmt,
         fineAmt: f.p.fineAmt,
+        otherAmt: f.p.otherAmt,
         ldCharge: f.p.ldCharge,
         shortageAmt: f.p.shortageAmt,
       },
@@ -851,6 +856,11 @@ export function BrokerSlipForm({
               label="Fine / Slip"
               value={s.fineAmt}
               onChange={(n) => setSide(side, { fineAmt: n })}
+            />
+            <Num
+              label="Other Amt"
+              value={s.otherAmt}
+              onChange={(n) => setSide(side, { otherAmt: n })}
             />
             <Num
               label="LD Charge (−)"

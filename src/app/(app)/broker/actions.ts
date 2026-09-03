@@ -89,6 +89,7 @@ const sideSchema = {
   detention: z.number().min(0).default(0),
   odcAmt: z.number().min(0).default(0),
   fineAmt: z.number().min(0).default(0),
+  otherAmt: z.number().min(0).default(0),
   ldCharge: z.number().min(0).default(0),
   shortageAmt: z.number().min(0).default(0),
   tdsPct: z.number().min(0).default(0),
@@ -178,6 +179,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
     detention: data.p.detention,
     odcAmt: data.p.odcAmt,
     fineAmt: data.p.fineAmt,
+    otherAmt: data.p.otherAmt,
     ldCharge: data.p.ldCharge,
     shortageAmt: data.p.shortageAmt,
     tdsPct: data.p.tdsPct,
@@ -196,6 +198,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
     detention: data.v.detention,
     odcAmt: data.v.odcAmt,
     fineAmt: data.v.fineAmt,
+    otherAmt: data.v.otherAmt,
     ldCharge: data.v.ldCharge,
     shortageAmt: data.v.shortageAmt,
     tdsPct: data.v.tdsPct,
@@ -247,6 +250,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
     pDetention: data.p.detention,
     pOdcAmt: data.p.odcAmt,
     pFineSlip: data.p.fineAmt,
+    pOtherAmt: data.p.otherAmt,
     pLdCharge: data.p.ldCharge,
     pShortageAmt: data.p.shortageAmt,
     pTdsPct: data.p.tdsPct,
@@ -268,6 +272,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
     vDetention: data.v.detention,
     vOdcAmt: data.v.odcAmt,
     vFineAmt: data.v.fineAmt,
+    vOtherAmt: data.v.otherAmt,
     vLdCharge: data.v.ldCharge,
     vShortageAmt: data.v.shortageAmt,
     vTdsPct: data.v.tdsPct,
@@ -474,6 +479,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
         await line(pid, "Detention", data.p.detention, "Detention Income", "INCOME", "DEBIT");
         await line(pid, "ODC", data.p.odcAmt, "ODC Income", "INCOME", "DEBIT");
         await line(pid, "Fine slip", data.p.fineAmt, "Fine Slip Income", "INCOME", "DEBIT");
+        await line(pid, "Other charges", data.p.otherAmt, "Other Charges", "INCOME", "DEBIT");
         await line(pid, "LD charge", data.p.ldCharge, "LD Charge Allowed", "EXPENSE", "CREDIT");
         // shortage posts only the party leg; the register posts the matching
         // entry on the one common Shortage ledger
@@ -498,6 +504,7 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
         await line(oid, "Detention", data.v.detention, "Detention Charges", "EXPENSE", "CREDIT");
         await line(oid, "ODC", data.v.odcAmt, "ODC Charges", "EXPENSE", "CREDIT");
         await line(oid, "Fine slip", data.v.fineAmt, "Fine Slip Charges", "EXPENSE", "CREDIT");
+        await line(oid, "Other charges", data.v.otherAmt, "Other Charges", "EXPENSE", "CREDIT");
         await line(oid, "LD charge", data.v.ldCharge, "LD Charge Recovered", "INCOME", "DEBIT");
         if (data.v.shortageAmt > 0) {
           entries.push({

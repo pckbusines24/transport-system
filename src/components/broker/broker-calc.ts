@@ -3,7 +3,10 @@ import { round2 } from "@/lib/calc/tds";
 
 /**
  * Broker slip dual-side math (party = receivable, owner/vehicle = payable).
- * chalanAmt = freight + detention + odc + fine − ld − shortage
+ * chalanAmt = freight + detention + odc + fine + other − ld − shortage
+ *
+ * NOTE: `freight` is the MAIN value. Everything else on that line is an
+ * ADJUSTMENT and is reported separately — see the Purchase & Sale Register.
  * netAmt    = chalanAmt − tds − commission − mamool − paymentCharge
  * balance   = netAmt − advance
  */
@@ -18,6 +21,7 @@ export interface BrokerSideInput {
   detention: number;
   odcAmt: number;
   fineAmt: number;
+  otherAmt: number;
   ldCharge: number;
   shortageAmt: number;
   tdsPct: number;
@@ -47,7 +51,13 @@ export function computeBrokerSide(i: BrokerSideInput): BrokerSideTotals {
       : amountByBasis(i.rate, i.rateBasis, i.qty, i.actualWt, i.chargeWt);
 
   const chalanAmt = round2(
-    freight + i.detention + i.odcAmt + i.fineAmt - i.ldCharge - i.shortageAmt
+    freight +
+      i.detention +
+      i.odcAmt +
+      i.fineAmt +
+      i.otherAmt -
+      i.ldCharge -
+      i.shortageAmt
   );
 
   const tdsAmt =

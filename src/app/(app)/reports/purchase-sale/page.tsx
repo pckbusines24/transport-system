@@ -4,6 +4,12 @@ import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { FilterBar } from "@/components/data/filter-bar";
 import {
+  addAmounts,
+  splitAmounts,
+  ZERO_AMOUNTS,
+  type RegisterAmounts,
+} from "@/lib/registers/adjustments";
+import {
   PurchaseSaleClient,
   type PsRow,
 } from "@/components/reports/purchase-sale-client";
@@ -16,12 +22,19 @@ const monthKey = (d: Date) =>
 
 /**
  * Purchase & Sale Register — party × month matrix with a TDS column.
- *   SALE     = bills (netTotal) + broker slip PARTY side earnings;
+ *   SALE     = bills + broker slip PARTY side earnings;
  *              TDS = receipt-voucher TDS + slip party-side TDS
  *   PURCHASE = chalan lorry-hire earnings (Broker/Relative vehicles only —
  *              an own vehicle has no payee) + broker slip OWNER side earnings;
  *              TDS = what we deducted (chalan + slip owner side)
  * Supplier purchases (diesel/tyre on credit) stay out — freight only.
+ *
+ * MAIN VALUE ≠ ADJUSTMENTS. The month cells and the Main Value column carry the
+ * ORIGINAL freight / purchase / sale value alone. Detention, ODC, Fine and
+ * Other are reported as Additions, LD Charge and Shortage as Deductions, and
+ * only Net Value (= Main + Additions − Deductions) brings them together. A user
+ * typing any of those six amounts on a chalan or broker slip therefore cannot
+ * move the register's main value — see `@/lib/registers/adjustments`.
  */
 export default async function PurchaseSalePage({
   searchParams,
@@ -54,17 +67,18 @@ export default async function PurchaseSalePage({
 
     interface Acc {
       partyId: string;
+      /** month -> MAIN value only, never the adjustments */
       months: Record<string, number>;
-      total: number;
+      totals: RegisterAmounts;
       count: number;
       tds: number;
-      docs: { refNo: string; dateIso: string; kind: string; amount: number }[];
+      docs: { refNo: string; dateIso: string; kind: string; amounts: RegisterAmounts }[];
     }
     const acc = new Map<string, Acc>();
     const bump = (
       partyId: string,
       date: Date,
-      amount: number,
+      amounts: RegisterAmounts,
       kind: string,
       refNo: string,
       tds = 0
@@ -73,17 +87,20 @@ export default async function PurchaseSalePage({
       const a = acc.get(partyId) ?? {
         partyId,
         months: {},
-        total: 0,
+        totals: ZERO_AMOUNTS,
         count: 0,
         tds: 0,
         docs: [],
       };
-      if (amount > 0) {
+      // a document counts once it carries a main value OR an adjustment — a
+      // freight-less entry that is nothing but charges still belongs here
+      if (amounts.main > 0 || amounts.additions > 0 || amounts.deductions > 0) {
         const m = monthKey(date);
-        a.months[m] = r2((a.months[m] ?? 0) + amount);
-        a.total = r2(a.total + amount);
+        // month buckets hold the MAIN value only
+        a.months[m] = r2((a.months[m] ?? 0) + amounts.main);
+        a.totals = addAmounts(a.totals, amounts);
         a.count += 1;
-        a.docs.push({ refNo, dateIso: date.toISOString(), kind, amount });
+        a.docs.push({ refNo, dateIso: date.toISOString(), kind, amounts });
       }
       a.tds = r2(a.tds + tds);
       acc.set(partyId, a);
@@ -99,7 +116,14 @@ export default async function PurchaseSalePage({
             kind: { not: "GST" },
             ...range("invoiceDate"),
           },
-          select: { partyId: true, invoiceDate: true, invoiceNo: true, netTotal: true, kind: true },
+          select: {
+            partyId: true,
+            invoiceDate: true,
+            invoiceNo: true,
+            netTotal: true,
+            kind: true,
+            charges: { select: { amount: true } },
+          },
         }),
         tx.brokerSlip.findMany({
           where: {
@@ -125,15 +149,39 @@ export default async function PurchaseSalePage({
         }),
       ]);
       for (const inv of invoices) {
-        bump(inv.partyId, inv.invoiceDate, toNum(inv.netTotal), inv.kind.replace(/_/g, " "), inv.invoiceNo);
+        // a bill's extra charges (Detention / Waiting / Other ...) are
+        // adjustments too, so the bill's main value is its freight alone
+        const charges = inv.charges.map((c) => toNum(c.amount));
+        const chargeAdditions = r2(charges.filter((c) => c > 0).reduce((s, c) => s + c, 0));
+        const chargeDeductions = r2(charges.filter((c) => c < 0).reduce((s, c) => s - c, 0));
+        const main = r2(toNum(inv.netTotal) - chargeAdditions + chargeDeductions);
+        bump(
+          inv.partyId,
+          inv.invoiceDate,
+          splitAmounts(main, { otherAmt: chargeAdditions, ldCharge: chargeDeductions }),
+          inv.kind.replace(/_/g, " "),
+          inv.invoiceNo
+        );
       }
       for (const s of slips) {
-        const gross = r2(
-          toNum(s.pFreight) + toNum(s.pDetention) + toNum(s.pOdcAmt) + toNum(s.pFineSlip)
+        bump(
+          s.partyId!,
+          s.slipDate,
+          // MAIN = booked freight only; the six entered amounts stay apart
+          splitAmounts(toNum(s.pFreight), {
+            detention: toNum(s.pDetention),
+            odcAmt: toNum(s.pOdcAmt),
+            fineAmt: toNum(s.pFineSlip),
+            otherAmt: toNum(s.pOtherAmt),
+            ldCharge: toNum(s.pLdCharge),
+            shortageAmt: toNum(s.pShortageAmt),
+          }),
+          "BROKER SLIP",
+          s.slipNo,
+          toNum(s.pTdsAmt)
         );
-        bump(s.partyId!, s.slipDate, gross, "BROKER SLIP", s.slipNo, toNum(s.pTdsAmt));
       }
-      for (const v of receipts) bump(v.partyId!, new Date(0), 0, "", "", toNum(v.tdsAmt));
+      for (const v of receipts) bump(v.partyId!, new Date(0), ZERO_AMOUNTS, "", "", toNum(v.tdsAmt));
     } else {
       const [chalans, slips] = await Promise.all([
         tx.chalan.findMany({
@@ -150,7 +198,14 @@ export default async function PurchaseSalePage({
             vehicleId: true,
             chalanDate: true,
             chalanNo: true,
-            totalChalanAmt: true,
+            // NOT totalChalanAmt — that one already has the adjustments merged
+            freight: true,
+            detention: true,
+            odcAmt: true,
+            fineSlip: true,
+            otherAmt: true,
+            ldCharge: true,
+            shortageAmt: true,
             tdsAmt: true,
           },
         }),
@@ -170,7 +225,14 @@ export default async function PurchaseSalePage({
         bump(
           c.brokerId,
           c.chalanDate,
-          toNum(c.totalChalanAmt),
+          splitAmounts(toNum(c.freight), {
+            detention: toNum(c.detention),
+            odcAmt: toNum(c.odcAmt),
+            fineAmt: toNum(c.fineSlip),
+            otherAmt: toNum(c.otherAmt),
+            ldCharge: toNum(c.ldCharge),
+            shortageAmt: toNum(c.shortageAmt),
+          }),
           "CHALAN",
           c.chalanNo,
           toNum(c.tdsAmt)
@@ -178,10 +240,21 @@ export default async function PurchaseSalePage({
       }
       for (const s of slips) {
         if (s.vehicleId && vehicleOwnership.get(s.vehicleId) === "OWNER") continue;
-        const gross = r2(
-          toNum(s.vFreight) + toNum(s.vDetention) + toNum(s.vOdcAmt) + toNum(s.vFineAmt)
+        bump(
+          s.ownerId!,
+          s.slipDate,
+          splitAmounts(toNum(s.vFreight), {
+            detention: toNum(s.vDetention),
+            odcAmt: toNum(s.vOdcAmt),
+            fineAmt: toNum(s.vFineAmt),
+            otherAmt: toNum(s.vOtherAmt),
+            ldCharge: toNum(s.vLdCharge),
+            shortageAmt: toNum(s.vShortageAmt),
+          }),
+          "BROKER SLIP",
+          s.slipNo,
+          toNum(s.vTdsAmt)
         );
-        bump(s.ownerId!, s.slipDate, gross, "BROKER SLIP", s.slipNo, toNum(s.vTdsAmt));
       }
     }
 
@@ -190,17 +263,17 @@ export default async function PurchaseSalePage({
     const monthKeys = Array.from(months).sort();
 
     const rows: PsRow[] = Array.from(acc.values())
-      .filter((a) => a.total > 0 || a.tds > 0)
+      .filter((a) => a.count > 0 || a.tds > 0)
       .map((a) => ({
         partyId: a.partyId,
         party: partyName.get(a.partyId) ?? "(unknown)",
         months: a.months,
-        total: a.total,
+        totals: a.totals,
         count: a.count,
         tds: a.tds,
         docs: a.docs.sort((x, y) => x.dateIso.localeCompare(y.dateIso)),
       }))
-      .sort((x, y) => y.total - x.total);
+      .sort((x, y) => y.totals.main - x.totals.main);
 
     const groups = side === "SALE" ? ["CONSIGNEE_CONSIGNOR"] : ["OWNER_BROKER", "RELATIVE"];
     const partyOptions = parties
@@ -217,7 +290,9 @@ export default async function PurchaseSalePage({
         {side === "SALE"
           ? "Sale = bills + broker slip party side. TDS = what the party deducted (receipts + slips)."
           : "Purchase = chalan lorry hire (Broker/Relative vehicle) + broker slip owner side. TDS = what you deducted."}{" "}
-        Click a Party — all of its documents open.
+        Main Value is the original freight only — Detention / ODC / Fine / Other and LD / Shortage
+        stay in their own columns and move Net Value alone. Click a Party — all of its documents
+        open.
       </p>
       <FilterBar
         filters={[
