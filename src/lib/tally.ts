@@ -23,6 +23,33 @@ export interface TallyLine {
   bills?: TallyBillRef[];
 }
 
+/**
+ * The party ledgerGroup that means "credit card". A card ledger is a LIABILITY,
+ * not money, so it never belongs on a Payment/Receipt voucher.
+ */
+export const CARD_LEDGER_GROUP = "CARD";
+
+/**
+ * Voucher type for a document settled against a money ledger.
+ *
+ * Cash / Bank / UPI all move real money, so they stay Payment or Receipt. A
+ * card does not: booking an expense on a credit card swaps an expense for a
+ * liability, which in Tally is a JOURNAL —
+ *
+ *   Vehicle Repair Expense A/c  Dr.  10,000
+ *        To HDFC Credit Card A/c          10,000
+ *
+ * Paying the card bill later IS a real bank movement, and exports as its own
+ * Payment voucher (Card Dr / Bank Cr). That second entry is keyed off the BANK
+ * being the money ledger, so the same cost never reaches Tally twice.
+ */
+export function voucherTypeForMoneyLedger(
+  ledgerGroup: string | null | undefined,
+  cashType: "Payment" | "Receipt"
+): TallyVoucher["type"] {
+  return ledgerGroup === CARD_LEDGER_GROUP ? "Journal" : cashType;
+}
+
 export interface TallyVoucher {
   /** export-register key, e.g. "CHALAN:<id>:MAIN" */
   key: string;

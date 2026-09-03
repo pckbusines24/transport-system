@@ -1,7 +1,14 @@
 import type { Tx } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
-import { tallyDate, voucherHash, type TallyLedgerMaster, type TallyVoucher } from "@/lib/tally";
+import {
+  CARD_LEDGER_GROUP,
+  tallyDate,
+  voucherHash,
+  voucherTypeForMoneyLedger,
+  type TallyLedgerMaster,
+  type TallyVoucher,
+} from "@/lib/tally";
 import { makeTallyLookup, type TallyLookup } from "@/lib/tally-map";
 
 /**
@@ -95,6 +102,42 @@ function moneyLedger(ctx: Ctx, partyId: string | null | undefined, fallback: str
   return p ? ctx.look("BANKCASH", p.id, p.tallyName?.trim() || p.name) : fallback;
 }
 
+/**
+ * A CARD ledger is a liability (the credit-card account), not money.
+ *
+ * Tally's Payment / Receipt vouchers exist to move BANK or CASH. An expense put
+ * on a credit card moves neither — it swaps one liability for an expense:
+ *
+ *   Vehicle Repair Expense A/c  Dr.  10,000
+ *        To HDFC Credit Card A/c          10,000
+ *
+ * which is a JOURNAL. The card is settled later, when its bill is actually paid
+ * from the bank, and THAT is the Payment voucher (Card Dr / Bank Cr) — booked
+ * as its own payment voucher, so the cost never reaches Tally twice.
+ *
+ *   Cash / Bank / UPI -> Payment or Receipt
+ *   Card              -> Journal
+ */
+function isCardLedger(ctx: Ctx, partyId: string | null | undefined): boolean {
+  return !!partyId && ctx.partyById.get(partyId)?.ledgerGroup === CARD_LEDGER_GROUP;
+}
+
+/**
+ * The voucher type for a money-settled document: the cash-style type normally,
+ * a Journal when the "money" ledger is really a card. The LINES are identical
+ * either way — only the voucher type changes.
+ */
+function moneyVoucherType(
+  ctx: Ctx,
+  partyId: string | null | undefined,
+  cashType: "Payment" | "Receipt"
+): TallyVoucher["type"] {
+  return voucherTypeForMoneyLedger(
+    partyId ? ctx.partyById.get(partyId)?.ledgerGroup : null,
+    cashType
+  );
+}
+
 function headLedger(ctx: Ctx, headId: string | null | undefined, fallback = "OTHER EXPENSE"): string {
   return headId
     ? ctx.look("HEAD", headId, (ctx.headById.get(headId) ?? fallback).toUpperCase())
@@ -173,7 +216,11 @@ async function settlementFromVouchers(
   return out;
 }
 
-/** Split settlement: bank Receipt alone, Shortage journal alone, Round-off alone. */
+/**
+ * Split settlement: bank Receipt alone, Shortage journal alone, Round-off alone.
+ * A balance settled on a CARD is a Journal, not a Receipt/Payment — see
+ * `isCardLedger`.
+ */
 function settlementVouchers(opts: {
   keyBase: string;
   counterLedger: string;
@@ -184,6 +231,8 @@ function settlementVouchers(opts: {
   counterSide: "DR" | "CR";
   paid: number;
   payLedger: string;
+  /** the pay ledger is a card, so the money leg is a Journal */
+  payIsCard?: boolean;
   shortage: number;
   shortageLedger: string;
   roundOff: number;
@@ -200,7 +249,7 @@ function settlementVouchers(opts: {
   if (opts.paid > 0.009) {
     out.push({
       key: `${opts.keyBase}:BAL`,
-      type: "Receipt",
+      type: opts.payIsCard ? "Journal" : "Receipt",
       date: opts.date,
       narration: `Balance ${opts.counterSide === "DR" ? "payment" : "received"} — ${opts.narrationBase}`,
       lines: [counter(opts.paid), opposite(opts.payLedger, opts.paid)],
@@ -415,6 +464,7 @@ export async function buildChalanDocs(
             : vs?.bankPartyId
               ? moneyLedger(ctx, vs.bankPartyId, C("cash", "CASH"))
               : C("cash", "CASH"),
+          payIsCard: isCardLedger(ctx, c.balPaymentHeadId ?? vs?.bankPartyId),
           shortage: round2(toNum(c.balShortage) + (vs?.shortage ?? 0)),
           shortageLedger: C("shortage", "SHORTAGE RECOVERY"),
           roundOff: round2(toNum(c.balRoundOff) + (vs?.roundOff ?? 0)),
@@ -638,8 +688,13 @@ export async function buildVoucherDocs(
       vouchers: [
         {
           key: `VOUCHER:${v.id}`,
-          // no cash leg (pure shortage / round-off settlement) → Journal
-          type: net > 0.009 ? (isReceipt ? "Receipt" : "Payment") : "Journal",
+          // no cash leg (pure shortage / round-off settlement) → Journal, and
+          // a card-settled voucher is a Journal for the same reason: nothing
+          // left the bank
+          type:
+            net > 0.009
+              ? moneyVoucherType(ctx, v.bankPartyId, isReceipt ? "Receipt" : "Payment")
+              : "Journal",
           date: tallyDate(v.voucherDate),
           narration: nar,
           lines,
@@ -820,6 +875,7 @@ export async function buildSlipDocs(
               payLedger: s.pPaymentHeadId
                 ? moneyLedger(ctx, s.pPaymentHeadId, C("cash", "CASH"))
                 : C("cash", "CASH"),
+              payIsCard: isCardLedger(ctx, s.pPaymentHeadId),
               shortage: toNum(s.pShortage),
               shortageLedger: P("shortage", "SHORTAGE"),
               roundOff: toNum(s.pRoundOff),
@@ -951,6 +1007,7 @@ export async function buildSlipDocs(
                 : vv?.bankPartyId
                   ? moneyLedger(ctx, vv.bankPartyId, C("cash", "CASH"))
                   : C("cash", "CASH"),
+              payIsCard: isCardLedger(ctx, s.vPaymentHeadId ?? vv?.bankPartyId),
               shortage: round2(toNum(s.vShortage) + (vv?.shortage ?? 0)),
               shortageLedger: C("shortage", "SHORTAGE RECOVERY"),
               roundOff: round2(toNum(s.vRoundOff) + (vv?.roundOff ?? 0)),
@@ -1034,17 +1091,18 @@ export async function buildExpenseDocs(
     if (paid) {
       const money = moneyLedger(ctx, v.bankPartyId, "CASH");
       const date = tallyDate(v.paymentDate ?? v.date);
+      // card-settled = Journal (Expense Dr / Card Cr); the lines are unchanged
       voucher = isExpense
         ? {
             key: `VEX:${v.id}`,
-            type: "Payment",
+            type: moneyVoucherType(ctx, v.bankPartyId, "Payment"),
             date,
             narration: nar,
             lines: [drLine(head, amount), crLine(money, amount)],
           }
         : {
             key: `VEX:${v.id}`,
-            type: "Receipt",
+            type: moneyVoucherType(ctx, v.bankPartyId, "Receipt"),
             date,
             narration: nar,
             lines: [drLine(money, amount), crLine(head, amount)],
@@ -1140,7 +1198,7 @@ export async function buildOfficeDocs(
       const money = moneyLedger(ctx, t.bankPartyId, "CASH");
       voucher = {
         key: `OFC:${t.id}`,
-        type: isExpense ? "Payment" : "Receipt",
+        type: moneyVoucherType(ctx, t.bankPartyId, isExpense ? "Payment" : "Receipt"),
         date: tallyDate(t.date),
         narration: nar,
         lines: isExpense
