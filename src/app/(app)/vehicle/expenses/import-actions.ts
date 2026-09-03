@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { runImport, type ImportSummary } from "@/lib/import-core";
+import { ImportDedup } from "@/lib/import-dedup";
 import { parseDdMmYyyy, toNum } from "@/lib/utils";
 import { saveVehicleExpenseTxn } from "./actions";
 
@@ -190,15 +191,58 @@ export async function importVehicleExpenses(fd: FormData): Promise<ImportSummary
   const vehicleByNo = new Map(vehicles.map((v) => [v.number.toUpperCase().replace(/\s+/g, ""), v]));
   const bankByName = new Map(banks.map((b) => [b.name.toUpperCase(), b]));
   const supplierByName = new Map(suppliers.map((s) => [s.name.toUpperCase(), s]));
-  // duplicate signature: date + head + vehicle + amount + refNo
-  const dupKeys = new Set<string>();
-  for (const v of existing) {
-    for (const it of v.items) {
-      dupKeys.add(
-        `${v.date.toISOString().slice(0, 10)}|${v.headId}|${it.vehicleId}|${toNum(String(it.amount))}|${(v.refNo ?? "").toUpperCase()}`
-      );
-    }
-  }
+  /**
+   * Duplicate signature. Beyond date/head/vehicle/amount it carries the rest of
+   * the transaction-specific fields, so two rows differing only by supplier,
+   * payment account or remarks are never confused for one another.
+   *
+   * The signature alone does NOT decide the outcome — see `ImportDedup`. Two
+   * legitimate same-day, same-amount fills share a signature and both import;
+   * only a re-import, where the records already exist, is skipped.
+   */
+  const dupSig = (f: {
+    dateIso: string;
+    txnType: string;
+    headId: string;
+    vehicleId: string;
+    amount: number;
+    refNo: string;
+    paymentMode: string | null;
+    bankPartyId: string | null;
+    partyId: string | null;
+    remarks: string;
+  }) =>
+    [
+      f.dateIso,
+      f.txnType,
+      f.headId,
+      f.vehicleId,
+      f.amount,
+      f.refNo.toUpperCase(),
+      f.paymentMode ?? "",
+      f.bankPartyId ?? "",
+      f.partyId ?? "",
+      f.remarks.toUpperCase(),
+    ].join("|");
+
+  const dedup = new ImportDedup(
+    existing.flatMap((v) =>
+      v.items.map((it) =>
+        dupSig({
+          dateIso: v.date.toISOString().slice(0, 10),
+          txnType: v.txnType,
+          headId: v.headId,
+          vehicleId: it.vehicleId,
+          amount: toNum(String(it.amount)),
+          refNo: v.refNo ?? "",
+          paymentMode: v.paymentMode,
+          bankPartyId: v.bankPartyId,
+          partyId: v.partyId,
+          remarks: v.remarks ?? "",
+        })
+      )
+    )
+  );
 
   return runImport(
     fd.get("file") as File | null,
@@ -256,9 +300,23 @@ export async function importVehicleExpenses(fd: FormData): Promise<ImportSummary
       }
 
       const refNo = (rec["REF NO"] ?? "").trim();
-      const dupKey = `${dateIso}|${head.id}|${vehicle.id}|${amount}|${refNo.toUpperCase()}`;
-      if (dupKeys.has(dupKey)) return "skipped";
-      dupKeys.add(dupKey);
+      const remarks = rec["REMARKS"] || "";
+      const dupKey = dupSig({
+        dateIso,
+        txnType,
+        headId: head.id,
+        vehicleId: vehicle.id,
+        amount,
+        refNo,
+        paymentMode,
+        bankPartyId,
+        partyId,
+        remarks,
+      });
+      // a REF NO is a real transaction id: one record per reference. Without
+      // one there is no unique key, so an existing record is matched
+      // occurrence-by-occurrence instead of by signature.
+      if (dedup.isDuplicate(dupKey, { unique: refNo !== "" })) return "skipped";
 
       const res = await saveVehicleExpenseTxn({
         date: dateIso,
@@ -269,7 +327,7 @@ export async function importVehicleExpenses(fd: FormData): Promise<ImportSummary
         bankPartyId,
         paymentDate,
         refNo,
-        remarks: rec["REMARKS"] || null,
+        remarks: remarks || null,
         items: [{ vehicleId: vehicle.id, amount }],
       });
       if (!res.ok) err(res.error);
