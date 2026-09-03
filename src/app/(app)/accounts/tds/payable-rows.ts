@@ -7,10 +7,12 @@ export const tdsStatus = (amt: number) => (amt > 0.009 ? "DEDUCTED" : "NOT DEDUC
 
 /**
  * One PAYABLE TDS transaction row. `baseAmt` is the amount the TDS was
- * actually computed on, as recorded at entry (chalan/slip amount, or the
- * allocation's bill amount on a payment voucher) — never re-derived from the
- * gross invoice. Rows with no recorded base (journal adjustments, header-only
- * voucher TDS) carry 0 so no figure is ever invented.
+ * actually computed on — the FREIGHT / lorry hire, never the document total.
+ * Detention, ODC, fine slip, other, LD charge and shortage are settlement
+ * adjustments and are excluded by `@/lib/calc/tds-base`, so `invoiceAmount`
+ * (the gross the party was paid on) and `baseAmt` legitimately differ.
+ * Rows with no recorded base (journal adjustments, header-only voucher TDS)
+ * carry 0 so no figure is ever invented.
  */
 export type TdsPayableRow = {
   date: string; // ISO
@@ -22,6 +24,7 @@ export type TdsPayableRow = {
   party: string;
   pan: string;
   refNo: string;
+  vehicleNo: string;
   invoiceAmount: number | null;
   baseAmt: number;
   tdsPct: number;
@@ -70,12 +73,14 @@ export async function buildTdsPayableRows(
   // hides their freight: the government must still be told about TDS deducted
   // on a relative's chalan — only the PAYMENT of that freight settles through
   // the relative owner's ledger instead of the payables register.
-  const ownVehicleIds = (
-    await tx.vehicle.findMany({
-      where: { ownershipType: "OWNER" },
-      select: { id: true },
-    })
-  ).map((v) => v.id);
+  const allVehicles = await tx.vehicle.findMany({
+    select: { id: true, number: true, ownershipType: true },
+  });
+  const vehicleNoById = new Map(allVehicles.map((v) => [v.id, v.number]));
+  const vehNo = (id: string | null | undefined) => (id ? vehicleNoById.get(id) ?? "" : "");
+  const ownVehicleIds = allVehicles
+    .filter((v) => v.ownershipType === "OWNER")
+    .map((v) => v.id);
   const notOwnVehicle = ownVehicleIds.length
     ? { vehicleId: { notIn: ownVehicleIds } }
     : {};
@@ -198,6 +203,7 @@ export async function buildTdsPayableRows(
       party: p?.name ?? "",
       pan: p?.pan ?? "",
       refNo: v.voucherNo,
+      vehicleNo: vehNo(v.vehicleId),
       invoiceAmount: toNum(String(v.amount)),
       // a journal adjusts the TDS ledger directly; no base was recorded, and
       // inventing one from the journal value would overstate the base totals
@@ -227,6 +233,7 @@ export async function buildTdsPayableRows(
           // for a chalan / slip the two are the same number; only a voucher
           // settling a bill has a distinct reference, so name both there
           refNo: a.refNo && a.refNo !== v.voucherNo ? `${a.refNo} (${v.voucherNo})` : v.voucherNo,
+          vehicleNo: vehNo(v.vehicleId),
           // voucher rows carry only the TDS figure — bill/net stay blank
           invoiceAmount: null,
           // the bill amount recorded on the allocation is what the entry
@@ -249,6 +256,7 @@ export async function buildTdsPayableRows(
         party: p?.name ?? "",
         pan: p?.pan ?? "",
         refNo: v.voucherNo,
+        vehicleNo: vehNo(v.vehicleId),
         invoiceAmount: null,
         // header-only TDS records no rate and no bill — base stays unknown
         baseAmt: 0,
@@ -284,9 +292,12 @@ export async function buildTdsPayableRows(
       party: p?.name ?? "",
       pan: p?.pan ?? "",
       refNo: c.chalanNo,
+      vehicleNo: vehNo(c.vehicleId),
       invoiceAmount: toNum(String(c.totalChalanAmt)),
-      // the chalan's TDS is computed on its total chalan amount
-      baseAmt: toNum(String(c.totalChalanAmt)),
+      // TDS base is the FREIGHT alone — the adjustments folded into
+      // totalChalanAmt (detention, ODC, fine, other, LD, shortage) are never
+      // taxed, so the register must not show them as the base either
+      baseAmt: toNum(String(c.freight)),
       tdsPct: toNum(String(c.tdsPct)),
       tdsAmt: ownTds,
       net: toNum(String(c.grandTotal)),
@@ -305,9 +316,10 @@ export async function buildTdsPayableRows(
       party: p?.name ?? s.ownerName ?? "",
       pan: p?.pan ?? "",
       refNo: s.slipNo,
+      vehicleNo: vehNo(s.vehicleId),
       invoiceAmount: toNum(String(s.vChalanAmt)),
-      // the owner-side TDS is computed on the owner-side chalan amount
-      baseAmt: toNum(String(s.vChalanAmt)),
+      // owner-side freight only; vChalanAmt carries the adjustments
+      baseAmt: toNum(String(s.vFreight)),
       tdsPct: toNum(String(s.vTdsPct)),
       tdsAmt: ownTds,
       net: toNum(String(s.vNetAmt)),
@@ -334,6 +346,7 @@ export async function buildTdsPayableRows(
       party: h.ownerName ?? "",
       pan: h.ownerPan ?? "",
       refNo: h.slipNo,
+      vehicleNo: vehNo(h.vehicleId),
       invoiceAmount: gross,
       // "Less: TDS" is deducted from the slip's gross hire (hire + charges)
       baseAmt: gross,

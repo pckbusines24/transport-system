@@ -1,4 +1,5 @@
-import { round2, tdsAmount } from "./tds";
+import { round2 } from "./tds";
+import { computeTds } from "./tds-base";
 import { amountByBasis, RateBasis } from "./rate";
 
 export interface ChalanInput {
@@ -27,6 +28,8 @@ export interface ChalanInput {
 export interface ChalanTotals {
   freight: number;
   totalChalanAmt: number;
+  /** what TDS was charged on — the freight alone */
+  tdsBase: number;
   commissionAmt: number;
   tdsAmt: number;
   grandTotal: number;
@@ -51,7 +54,8 @@ export function computeChalan(i: ChalanInput): ChalanTotals {
       ? round2((freight * i.commissionPct) / 100)
       : round2(i.commissionAmt ?? 0);
 
-  const tdsAmt = tdsAmount(freight, i.tdsPct);
+  const tds = computeTds({ freight }, i.tdsPct);
+  const tdsAmt = tds.amount;
 
   const grandTotal = round2(
     totalChalanAmt - commissionAmt - tdsAmt - i.mamool - i.courierCharge
@@ -60,7 +64,16 @@ export function computeChalan(i: ChalanInput): ChalanTotals {
   const advanceTotal = round2(i.advances.reduce((s, a) => s + a, 0));
   const balance = round2(grandTotal - advanceTotal);
 
-  return { freight, totalChalanAmt, commissionAmt, tdsAmt, grandTotal, advanceTotal, balance };
+  return {
+    freight,
+    totalChalanAmt,
+    tdsBase: tds.base,
+    commissionAmt,
+    tdsAmt,
+    grandTotal,
+    advanceTotal,
+    balance,
+  };
 }
 
 export function dieselAdvanceAmount(qty: number, ratePerLitre: number): number {

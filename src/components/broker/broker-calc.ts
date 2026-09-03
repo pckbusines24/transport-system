@@ -1,5 +1,6 @@
 import { amountByBasis, type RateBasis } from "@/lib/calc/rate";
 import { round2 } from "@/lib/calc/tds";
+import { computeTds } from "@/lib/calc/tds-base";
 
 /**
  * Broker slip dual-side math (party = receivable, owner/vehicle = payable).
@@ -38,6 +39,8 @@ export interface BrokerSideInput {
 export interface BrokerSideTotals {
   freight: number;
   chalanAmt: number;
+  /** what TDS was charged on — the freight alone, never chalanAmt */
+  tdsBase: number;
   tdsAmt: number;
   commAmt: number;
   netAmt: number;
@@ -60,15 +63,19 @@ export function computeBrokerSide(i: BrokerSideInput): BrokerSideTotals {
       i.shortageAmt
   );
 
-  const tdsAmt =
-    i.tdsPct > 0 ? round2((chalanAmt * i.tdsPct) / 100) : round2(i.tdsAmtManual ?? 0);
+  // TDS is levied on the FREIGHT only. Detention, ODC, fine, other, LD and
+  // shortage are settlement adjustments and never enter the base — see
+  // `@/lib/calc/tds-base`. (This used to tax chalanAmt, so every adjustment
+  // silently moved the TDS.)
+  const tds = computeTds({ freight }, i.tdsPct, { manualAmount: i.tdsAmtManual });
+  const tdsAmt = tds.amount;
   const commAmt =
     i.commPct > 0 ? round2((chalanAmt * i.commPct) / 100) : round2(i.commAmtManual ?? 0);
 
   const netAmt = round2(chalanAmt - tdsAmt - commAmt - i.mamool - i.paymentCharge);
   const balance = round2(netAmt - i.advance);
 
-  return { freight, chalanAmt, tdsAmt, commAmt, netAmt, balance };
+  return { freight, chalanAmt, tdsBase: tds.base, tdsAmt, commAmt, netAmt, balance };
 }
 
 // ---------- advances ----------

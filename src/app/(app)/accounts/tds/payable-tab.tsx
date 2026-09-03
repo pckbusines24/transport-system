@@ -112,11 +112,17 @@ export async function TdsPayableTab({
           { key: "refNo", header: "Reference No" },
           { key: "module", header: "Module", kind: "badge" },
           { key: "section", header: "TDS Section" },
+          { key: "vehicleNo", header: "Vehicle No" },
           { key: "party", header: "Party / Owner" },
           { key: "pan", header: "PAN" },
+          // Bill Amount is the gross the party was paid on; TDS Base is the
+          // freight alone. They differ by the settlement adjustments, which are
+          // never taxed — showing both is what makes that visible.
           { key: "invoiceAmount", header: "Bill Amount", kind: "money" },
+          { key: "baseAmt", header: "TDS Base Amount", kind: "money" },
           { key: "tdsPct", header: "TDS %" },
           { key: "tdsAmt", header: "TDS Amount", kind: "money" },
+          { key: "net", header: "Net Payable", kind: "money" },
           { key: "status", header: "TDS Status", kind: "badge" },
           { key: "remarks", header: "Remarks" },
         ]}

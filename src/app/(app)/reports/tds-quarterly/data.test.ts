@@ -10,6 +10,7 @@ const row = (over: Partial<TdsPayableRow>): TdsPayableRow => ({
   party: "Party A",
   pan: "ABCPP1234F",
   refNo: "CH-1",
+  vehicleNo: "",
   invoiceAmount: 0,
   baseAmt: 0,
   tdsPct: 1,
