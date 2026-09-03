@@ -8,6 +8,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { actionError, zodError, type ActionResult } from "../_lib/util";
+import { parseProductNames, resolveProductColumn } from "@/lib/masters/rate-import";
 
 const basis = z.nativeEnum(RateBasis);
 
@@ -131,11 +132,12 @@ const BASIS_ALIASES: Record<string, RateBasis> = {
 
 /**
  * Import rates from an .xlsx file. Expected headers in row 1 (case-insensitive):
- * Party | Product | Source | Destination | Rate | Basis | Hamali | Pre Bhada |
+ * Party | Products | Source | Destination | Rate | Basis | Hamali | Pre Bhada |
  * D Charge | Stationery | Crossing. Party, Source, Destination, Rate required;
  * names are matched against master records — unknown names are reported, not
- * created. The Product cell may list several products (comma / slash / plus
- * separated) — they land on ONE multi-product rate row.
+ * created. The Products cell may list several products, COMMA-separated —
+ * they land on ONE multi-product rate row. An empty cell, or the literal
+ * "ALL", means the rate applies to every product.
  */
 export async function importRatesFromExcel(formData: FormData): Promise<RateImportResult> {
   const session = requireSession();
@@ -166,7 +168,10 @@ export async function importRatesFromExcel(formData: FormData): Promise<RateImpo
     return 0;
   };
   const cParty = col("PARTY", "PARTY NAME");
-  const cProduct = col("PRODUCT", "PRODUCT NAME");
+  // "Products" (plural) is what THIS screen's own Excel export writes, so the
+  // old singular-only lookup silently dropped every product on a round-trip
+  // and turned each imported row into an ALL-products rate
+  const cProduct = resolveProductColumn(headers);
   const cSource = col("SOURCE", "FROM", "SOURCE CITY");
   const cDest = col("DESTINATION", "TO", "DEST", "DESTINATION CITY");
   const cRate = col("RATE", "FREIGHT RATE");
@@ -219,10 +224,9 @@ export async function importRatesFromExcel(formData: FormData): Promise<RateImpo
       const dest = cityMap.get(text(row, cDest).toUpperCase());
       // one cell may carry several products — COMMA-separated only (a slash
       // or plus can be part of a product's own name, e.g. "OIL/GREASE")
-      const productNames = text(row, cProduct)
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      // an empty cell, or the literal "ALL" the export writes, means the rate
+      // covers every product
+      const productNames = parseProductNames(text(row, cProduct));
       if (!party) { errors.push(`Row ${i}: party "${partyName}" not found in masters.`); continue; }
       if (!source) { errors.push(`Row ${i}: source city "${text(row, cSource)}" not found.`); continue; }
       if (!dest) { errors.push(`Row ${i}: destination city "${text(row, cDest)}" not found.`); continue; }
