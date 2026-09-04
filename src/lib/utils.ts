@@ -37,6 +37,23 @@ export function formatMoney(n: number | string | null | undefined): string {
 }
 
 /**
+ * Weights are stored as Decimal(12,3), so three places IS their precision.
+ * Adding them as JS floats does not respect that — summing a few POD shortage
+ * weights produces 0.10500000000000001, which the register then printed in
+ * full. Round every weight SUM through this.
+ */
+export function roundWt(n: number): number {
+  return Math.round((n + Number.EPSILON) * 1000) / 1000;
+}
+
+/** A weight for display: grouped, at most three decimals, no trailing zeros. */
+export function formatWt(n: number | string | null | undefined): string {
+  const raw = typeof n === "string" ? parseFloat(n) : n ?? 0;
+  const v = roundWt(isNaN(raw) ? 0 : raw);
+  return v.toLocaleString("en-IN", { maximumFractionDigits: 3 });
+}
+
+/**
  * Numeric-aware LR/C.Note number ordering: "10002" < "10010" < "9001A".
  * Plain string sort put 10010 before 9001; the bill's S.No column follows
  * this order everywhere (entry grid, preview, print) so an edit never

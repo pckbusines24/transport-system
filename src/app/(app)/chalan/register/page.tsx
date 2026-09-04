@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { roundWt, toNum } from "@/lib/utils";
 import { invoiceSettlement, payableSettlement } from "@/lib/settlement";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { ChalanRegisterClient, type ChalanRegisterRow } from "./register-client";
@@ -182,7 +182,9 @@ export default async function ChalanRegisterPage({
     isFinal: c.isFinal,
     podDone: c.lrs.filter((l) => l.lr.pods.length > 0).length,
     // shortage weight recorded on the LRs' PODs (visible before balance payment)
-    shortageWt: c.lrs.flatMap((l) => l.lr.pods).reduce((s, p) => s + toNum(p.shortageWt), 0),
+    shortageWt: roundWt(
+      c.lrs.flatMap((l) => l.lr.pods).reduce((s, p) => s + toNum(p.shortageWt), 0)
+    ),
     // shortage amount + round-off applied at balance payment (visible after) —
     // across BOTH paths: chalan-side legacy fields AND settlement vouchers
     shortage: Number(c.balShortage) + (payable.get(c.id)?.voucherShortage ?? 0),

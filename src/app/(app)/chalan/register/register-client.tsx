@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { DataTable } from "@/components/data/data-table";
 import { FilterBar } from "@/components/data/filter-bar";
 import { ExportButton } from "@/components/data/export-button";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatDate, formatMoney, formatWt } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -251,11 +251,11 @@ export function ChalanRegisterClient({
     {
       accessorKey: "shortageWt",
       header: "Shortage Wt",
-      cell: ({ row }) => (row.original.shortageWt ? row.original.shortageWt : ""),
+      cell: ({ row }) => (row.original.shortageWt ? formatWt(row.original.shortageWt) : ""),
       meta: {
         numeric: true,
         total: (r: ChalanRegisterRow[]) =>
-          Math.round(r.reduce((s, x) => s + x.shortageWt, 0) * 1000) / 1000 || "",
+          formatWt(r.reduce((s, x) => s + x.shortageWt, 0)) || "",
       },
     },
     {

@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { nextChalanNumber } from "@/lib/sequences";
-import { toNum } from "@/lib/utils";
+import { roundWt, toNum } from "@/lib/utils";
 import { payableSettlement } from "@/lib/settlement";
 import { ChalanForm, type ChalanRecord, type BrokerOption } from "./chalan-form";
 
@@ -126,9 +126,9 @@ export default async function ChalanPage({
                 l.lr.lrType !== "PAPER_CHANGE" &&
                 l.lr.pods.length > 0
             ).length,
-            podShortageWt: record.lrs
-              .flatMap((l) => l.lr.pods)
-              .reduce((s, p) => s + toNum(p.shortageWt), 0),
+            podShortageWt: roundWt(
+              record.lrs.flatMap((l) => l.lr.pods).reduce((s, p) => s + toNum(p.shortageWt), 0)
+            ),
             freight: toNum(record.freight),
             rate: toNum(record.rate),
             rateBasis: record.rateBasis,
