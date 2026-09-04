@@ -12,6 +12,7 @@ import { tripLockError } from "@/lib/trip-lock";
 import { nextDocNumber, syncSequenceTo } from "@/lib/sequences";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { computeChalan } from "@/lib/calc/chalan";
+import { newlyLinkedLrIds, ON_CHALAN_SOURCE_STATUSES } from "@/lib/lr-status";
 import { toNum } from "@/lib/utils";
 import {
   applyManualAdvanceUses,
@@ -484,13 +485,28 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
           data: { status: l.lr.pods.length ? "DELIVERED" : "PENDING" },
         });
       }
-      // an already-final chalan keeps its LR set consistent — LRs added by
-      // this edit go ON_CHALAN now (finalize only runs once)
+      // An already-final chalan keeps its LR set consistent — LRs ADDED by
+      // this edit go ON_CHALAN now (finalize only runs once).
+      //
+      // This used to update every LR on the chalan, so re-saving a final
+      // chalan for any reason dragged its delivered and BILLED LRs back to
+      // ON_CHALAN — the bill kept its links, but the LR Register showed the
+      // LRs un-billed again. Only genuinely new LRs are touched, and only
+      // forward: see `@/lib/lr-status`.
       if (existing?.isFinal && data.lrIds.length) {
-        await tx.lr.updateMany({
-          where: { id: { in: data.lrIds } },
-          data: { status: "ON_CHALAN" },
-        });
+        const addedLrIds = newlyLinkedLrIds(
+          data.lrIds,
+          existing.lrs.map((l) => l.lrId)
+        );
+        if (addedLrIds.length) {
+          await tx.lr.updateMany({
+            where: {
+              id: { in: addedLrIds },
+              status: { in: [...ON_CHALAN_SOURCE_STATUSES] },
+            },
+            data: { status: "ON_CHALAN" },
+          });
+        }
       }
       // ledger accrual: hire expense vs broker/owner payable — the advances and
       // balance payment then debit the broker against this credit
@@ -802,8 +818,13 @@ export async function finalizeChalan(
       });
       if (!chalan) return { ok: false as const, error: "Chalan not found" };
       await tx.chalan.update({ where: { id: chalanId }, data: { isFinal: true } });
+      // forward-only: re-finalizing must not pull a delivered or billed LR
+      // back to ON_CHALAN
       await tx.lr.updateMany({
-        where: { id: { in: chalan.lrs.map((l) => l.lrId) } },
+        where: {
+          id: { in: chalan.lrs.map((l) => l.lrId) },
+          status: { in: [...ON_CHALAN_SOURCE_STATUSES] },
+        },
         data: { status: "ON_CHALAN" },
       });
       await syncSequenceTo(tx, {
