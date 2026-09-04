@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { computePlacement } from "@/lib/ui/popover-placement";
 
 export interface MasterOption {
   value: string;
@@ -50,6 +51,16 @@ export function MasterCombobox({
   const [text, setText] = React.useState(selected?.label ?? "");
   const [open, setOpen] = React.useState(false);
   const [highlight, setHighlight] = React.useState(0);
+  /**
+   * Whether the user has actually engaged with the suggestions — typed, arrowed
+   * or hovered. Merely FOCUSING the field does not count.
+   *
+   * Focus alone opens the list and highlights row 0, so tabbing through an
+   * untouched optional field used to reach the Tab branch below with a valid
+   * highlight and silently select the first option. An optional field a user
+   * never touched must stay empty; only an explicit action may set it.
+   */
+  const [interacted, setInteracted] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
@@ -165,11 +176,30 @@ export function MasterCombobox({
     };
   }, [open]);
 
-  // flip above when there is not enough room below, so the list is never
-  // half off-screen on a row near the bottom of the viewport
-  const MAX_LIST = 256;
-  const below = rect ? window.innerHeight - rect.bottom - 8 : 0;
-  const flip = rect !== null && below < 180 && rect.top > below;
+  /**
+   * Where the list goes. It is fixed-positioned in a portal, so the only thing
+   * that can clip it is the viewport — never a modal or a scrolling ancestor.
+   *
+   * Vertically: open downward when the list fits below, otherwise flip above
+   * whenever above has more room. Sizing to whichever side is chosen means the
+   * list is never cut off at the bottom of the screen.
+   *
+   * Horizontally: the list is widened to a readable 240px minimum, which can
+   * push it past the right edge for a field on the right of a modal. Clamping
+   * the left keeps it on screen and still attached to its field.
+   */
+  const GAP = 4;
+  const placement = React.useMemo(
+    () =>
+      rect
+        ? computePlacement({
+            rect,
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            gap: GAP,
+          })
+        : null,
+    [rect]
+  );
 
   return (
     <div className={cn("relative", className)}>
@@ -187,9 +217,13 @@ export function MasterCombobox({
           e.target.select();
           setOpen(true);
           setHighlight(0);
+          // focus is not engagement — see `interacted`
+          setInteracted(false);
         }}
         onBlur={handleBlur}
         onChange={(e) => {
+          // typing is engagement: a typed prefix may still be completed by Tab
+          setInteracted(true);
           setText(e.target.value);
           setOpen(true);
           setHighlight(0);
@@ -197,6 +231,7 @@ export function MasterCombobox({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
+            setInteracted(true);
             if (!open) setOpen(true);
             else {
               const next = Math.min(highlight + 1, Math.max(lastIndex, 0));
@@ -205,6 +240,7 @@ export function MasterCombobox({
             }
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
+            setInteracted(true);
             const next = Math.max(highlight - 1, 0);
             setHighlight(next);
             scrollTo(next);
@@ -214,8 +250,10 @@ export function MasterCombobox({
               commitHighlight();
             }
           } else if (e.key === "Tab") {
-            // commit the highlighted suggestion, then let focus move on
-            commitHighlight();
+            // commit the highlighted suggestion, then let focus move on — but
+            // ONLY if the user actually engaged with the list. Tabbing straight
+            // through an untouched field must leave it exactly as it was.
+            if (interacted) commitHighlight();
           } else if (e.key === "Escape") {
             setOpen(false);
             setText(selected?.label ?? "");
@@ -227,17 +265,17 @@ export function MasterCombobox({
         aria-hidden
       />
 
-      {open && !disabled && rect && createPortal(
+      {open && !disabled && rect && placement && createPortal(
         <div
           ref={listRef}
           style={{
             position: "fixed",
-            left: rect.left,
-            width: Math.max(rect.width, 240),
-            ...(flip
-              ? { bottom: window.innerHeight - rect.top + 4 }
-              : { top: rect.bottom + 4 }),
-            maxHeight: flip ? Math.min(MAX_LIST, rect.top - 8) : Math.min(MAX_LIST, below),
+            left: placement.left,
+            width: placement.width,
+            ...(placement.flip
+              ? { bottom: window.innerHeight - rect.top + GAP }
+              : { top: rect.bottom + GAP }),
+            maxHeight: placement.maxHeight,
           }}
           className="z-50 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-overlay"
         >
@@ -253,7 +291,10 @@ export function MasterCombobox({
                 e.preventDefault();
                 pick(opt);
               }}
-              onMouseEnter={() => setHighlight(idx)}
+              onMouseEnter={() => {
+                setInteracted(true);
+                setHighlight(idx);
+              }}
               className={cn(
                 "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
                 idx === highlight && "bg-accent text-accent-foreground"
@@ -282,7 +323,10 @@ export function MasterCombobox({
                 e.preventDefault();
                 openCreate();
               }}
-              onMouseEnter={() => setHighlight(createIndex)}
+              onMouseEnter={() => {
+                setInteracted(true);
+                setHighlight(createIndex);
+              }}
               className={cn(
                 "mt-1 flex cursor-pointer items-center gap-2 rounded-sm border-t px-2 py-1.5 text-sm text-primary",
                 highlight === createIndex && "bg-accent"
