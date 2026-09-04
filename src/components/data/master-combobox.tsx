@@ -6,6 +6,7 @@ import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { computePlacement } from "@/lib/ui/popover-placement";
+import { resolveOnBlur } from "@/lib/ui/combobox-resolve";
 
 export interface MasterOption {
   value: string;
@@ -128,20 +129,11 @@ export function MasterCombobox({
   const handleBlur = () => {
     focused.current = false;
     setOpen(false);
-    const t = text.trim();
-    if (!t) {
-      if (value) onChange(null);
-      setText("");
-      return;
-    }
-    // exact label match (case-insensitive) selects; otherwise revert
-    const exact = options.find((o) => o.label.toLowerCase() === t.toLowerCase());
-    if (exact) {
-      if (exact.value !== value) onChange(exact.value);
-      setText(exact.label);
-    } else {
-      setText(selected?.label ?? "");
-    }
+    // labels are not unique — an already-consistent selection is kept as-is
+    // rather than re-matched by name. See `resolveOnBlur`.
+    const next = resolveOnBlur({ text, value, options });
+    if (next.changed) onChange(next.value);
+    setText(next.text);
   };
 
   const closeAndSelect = React.useCallback(
