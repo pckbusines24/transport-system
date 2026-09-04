@@ -156,16 +156,39 @@ export function MasterCombobox({
    */
   const [rect, setRect] = React.useState<DOMRect | null>(null);
   React.useLayoutEffect(() => {
-    if (!open) return;
-    const measure = () => setRect(inputRef.current?.getBoundingClientRect() ?? null);
-    measure();
-    // capture: the scroll may happen on any ancestor, not just the window
-    window.addEventListener("scroll", measure, true);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.removeEventListener("scroll", measure, true);
-      window.removeEventListener("resize", measure);
+    if (!open) {
+      setRect(null); // never reuse a stale rect on the next open
+      return;
+    }
+    /**
+     * Track the input every frame while the list is open.
+     *
+     * Measuring once was wrong inside a dialog. Radix autofocuses the first
+     * field as the dialog opens, focus opens this list, and the measurement
+     * then ran DURING the dialog's 200ms zoom-in-95 entry animation — with the
+     * content still at scale(0.95), a top-left field measures pulled toward the
+     * centre, so the list was pinned down and to the right of its field and
+     * stayed there, since nothing re-measured afterwards.
+     *
+     * A frame loop settles with the animation and also covers ancestor
+     * scrolling, resizes and any later layout shift. State is only set when the
+     * rect actually moves, so a still list costs one comparison per frame.
+     */
+    let frame = 0;
+    let last = "";
+    const measure = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (r) {
+        const key = `${r.top}|${r.left}|${r.width}|${r.bottom}`;
+        if (key !== last) {
+          last = key;
+          setRect(r);
+        }
+      }
+      frame = requestAnimationFrame(measure);
     };
+    measure();
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   /**
@@ -268,7 +291,17 @@ export function MasterCombobox({
               ? { bottom: window.innerHeight - rect.top + GAP }
               : { top: rect.bottom + GAP }),
             maxHeight: placement.maxHeight,
+            // A modal Radix Dialog sets `pointer-events: none` on <body> while
+            // it is open. This list is portalled to <body>, OUTSIDE the dialog
+            // content, so it inherited that and swallowed every click on an
+            // option — the reason picking by mouse did nothing in a dialog
+            // while the same combobox worked on a full page like LR Entry.
+            pointerEvents: "auto",
           }}
+          // ...and the dialog treats a pointerdown outside its content as
+          // "dismiss". Keeping the event inside the list stops a click on an
+          // option from closing the whole form.
+          onPointerDown={(e) => e.stopPropagation()}
           className="z-50 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-overlay"
         >
           {visible.length === 0 && !renderCreateDialog && (
