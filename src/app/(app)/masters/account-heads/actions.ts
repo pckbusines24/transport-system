@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
-import { runImport, type ImportSummary } from "@/lib/import-core";
+import { runImport, matchEnum, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -113,8 +113,8 @@ export async function importAccountHeads(formData: FormData): Promise<ImportSumm
     runImport(file instanceof File ? file : null, ["NAME", "KIND"], async (rec) => {
       const name = rec["NAME"].toUpperCase();
       if (!name) throw new Error("Head name is required");
-      const kind = rec["KIND"].toUpperCase();
-      if (kind !== "INCOME" && kind !== "EXPENSE") throw new Error("Kind must be INCOME or EXPENSE");
+      const kind = matchEnum(rec["KIND"], { INCOME: "INCOME", EXPENSE: "EXPENSE" } as const);
+      if (!kind) throw new Error(`Kind must be INCOME or EXPENSE (got "${rec["KIND"]}")`);
       const existing = await tx.accountHead.findFirst({ where: { name } });
       if (existing) {
         // an import must not reclassify a system head either

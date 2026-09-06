@@ -3,7 +3,7 @@
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
-import { runImport, type ImportSummary } from "@/lib/import-core";
+import { runImport, enumKey, type ImportSummary } from "@/lib/import-core";
 import { ImportDedup } from "@/lib/import-dedup";
 import { parseDdMmYyyy, toNum } from "@/lib/utils";
 import { saveVehicleExpenseTxn } from "./actions";
@@ -255,7 +255,7 @@ export async function importVehicleExpenses(fd: FormData): Promise<ImportSummary
       const dateIso = parseAnyDate(rec["DATE"] ?? "");
       if (!dateIso) throw new Error(`invalid DATE "${rec["DATE"]}" — use dd/mm/yyyy`);
 
-      const txnType = (rec["TYPE"] || "EXPENSE").toUpperCase();
+      const txnType = enumKey(rec["TYPE"]) || "EXPENSE";
       if (txnType !== "EXPENSE" && txnType !== "INCOME") {
         err(`invalid TYPE "${rec["TYPE"]}" — EXPENSE or INCOME`);
       }
@@ -270,7 +270,7 @@ export async function importVehicleExpenses(fd: FormData): Promise<ImportSummary
       const amount = toNum(rec["AMOUNT"]);
       if (amount <= 0) err(`AMOUNT must be a positive number (got "${rec["AMOUNT"]}")`);
 
-      const modeRaw = (rec["PAYMENT MODE"] || "CREDIT").toUpperCase();
+      const modeRaw = enumKey(rec["PAYMENT MODE"]) || "CREDIT";
       if (!["CASH", "BANK", "CARD", "CREDIT"].includes(modeRaw)) {
         err(`invalid PAYMENT MODE "${rec["PAYMENT MODE"]}" — CASH / BANK / CREDIT`);
       }

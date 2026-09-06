@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
-import { runImport, type ImportSummary } from "@/lib/import-core";
+import { runImport, enumKey, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -150,7 +150,7 @@ export async function importVehicleDocuments(formData: FormData): Promise<Import
       const values = {
         docNo: rec["DOC NO"] || null,
         companyName: rec["COMPANY"] || null,
-        status: rec["STATUS"]?.toUpperCase() === "PENDING" ? "PENDING" : "DONE",
+        status: enumKey(rec["STATUS"]) === "PENDING" ? "PENDING" : "DONE",
         entryDate,
         effectiveDate: parseDateInput(rec["EFFECTIVE DATE"] ?? ""),
         expiryDate: parseDateInput(rec["EXPIRY DATE"] ?? ""),

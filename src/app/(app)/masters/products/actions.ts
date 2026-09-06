@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
-import { runImport, num as importNum, type ImportSummary } from "@/lib/import-core";
+import { runImport, num as importNum, enumKey, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
@@ -96,7 +96,7 @@ export async function importProducts(formData: FormData): Promise<ImportSummary>
         create: { tenantId: session.tenantId, name: groupName },
         update: {},
       });
-      const productType = rec["PRODUCT TYPE"]?.toUpperCase() === "ODC" ? "ODC" : "NORMAL";
+      const productType = enumKey(rec["PRODUCT TYPE"]) === "ODC" ? "ODC" : "NORMAL";
       const unitName = rec["UNIT"]?.trim();
       if (!unitName) throw new Error("Unit is required (must exist in the Unit Master)");
       const unit = await tx.unit.findFirst({

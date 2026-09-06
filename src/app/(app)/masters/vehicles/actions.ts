@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
-import { runImport, type ImportSummary } from "@/lib/import-core";
+import { runImport, matchEnum, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
@@ -100,9 +100,14 @@ export async function importVehicles(formData: FormData): Promise<ImportSummary>
     runImport(file instanceof File ? file : null, ["VEHICLE NO", "OWNERSHIP", "NAME"], async (rec) => {
       const number = rec["VEHICLE NO"].toUpperCase().replace(/\s+/g, "");
       if (!number) throw new Error("Vehicle number is required");
-      const ownership = rec["OWNERSHIP"].toUpperCase();
-      if (!["OWNER", "BROKER", "RELATIVE"].includes(ownership)) {
-        throw new Error("Ownership must be OWNER, BROKER or RELATIVE");
+      // accepts "Owner", "owner ", "OWNER" etc. — the export grid writes labels
+      const ownership = matchEnum(rec["OWNERSHIP"], {
+        OWNER: "OWNER",
+        BROKER: "BROKER",
+        RELATIVE: "RELATIVE",
+      } as const);
+      if (!ownership) {
+        throw new Error(`Ownership must be OWNER, BROKER or RELATIVE (got "${rec["OWNERSHIP"]}")`);
       }
       // owners, brokers and relatives share one unified person list;
       // a BROKER vehicle may come in without a name

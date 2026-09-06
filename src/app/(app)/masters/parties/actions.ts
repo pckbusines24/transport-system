@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { LedgerGroup } from "@prisma/client";
 import { requireSession } from "@/lib/session";
-import { runImport, num as importNum, type ImportSummary } from "@/lib/import-core";
+import { runImport, num as importNum, matchEnum, enumKey, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
@@ -139,22 +139,28 @@ export async function importParties(formData: FormData): Promise<ImportSummary> 
     runImport(file instanceof File ? file : null, ["NAME", "GROUP"], async (rec) => {
       const name = rec["NAME"].toUpperCase();
       if (!name) throw new Error("Party name is required");
+      // Keys are enumKey()-normalised, so "Consignee / Consignor", "Owner/Broker",
+      // "consignee consignor" and the raw enum names all resolve.
       const groupAliases: Record<string, string> = {
-        "OWNER": "OWNER_BROKER",
-        "BROKER": "OWNER_BROKER",
-        "OWNER/BROKER": "OWNER_BROKER",
-        "OWNER_BROKER": "OWNER_BROKER",
-        "CONSIGNOR": "CONSIGNEE_CONSIGNOR",
-        "CONSIGNEE": "CONSIGNEE_CONSIGNOR",
-        "PARTY": "CONSIGNEE_CONSIGNOR",
-        "CONSIGNEE_CONSIGNOR": "CONSIGNEE_CONSIGNOR",
-        "DRIVER": "DRIVER",
-        "STAFF": "STAFF",
-        "SUPPLIER": "SUPPLIERS",
-        "SUPPLIERS": "SUPPLIERS",
+        OWNER: "OWNER_BROKER",
+        BROKER: "OWNER_BROKER",
+        OWNER_BROKER: "OWNER_BROKER",
+        CONSIGNOR: "CONSIGNEE_CONSIGNOR",
+        CONSIGNEE: "CONSIGNEE_CONSIGNOR",
+        PARTY: "CONSIGNEE_CONSIGNOR",
+        CONSIGNEE_CONSIGNOR: "CONSIGNEE_CONSIGNOR",
+        CONSIGNOR_CONSIGNEE: "CONSIGNEE_CONSIGNOR",
+        DRIVER: "DRIVER",
+        STAFF: "STAFF",
+        SUPPLIER: "SUPPLIERS",
+        SUPPLIERS: "SUPPLIERS",
       };
-      const group = groupAliases[rec["GROUP"].toUpperCase().replace(/ /g, "_")];
-      if (!group) throw new Error(`unknown group "${rec["GROUP"]}"`);
+      const group = matchEnum(rec["GROUP"], groupAliases);
+      if (!group) {
+        throw new Error(
+          `unknown group "${rec["GROUP"]}" — use Consignee / Consignor, Owner / Broker, Driver, Staff or Suppliers`
+        );
+      }
       const gstin = rec["GSTIN"]?.toUpperCase() || null;
       const pan = rec["PAN"]?.toUpperCase() || null;
       const mobile = rec["MOBILE"]?.replace(/\D/g, "") || null;
@@ -169,8 +175,14 @@ export async function importParties(formData: FormData): Promise<ImportSummary> 
         email: rec["EMAIL"] || null,
         address1: rec["ADDRESS"] || null,
         transportName: group === "OWNER_BROKER" ? rec["TRANSPORT NAME"]?.toUpperCase() || null : null,
-        openingBalance: importNum(rec["OPENING BALANCE"]),
-        openingSide: rec["OPENING SIDE"]?.toUpperCase() === "CREDIT" ? ("CREDIT" as const) : ("DEBIT" as const),
+        // accept both the template headers and the export grid headers
+        openingBalance: importNum(rec["OPENING BALANCE"] ?? rec["OPENING"]),
+        openingSide: ["CREDIT", "CR"].includes(enumKey(rec["OPENING SIDE"] ?? rec["DR/CR"]))
+          ? ("CREDIT" as const)
+          : ("DEBIT" as const),
+        ...(rec["ACTIVE"] !== undefined && rec["ACTIVE"] !== ""
+          ? { isActive: !["NO", "N", "FALSE", "0", "INACTIVE"].includes(enumKey(rec["ACTIVE"])) }
+          : {}),
       };
       const existing = await tx.party.findFirst({
         where: { name, ledgerGroup: group as never },

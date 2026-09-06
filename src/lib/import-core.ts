@@ -146,3 +146,27 @@ export const num = (v: string | undefined): number => {
   const n = parseFloat((v ?? "").replace(/[^\d.-]/g, ""));
   return isNaN(n) ? 0 : n;
 };
+
+/**
+ * Normalise a human-entered enum/label cell so it matches an internal key:
+ * "Consignee / Consignor", "consignee-consignor", "CONSIGNEE_CONSIGNOR" and
+ * "Consignee Consignor" all become "CONSIGNEE_CONSIGNOR". Exports render enums
+ * as labels (e.g. "Owner / Broker"), so imports must accept them back.
+ */
+export const enumKey = (v: string | undefined): string =>
+  (v ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+/**
+ * Resolve a cell against an alias map whose keys are already enumKey-normalised.
+ * Returns undefined when the value is empty or unknown.
+ */
+export const matchEnum = <T extends string>(
+  v: string | undefined,
+  aliases: Record<string, T>
+): T | undefined => {
+  const key = enumKey(v);
+  return key ? aliases[key] : undefined;
+};
