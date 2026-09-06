@@ -70,6 +70,8 @@ export async function saveVehicleWithdrawal(
       });
 
       const deposit = d.kind === "DEPOSIT";
+      // the ledger shows this as the module, so a deposit must not read as a withdrawal
+      const refType = deposit ? "VEH_DEPOSIT" : "VEH_WITHDRAWAL";
       const refNo = `${deposit ? "JMA" : "NIK"}-${created.id.slice(-6).toUpperCase()}`;
       const narration = `Owner ${deposit ? "deposit" : "withdrawal"} — ${vehicle.number}${d.remarks ? ` (${d.remarks})` : ""}`;
       await postLedger(tx, session, [
@@ -78,7 +80,7 @@ export async function saveVehicleWithdrawal(
           partyId: d.partyId,
           side: deposit ? "CREDIT" : "DEBIT",
           amount: d.amount,
-          refType: "VEH_WITHDRAWAL",
+          refType,
           refId: created.id,
           refNo,
           narration,
@@ -88,7 +90,7 @@ export async function saveVehicleWithdrawal(
           partyId: d.payPartyId,
           side: deposit ? "DEBIT" : "CREDIT",
           amount: d.amount,
-          refType: "VEH_WITHDRAWAL",
+          refType,
           refId: created.id,
           refNo,
           narration,
@@ -120,7 +122,7 @@ export async function deleteVehicleWithdrawal(
         where: { id, firmId: session.firmId, deletedAt: null },
       });
       if (!before) return { ok: false as const, error: "Withdrawal / deposit entry not found." };
-      await reverseLedger(tx, "VEH_WITHDRAWAL", id);
+      await reverseLedger(tx, before.kind === "DEPOSIT" ? "VEH_DEPOSIT" : "VEH_WITHDRAWAL", id);
       const deleted = await tx.vehicleWithdrawal.update({
         where: { id },
         data: { deletedAt: new Date() },
