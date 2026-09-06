@@ -392,6 +392,14 @@ export function BrokerSlipForm({
     .filter((b) => b.transportName)
     .map((b) => ({ value: b.value, label: b.transportName as string, meta: b.label }));
   const selectedTransport = brokerOptions.find((b) => b.value === form.transporterId);
+  // Owner Side: Owner / Broker ↔ Transport Name are the same two-way pair as
+  // in Chalan Entry; the stored ownerName follows the selected party.
+  const selectOwner = (v: string | null) => {
+    set("ownerId", v);
+    const b = brokerOptions.find((x) => x.value === v);
+    set("ownerName", b ? (b.ownerName ?? b.label) : "");
+  };
+  const selectedOwner = brokerOptions.find((b) => b.value === form.ownerId);
 
   // ---------- advances ----------
   const addAdvance = () =>
@@ -806,7 +814,7 @@ export function BrokerSlipForm({
                 <Label className="text-xs">Owner / Broker</Label>
                 {partyCombo(
                   form.ownerId,
-                  (v) => set("ownerId", v),
+                  selectOwner,
                   brokerOptions,
                   setBrokerOptions,
                   "OWNER_BROKER",
@@ -814,11 +822,12 @@ export function BrokerSlipForm({
                 )}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Owner Name (text)</Label>
-                <Input
-                  className="h-8"
-                  value={form.ownerName}
-                  onChange={(e) => set("ownerName", e.target.value)}
+                <Label className="text-xs">Transport Name (auto-links the owner)</Label>
+                <MasterCombobox
+                  options={transportOptions}
+                  value={selectedOwner?.transportName ? form.ownerId : null}
+                  onChange={selectOwner}
+                  placeholder={selectedOwner?.transportName || "Select transport name..."}
                 />
               </div>
             </div>
