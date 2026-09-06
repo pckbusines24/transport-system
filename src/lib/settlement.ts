@@ -364,3 +364,97 @@ export async function invoiceSettlement(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Driver settlement netting
+// ---------------------------------------------------------------------------
+
+export interface DriverSettlementDoc {
+  id: string;
+  driverId: string;
+  date: Date;
+  amount: unknown; // Prisma Decimal | number | string
+  status: string;
+  settledDate: Date | null;
+  tripRef: string | null;
+  voucherNo: string | null;
+}
+
+export interface DriverNetPosition {
+  driverId: string;
+  /** signed net of live remainders: + company owes driver, − driver owes company */
+  net: number;
+  /** signed sum of the original amounts of the rows that make up the chain */
+  original: number;
+  /** what vouchers already settled against those rows (absolute) */
+  settled: number;
+  /** date of the latest row in the chain — the one that carries the balance */
+  date: Date;
+  /** trip refs / voucher nos of the rows, oldest first, for the remarks column */
+  refs: string[];
+  ids: string[];
+}
+
+/**
+ * Collapse a driver's open settlement rows into ONE signed position.
+ *
+ * Every trip posts its own +/- row, and the settlement tab shows them as a
+ * running balance: earlier rows are "adjusted" into the latest one, and
+ * Pay/Receive settles the net in one voucher. The Outstanding register and
+ * the dashboard tiles must therefore carry the same net — one line per
+ * driver on whichever side it falls — never a receivable AND a payable for
+ * the same driver. Rows already settled on/before `asOf` are skipped, as are
+ * drivers whose chain nets to zero.
+ */
+export async function driverNetPositions(
+  tx: Tx,
+  opts: {
+    firmId: string;
+    fyId?: string;
+    docs: DriverSettlementDoc[];
+    asOf?: Date | null;
+  }
+): Promise<DriverNetPosition[]> {
+  const open = opts.docs.filter(
+    (s) => !(opts.asOf && s.status === "SETTLED" && s.settledDate && s.settledDate <= opts.asOf)
+  );
+  const pos = await refPositions(tx, {
+    firmId: opts.firmId,
+    fyId: opts.fyId,
+    refType: "DRIVER_SETTLEMENT",
+    asOf: opts.asOf,
+    docs: open.map((s) => ({ id: s.id, original: Math.abs(Number(s.amount)) })),
+  });
+  const byDriver = new Map<string, DriverNetPosition>();
+  const sorted = [...open].sort((a, b) => a.date.getTime() - b.date.getTime());
+  for (const s of sorted) {
+    const amount = round2(Number(s.amount));
+    const p = pos.get(s.id);
+    const live = signedRemainder(amount, p?.settled ?? 0);
+    const acc =
+      byDriver.get(s.driverId) ??
+      ({ driverId: s.driverId, net: 0, original: 0, settled: 0, date: s.date, refs: [], ids: [] } as DriverNetPosition);
+    acc.net = round2(acc.net + live);
+    acc.original = round2(acc.original + amount);
+    acc.settled = round2(acc.settled + (p?.settled ?? 0));
+    if (s.date > acc.date) acc.date = s.date;
+    acc.refs.push(s.tripRef || s.voucherNo || "MANUAL");
+    acc.ids.push(s.id);
+    byDriver.set(s.driverId, acc);
+  }
+  return Array.from(byDriver.values()).filter((d) => Math.abs(d.net) > 0.009);
+}
+
+/** Gross / paid / outstanding figures for a netted driver line on the register. */
+export function driverNetFigures(d: DriverNetPosition): {
+  gross: number;
+  paid: number;
+  outstanding: number;
+} {
+  const outstanding = round2(Math.abs(d.net));
+  // when vouchers have not flipped the side, the gross is the signed sum of
+  // originals; otherwise nothing sensible is "paid" — show the remainder only
+  const sameSide = Math.sign(d.original) === Math.sign(d.net);
+  const gross = sameSide ? round2(Math.max(Math.abs(d.original), outstanding)) : outstanding;
+  return { gross, paid: round2(gross - outstanding), outstanding };
+}

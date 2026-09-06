@@ -144,15 +144,10 @@ export async function loadSettlementTab(filters: DriverFilters) {
         deletedAt: null,
       };
       if (filters.driver) where.driverId = filters.driver;
-      if (filters.status === "PENDING" || filters.status === "SETTLED") {
-        where.status = filters.status;
-      } else {
-        // default view: only settlements where money ACTUALLY moved — a real
-        // payment/receipt voucher exists. Pending trip balances stay reachable
-        // via the Status filter (that is where Pay/Receive lives).
-        where.status = "SETTLED";
-        where.voucherId = { not: null };
-      }
+      // default view = the open chain. "ADJUSTED" is not stored: every open
+      // row except a driver's latest is derived as adjusted below, since its
+      // amount has been carried into the running balance of the row after it.
+      where.status = filters.status === "SETTLED" ? "SETTLED" : "PENDING";
       const range = dateRange(filters);
       if (range) where.date = range;
       const [settlements, drivers, vehicles, banks] = await Promise.all([
@@ -208,10 +203,20 @@ export async function loadSettlementTab(filters: DriverFilters) {
       remarks: s.remarks ?? "",
     };
   });
-  rows.reverse(); // newest first for display
+  // derived status: only a driver's LATEST open row stays PENDING (it carries
+  // the running balance and the Pay/Receive button); earlier open rows show
+  // ADJUSTED because their amount is already inside that running balance
+  const latestOpen = new Map<string, string>();
+  for (const r of rows) if (r.status === "PENDING") latestOpen.set(r.driverId, r.id);
+  for (const r of rows) {
+    if (r.status === "PENDING" && latestOpen.get(r.driverId) !== r.id) r.status = "ADJUSTED";
+  }
+  const visible =
+    filters.status === "ADJUSTED" ? rows.filter((r) => r.status === "ADJUSTED") : rows;
+  visible.reverse(); // newest first for display
 
   return {
-    rows,
+    rows: visible,
     driverOptions: drivers.map((d) => ({ value: d.id, label: `${d.name} (${d.driverCode})` })),
     vehicleOptions: vehicles.map((v) => ({ value: v.id, label: v.number })),
     bankOptions: banks.map((b) => ({ value: b.id, label: b.name, meta: b.ledgerGroup })),

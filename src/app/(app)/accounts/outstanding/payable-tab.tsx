@@ -3,7 +3,12 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
-import { ALL_PAYABLE_REF_TYPES, refPositions, settledByRef } from "@/lib/settlement";
+import {
+  ALL_PAYABLE_REF_TYPES,
+  driverNetFigures,
+  driverNetPositions,
+  settledByRef,
+} from "@/lib/settlement";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport } from "@/components/accounts/simple-report";
 
@@ -219,7 +224,6 @@ export async function OutstandingPayableTab({
             where: {
               firmId: session.firmId,
               deletedAt: null,
-              amount: { gt: 0 },
               status: "PENDING",
               date: effDate,
             },
@@ -228,14 +232,15 @@ export async function OutstandingPayableTab({
     const driverRows = driverSetts.length
       ? await tx.driver.findMany({ select: { id: true, partyId: true, name: true } })
       : [];
-    const settPos = await refPositions(tx, {
+    // +/- rows of one driver net into a single position (same as the running
+    // balance on the settlement tab); only a POSITIVE net is a payable
+    const driverNet = await driverNetPositions(tx, {
       firmId: session.firmId,
       fyId: session.fyId,
-      refType: "DRIVER_SETTLEMENT",
-      docs: driverSetts.map((s) => ({ id: s.id, original: toNum(String(s.amount)) })),
+      docs: driverSetts,
     });
-    return { chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverSetts, driverRows, settPos };
-  }).then(({ chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverSetts, driverRows, settPos }) => {
+    return { chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverRows, driverNet };
+  }).then(({ chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverRows, driverNet }) => {
     const partyById = new Map(parties.map((p) => [p.id, p]));
     const status = (total: number, outstanding: number) =>
       outstanding <= 0.009 ? "PAID" : outstanding < total - 0.009 ? "PARTLY PAID" : "UNPAID";
@@ -417,23 +422,21 @@ export async function OutstandingPayableTab({
     });
 
     const drvById = new Map(driverRows.map((d) => [d.id, d]));
-    const driverSettRows = driverSetts
-      .filter((s) => !searchParams.party || drvById.get(s.driverId)?.partyId === searchParams.party)
-      .map((s) => {
-        const p = settPos.get(s.id);
-        const gross = Math.round(toNum(String(s.amount)) * 100) / 100;
-        const paid = Math.round((p?.settled ?? 0) * 100) / 100;
-        const outstanding = Math.round((p ? p.outstanding : gross) * 100) / 100;
+    const driverSettRows = driverNet
+      .filter((d) => d.net > 0)
+      .filter((d) => !searchParams.party || drvById.get(d.driverId)?.partyId === searchParams.party)
+      .map((d) => {
+        const f = driverNetFigures(d);
         return {
-          refNo: s.tripRef || s.voucherNo || "SETTLEMENT",
-          date: s.date.toISOString(),
+          refNo: d.refs.join(" + "),
+          date: d.date.toISOString(),
           kind: "DRIVER_SETTLEMENT",
           partyType: "Driver",
-          party: drvById.get(s.driverId)?.name ?? "",
-          gross,
-          paid,
-          outstanding,
-          status: status(gross, outstanding),
+          party: drvById.get(d.driverId)?.name ?? "",
+          gross: f.gross,
+          paid: f.paid,
+          outstanding: f.outstanding,
+          status: status(f.gross, f.outstanding),
           link: "vehicle/driver-settlements",
         };
       });

@@ -96,6 +96,10 @@ export function DriverSettlementClient({
     remarks: "",
   });
 
+  // PENDING = latest open row per driver; ADJUSTED = earlier open rows already
+  // carried into that running balance. Both are still editable/deletable.
+  const isOpen = (s: string) => s === "PENDING" || s === "ADJUSTED";
+
   // Pay/Receive appears ONLY on each driver's latest pending entry, and it
   // settles the driver's ENTIRE running balance (rows arrive newest-first).
   const latestPendingByDriver = React.useMemo(() => {
@@ -147,8 +151,10 @@ export function DriverSettlementClient({
       cell: ({ row }) =>
         row.original.status === "PENDING" ? (
           <Badge variant="outline">PENDING</Badge>
+        ) : row.original.status === "ADJUSTED" ? (
+          <Badge variant="secondary">ADJUSTED</Badge>
         ) : (
-          <Badge>ADJUSTED</Badge>
+          <Badge>SETTLED</Badge>
         ),
     },
     { accessorKey: "voucherNo", header: "Voucher No" },
@@ -187,7 +193,7 @@ export function DriverSettlementClient({
                 )}
               </Button>
             )}
-          {row.original.status === "PENDING" && row.original.isManual && (
+          {isOpen(row.original.status) && row.original.isManual && (
             <Button
               variant="ghost"
               size="sm"
@@ -209,7 +215,7 @@ export function DriverSettlementClient({
               Edit
             </Button>
           )}
-          {canDelete && row.original.status === "PENDING" && (
+          {canDelete && isOpen(row.original.status) && (
             <Button
               variant="ghost"
               size="sm"
@@ -290,7 +296,8 @@ export function DriverSettlementClient({
             label: "Status",
             options: [
               { value: "PENDING", label: "Pending" },
-              { value: "SETTLED", label: "Adjusted" },
+              { value: "ADJUSTED", label: "Adjusted" },
+              { value: "SETTLED", label: "Settled" },
             ],
           },
           { type: "daterange", key: "date", label: "Date" },

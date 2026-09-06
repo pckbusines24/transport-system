@@ -6,7 +6,13 @@ import { withTenant, type Tx } from "@/lib/db";
 import { outstandingTag } from "@/lib/outstanding-cache";
 import { toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
-import { invoiceSettlement, payableSettlement, refPositions } from "@/lib/settlement";
+import {
+  driverNetFigures,
+  driverNetPositions,
+  invoiceSettlement,
+  payableSettlement,
+  refPositions,
+} from "@/lib/settlement";
 
 /**
  * Receivables & Payables with party-wise ageing. Same settlement math as the
@@ -213,13 +219,13 @@ async function collect(
         where: { ...scope, deletedAt: null, kind: "PAID" },
         select: ADVANCE_COLS,
       }),
-      // a negative settlement = the driver owes the company. As-on mode also
-      // fetches rows settled LATER — on the date they were still open.
+      // ALL open rows of a driver net into one position; a NEGATIVE net =
+      // the driver owes the company. As-on mode also fetches rows settled
+      // LATER — on the date they were still open.
       tx.driverSettlement.findMany({
         where: {
           ...scope,
           deletedAt: null,
-          amount: { lt: 0 },
           ...(asOf ? {} : { status: "PENDING" }),
         },
         select: DRIVER_SETTLEMENT_COLS,
@@ -301,27 +307,20 @@ async function collect(
       });
     }
     const driverById = new Map(drivers.map((d) => [d.id, d]));
-    const settPos = await refPositions(tx, {
-      ...scope,
-      refType: "DRIVER_SETTLEMENT",
-      asOf,
-      docs: settlements.map((s) => ({ id: s.id, original: Math.abs(toNum(String(s.amount))) })),
-    });
-    for (const s of settlements) {
-      // settled on/before the date → it was closed by then, skip
-      if (asOf && s.status === "SETTLED" && s.settledDate && s.settledDate <= asOf) continue;
-      const p = settPos.get(s.id);
-      if (!p || p.outstanding <= 0.009) continue;
-      const drv = driverById.get(s.driverId);
+    const driverNet = await driverNetPositions(tx, { ...scope, asOf, docs: settlements });
+    for (const d of driverNet) {
+      if (d.net >= 0) continue; // net payable — belongs to the other tile
+      const f = driverNetFigures(d);
+      const drv = driverById.get(d.driverId);
       out.push({
         partyId: drv?.partyId ?? null,
         partyName: drv?.name ?? null,
-        refNo: s.tripRef || s.voucherNo || "SETTLEMENT",
-        date: s.date,
+        refNo: d.refs.join(" + "),
+        date: d.date,
         type: "DRIVER SETTLEMENT",
-        amount: p.original,
-        settled: p.settled,
-        outstanding: p.outstanding,
+        amount: f.gross,
+        settled: f.paid,
+        outstanding: f.outstanding,
       });
     }
     return out;
@@ -367,13 +366,13 @@ async function collect(
         },
       }),
       tx.staffSalary.findMany({ where: { ...scope, deletedAt: null }, select: SALARY_COLS }),
-      // a positive settlement = the company owes the driver; as-on mode also
-      // fetches rows settled LATER (still open on that date)
+      // ALL open rows of a driver net into one position; a POSITIVE net =
+      // the company owes the driver. As-on mode also fetches rows settled
+      // LATER (still open on that date).
       tx.driverSettlement.findMany({
         where: {
           ...scope,
           deletedAt: null,
-          amount: { gt: 0 },
           ...(asOf ? {} : { status: "PENDING" }),
         },
         select: DRIVER_SETTLEMENT_COLS,
@@ -563,27 +562,21 @@ async function collect(
     });
   }
 
-  // pending driver settlements the company owes
-  const drvPos = await refPositions(tx, {
-    ...scope,
-    refType: "DRIVER_SETTLEMENT",
-    asOf,
-    docs: driverPay.map((s) => ({ id: s.id, original: toNum(String(s.amount)) })),
-  });
-  for (const s of driverPay) {
-    if (asOf && s.status === "SETTLED" && s.settledDate && s.settledDate <= asOf) continue;
-    const p = drvPos.get(s.id);
-    if (!p || p.outstanding <= 0.009) continue;
-    const drv = driverById.get(s.driverId);
+  // driver settlements netted per driver — only a positive net is owed
+  const driverNet = await driverNetPositions(tx, { ...scope, asOf, docs: driverPay });
+  for (const d of driverNet) {
+    if (d.net <= 0) continue; // net receivable — belongs to the other tile
+    const f = driverNetFigures(d);
+    const drv = driverById.get(d.driverId);
     out.push({
       partyId: drv?.partyId ?? null,
       partyName: drv?.name ?? null,
-      refNo: s.tripRef || s.voucherNo || "SETTLEMENT",
-      date: s.date,
+      refNo: d.refs.join(" + "),
+      date: d.date,
       type: "DRIVER SETTLEMENT",
-      amount: p.original,
-      settled: p.settled,
-      outstanding: p.outstanding,
+      amount: f.gross,
+      settled: f.paid,
+      outstanding: f.outstanding,
     });
   }
 
