@@ -1231,7 +1231,7 @@ export function VehiclePnlClient({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Owner (Party) *</Label>
+              <Label className="text-xs">Party *</Label>
               <MasterCombobox
                 options={malikOptions}
                 value={wdPartyId}
