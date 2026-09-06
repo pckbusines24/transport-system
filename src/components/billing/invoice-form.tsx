@@ -771,11 +771,13 @@ export function InvoiceForm({
               value={partyId}
               onChange={onPartyChange}
               placeholder="Select party..."
+              createLabel="+ Create party"
               renderCreateDialog={(closeAndSelect) => (
                 <PartyCreateDialog
                   open
                   onOpenChange={(o) => {
-                    if (!o) closeAndSelect("");
+                    // Cancel keeps whatever was already selected
+                    if (!o) closeAndSelect(partyId ?? "");
                   }}
                   defaultGroup="CONSIGNEE_CONSIGNOR"
                   onCreated={(opt) => {

@@ -3,6 +3,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import type { MasterOption } from "@/components/data/master-combobox";
 import { SimpleMaster } from "@/components/masters/simple-master";
+import { cityDefaults, cityFields } from "@/components/masters/field-defs";
 import { saveCity, deleteCity, importCities } from "@/app/(app)/masters/cities/actions";
 
 interface Row {
@@ -49,14 +50,9 @@ export function CitiesClient({
         { type: "text", key: "q", label: "Search city..." },
         { type: "combobox", key: "stateId", label: "State", options: stateOptions },
       ]}
-      fields={[
-        { name: "name", label: "City Name *", type: "text", uppercase: true },
-        { name: "stateId", label: "State *", type: "combobox", options: stateOptions },
-        { name: "district", label: "District", type: "text" },
-        { name: "pincode", label: "Pincode", type: "text" },
-        { name: "stdCode", label: "STD Code", type: "text" },
-      ]}
-      defaults={{ name: "", stateId: null, district: "", pincode: "", stdCode: "" }}
+      // same field list as the inline "+ Create city" dialog (field-defs.tsx)
+      fields={cityFields({ stateOptions })}
+      defaults={cityDefaults}
       toForm={(r) => ({
         name: r.name,
         stateId: r.stateId,

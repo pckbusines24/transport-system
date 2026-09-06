@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { SimpleMaster } from "@/components/masters/simple-master";
+import { productGroupDefaults, productGroupFields } from "@/components/masters/field-defs";
 import { saveProductGroup, deleteProductGroup, importProductGroups } from "@/app/(app)/masters/product-groups/actions";
 
 interface Row {
@@ -36,8 +37,8 @@ export function ProductGroupsClient({
       ]}
       exportName="product-groups"
       filters={[{ type: "text", key: "q", label: "Search name..." }]}
-      fields={[{ name: "name", label: "Name *", type: "text" }]}
-      defaults={{ name: "" }}
+      fields={productGroupFields}
+      defaults={productGroupDefaults}
       toForm={(r) => ({ name: r.name })}
       getId={(r) => r.id}
       save={saveProductGroup}

@@ -52,93 +52,73 @@ export interface FieldDef {
   visibleIf?: (form: FormState) => boolean;
   /** Inline "+ create" dialog for combobox fields. */
   createDialog?: (props: CreateDialogProps) => React.ReactNode;
+  /** Label of the "+ Create" row in the combobox list. */
+  createLabel?: string;
   /** Span both columns of the dialog grid. */
   span2?: boolean;
   uppercase?: boolean;
 }
 
-interface SimpleMasterProps<T> {
-  title: string;
-  /** rendered inside a tabbed screen that owns the heading and padding */
-  embedded?: boolean;
-  newLabel?: string;
-  rows: T[];
-  columns: ColumnDef<T, unknown>[];
-  exportColumns: ExportColumn<T>[];
-  exportName: string;
-  filters?: FilterDef[];
+export interface MasterFormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Record name used in the title ("New Product") and the saved toast. */
+  entity: string;
   fields: FieldDef[];
-  defaults: FormState;
-  toForm: (row: T) => FormState;
-  getId: (row: T) => string;
+  /** Form values when the dialog opens (defaults for a new record, the row for an edit). */
+  initial: FormState;
+  /** Set when editing; sent as `id` in the save payload. */
+  editingId?: string | null;
   save: (input: unknown) => Promise<ActionResult>;
-  remove?: (id: string) => Promise<ActionResult>;
-  canDelete: boolean;
   /** Optional payload transform before calling `save`. */
   transform?: (form: FormState) => unknown;
   /** Extra content rendered below the fields (hints, computed values). */
   renderExtra?: (form: FormState, set: (name: string, value: unknown) => void) => React.ReactNode;
   dialogClassName?: string;
-  /** Excel/CSV import + sample template (rendered next to Export). */
-  importConfig?: ImportConfig;
-  /**
-   * Row-level lock: return a message to block editing that row (shown as a
-   * toast instead of opening the dialog). Used for system-owned records.
-   */
-  rowLocked?: (row: T) => string | null;
+  /** Called after a successful save. The caller decides whether to close. */
+  onSaved: (id: string, form: FormState) => void | Promise<void>;
+  /** Delete handler for the edit dialog; the button shows only when provided. */
+  onDelete?: () => Promise<void>;
 }
 
-export function SimpleMaster<T>({
-  title,
-  embedded = false,
-  newLabel = "New",
-  rows,
-  columns,
-  exportColumns,
-  exportName,
-  filters,
+/**
+ * The master record form: the SAME dialog whether it is opened from the
+ * master screen (SimpleMaster) or from a "+ Create" row of a combobox on a
+ * transaction form (see inline-dialogs.tsx). Field definitions live in
+ * field-defs.tsx so both paths render identical fields and validation.
+ */
+export function MasterFormDialog({
+  open,
+  onOpenChange,
+  entity,
   fields,
-  defaults,
-  toForm,
-  getId,
+  initial,
+  editingId,
   save,
-  remove,
-  canDelete,
   transform,
   renderExtra,
   dialogClassName,
-  importConfig,
-  rowLocked,
-}: SimpleMasterProps<T>) {
-  const router = useRouter();
+  onSaved,
+  onDelete,
+}: MasterFormDialogProps) {
   const { toast } = useToast();
-  const [open, setOpen] = React.useState(false);
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [form, setForm] = React.useState<FormState>(defaults);
+  const [form, setForm] = React.useState<FormState>(initial);
   const [busy, setBusy] = React.useState(false);
   const [extraOptions, setExtraOptions] = React.useState<Record<string, MasterOption[]>>({});
+
+  // a fresh form every time the dialog opens
+  React.useEffect(() => {
+    if (open) {
+      setForm(initial);
+      setExtraOptions({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const set = React.useCallback(
     (name: string, value: unknown) => setForm((f) => ({ ...f, [name]: value })),
     []
   );
-
-  const openNew = () => {
-    setEditingId(null);
-    setForm(defaults);
-    setOpen(true);
-  };
-
-  const openEdit = (row: T) => {
-    const lock = rowLocked?.(row);
-    if (lock) {
-      toast({ title: "Locked", description: lock });
-      return;
-    }
-    setEditingId(getId(row));
-    setForm(toForm(row));
-    setOpen(true);
-  };
 
   const handleSave = async () => {
     setBusy(true);
@@ -146,9 +126,8 @@ export function SimpleMaster<T>({
       const payload = transform ? transform(form) : form;
       const res = await save({ ...(payload as object), id: editingId ?? undefined });
       if (res.ok) {
-        toast({ title: `${title} saved` });
-        setOpen(false);
-        router.refresh();
+        toast({ title: `${entity} saved` });
+        await onSaved(res.id, form);
       } else {
         toast({ variant: "destructive", title: "Save failed", description: res.error });
       }
@@ -158,18 +137,10 @@ export function SimpleMaster<T>({
   };
 
   const handleDelete = async () => {
-    if (!editingId || !remove) return;
-    if (!window.confirm(`Delete this ${title.toLowerCase()}? This cannot be undone.`)) return;
+    if (!onDelete) return;
     setBusy(true);
     try {
-      const res = await remove(editingId);
-      if (res.ok) {
-        toast({ title: `${title} deleted` });
-        setOpen(false);
-        router.refresh();
-      } else {
-        toast({ variant: "destructive", title: "Delete failed", description: res.error });
-      }
+      await onDelete();
     } finally {
       setBusy(false);
     }
@@ -255,6 +226,7 @@ export function SimpleMaster<T>({
             value={(value as string) ?? null}
             onChange={(v) => set(f.name, v)}
             placeholder={f.placeholder ?? "Select..."}
+            createLabel={f.createLabel}
             renderCreateDialog={
               f.createDialog
                 ? (closeAndSelect) =>
@@ -315,6 +287,127 @@ export function SimpleMaster<T>({
   };
 
   return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={dialogClassName ?? "max-h-[90vh] overflow-y-auto sm:max-w-xl"}>
+        <DialogHeader>
+          <DialogTitle>{editingId ? `Edit ${entity}` : `New ${entity}`}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">{fields.map(renderField)}</div>
+        {renderExtra?.(form, set)}
+        <DialogFooter className="gap-2">
+          {editingId && onDelete && (
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={busy}
+              className="sm:mr-auto"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={busy}>
+            {busy ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface SimpleMasterProps<T> {
+  title: string;
+  /** rendered inside a tabbed screen that owns the heading and padding */
+  embedded?: boolean;
+  newLabel?: string;
+  rows: T[];
+  columns: ColumnDef<T, unknown>[];
+  exportColumns: ExportColumn<T>[];
+  exportName: string;
+  filters?: FilterDef[];
+  fields: FieldDef[];
+  defaults: FormState;
+  toForm: (row: T) => FormState;
+  getId: (row: T) => string;
+  save: (input: unknown) => Promise<ActionResult>;
+  remove?: (id: string) => Promise<ActionResult>;
+  canDelete: boolean;
+  /** Optional payload transform before calling `save`. */
+  transform?: (form: FormState) => unknown;
+  /** Extra content rendered below the fields (hints, computed values). */
+  renderExtra?: (form: FormState, set: (name: string, value: unknown) => void) => React.ReactNode;
+  dialogClassName?: string;
+  /** Excel/CSV import + sample template (rendered next to Export). */
+  importConfig?: ImportConfig;
+  /**
+   * Row-level lock: return a message to block editing that row (shown as a
+   * toast instead of opening the dialog). Used for system-owned records.
+   */
+  rowLocked?: (row: T) => string | null;
+}
+
+export function SimpleMaster<T>({
+  title,
+  embedded = false,
+  newLabel = "New",
+  rows,
+  columns,
+  exportColumns,
+  exportName,
+  filters,
+  fields,
+  defaults,
+  toForm,
+  getId,
+  save,
+  remove,
+  canDelete,
+  transform,
+  renderExtra,
+  dialogClassName,
+  importConfig,
+  rowLocked,
+}: SimpleMasterProps<T>) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [open, setOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [initial, setInitial] = React.useState<FormState>(defaults);
+
+  const openNew = () => {
+    setEditingId(null);
+    setInitial(defaults);
+    setOpen(true);
+  };
+
+  const openEdit = (row: T) => {
+    const lock = rowLocked?.(row);
+    if (lock) {
+      toast({ title: "Locked", description: lock });
+      return;
+    }
+    setEditingId(getId(row));
+    setInitial(toForm(row));
+    setOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!editingId || !remove) return;
+    if (!window.confirm(`Delete this ${title.toLowerCase()}? This cannot be undone.`)) return;
+    const res = await remove(editingId);
+    if (res.ok) {
+      toast({ title: `${title} deleted` });
+      setOpen(false);
+      router.refresh();
+    } else {
+      toast({ variant: "destructive", title: "Delete failed", description: res.error });
+    }
+  };
+
+  return (
     <div className={embedded ? "space-y-4" : "space-y-4 p-4"}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* inside a tabbed screen the page owns the heading; the empty div
@@ -334,36 +427,23 @@ export function SimpleMaster<T>({
 
       <DataTable columns={columns} data={rows} onRowClick={openEdit} />
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className={dialogClassName ?? "max-h-[90vh] overflow-y-auto sm:max-w-xl"}>
-          <DialogHeader>
-            <DialogTitle>
-              {editingId ? `Edit ${title}` : `New ${title}`}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">{fields.map(renderField)}</div>
-          {renderExtra?.(form, set)}
-          <DialogFooter className="gap-2">
-            {editingId && canDelete && remove && (
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={busy}
-                className="sm:mr-auto"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={busy}>
-              {busy ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MasterFormDialog
+        open={open}
+        onOpenChange={setOpen}
+        entity={title}
+        fields={fields}
+        initial={initial}
+        editingId={editingId}
+        save={save}
+        transform={transform}
+        renderExtra={renderExtra}
+        dialogClassName={dialogClassName}
+        onSaved={() => {
+          setOpen(false);
+          router.refresh();
+        }}
+        onDelete={canDelete && remove ? handleDelete : undefined}
+      />
     </div>
   );
 }

@@ -98,7 +98,6 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
   const [sourceType, setSourceType] = React.useState<string>("BOOKING");
   const [vehicleOptions, setVehicleOptions] = React.useState(initialVehicles);
   const [vehicleId, setVehicleId] = React.useState<string | null>(initialVehicleId ?? null);
-  const [vehicleDialogOpen, setVehicleDialogOpen] = React.useState(false);
   const [refNo, setRefNo] = React.useState("");
 
 
@@ -296,7 +295,10 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
               renderCreateDialog={(closeAndSelect) => (
                 <VehicleInlineDialog
                   open
-                  onOpenChange={setVehicleDialogOpen}
+                  onOpenChange={(o) => {
+                    // Cancel must close the dialog and keep the current pick
+                    if (!o) closeAndSelect(vehicleId ?? "");
+                  }}
                   onCreated={(o) => {
                     setVehicleOptions((prev) => [...prev, o]);
                     closeAndSelect(o.value);
@@ -504,8 +506,6 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* keep dialog state variable used */}
-      {vehicleDialogOpen ? null : null}
     </div>
   );
 }

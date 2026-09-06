@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidateTag } from "next/cache";
-import { authorize } from "@/lib/authz";
 import { requireSession } from "./session";
 import { withTenant } from "./db";
 import {
@@ -10,7 +8,6 @@ import {
   getProductLookup,
   getUnitLookup,
   getVehicleLookup,
-  lookupTag,
 } from "./cached-lookups";
 import { LedgerGroup } from "@prisma/client";
 
@@ -109,139 +106,67 @@ export async function getUnitNameOptions(): Promise<Option[]> {
   return units.map((u) => ({ value: u.name, label: u.name }));
 }
 
+/** Product groups for the product form (small table; read live). */
+export async function getProductGroupOptions(): Promise<Option[]> {
+  const s = requireSession();
+  const groups = await withTenant(s.tenantId, (tx) =>
+    tx.productGroup.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } })
+  );
+  return groups.map((g) => ({ value: g.id, label: g.name }));
+}
+
 // ---------- inline creates (the "+" pattern) ----------
+//
+// The inline "+ Create" dialogs save through the SAME server actions as the
+// master screens (saveParty, saveVehicle, ...) so validation, audit and cache
+// invalidation are identical. Afterwards they call this to turn the new id
+// into the combobox option shape the dropdown lists.
 
-export async function createCityInline(input: {
-  name: string;
-  stateId: string;
-  district?: string;
-  pincode?: string;
-}): Promise<Option> {
-  const s = requireSession();
-  await authorize(s, "masters", "create");
-  const city = await withTenant(s.tenantId, (tx) =>
-    tx.city.create({
-      data: { tenantId: s.tenantId, name: input.name.toUpperCase().trim(), stateId: input.stateId, district: input.district, pincode: input.pincode },
-      include: { state: true },
-    })
-  );
-  // the dropdowns read the cached master now — an inline create that skipped
-  // this would leave the new row invisible until the TTL lapsed
-  revalidateTag(lookupTag.cities(s.tenantId));
-  return { value: city.id, label: city.name, meta: city.state.name };
-}
+export type MasterKind = "party" | "vehicle" | "city" | "product" | "productGroup" | "unit";
 
-export async function createPartyInline(input: {
-  name: string;
-  ledgerGroup: LedgerGroup;
-  address1?: string;
-  gstin?: string;
-  pan?: string;
-  mobile?: string;
-  stateId?: string;
-  cityId?: string;
-  /** owner/broker parties: the transport firm name printed on documents */
-  transportName?: string;
-  tdsMode?: "TDS_APPLICABLE" | "DECLARATION";
-}): Promise<Option & { transportName?: string | null; ownerName?: string | null }> {
+export async function getMasterOption(
+  kind: MasterKind,
+  id: string
+): Promise<Option & { transportName?: string | null; ownerName?: string | null }> {
   const s = requireSession();
-  await authorize(s, "masters", "create");
-  const party = await withTenant(s.tenantId, (tx) =>
-    tx.party.create({
-      data: { tenantId: s.tenantId, ...input, name: input.name.toUpperCase().trim() },
-    })
-  );
-  revalidateTag(lookupTag.parties(s.tenantId));
-  // vehicle meta prints the owner party's name, so it goes stale too
-  revalidateTag(lookupTag.vehicles(s.tenantId));
-  return {
-    value: party.id,
-    label: party.name,
-    meta: [party.alias, party.gstin, party.pan].filter(Boolean).join(" · ") || undefined,
-    // chalan / broker-slip keep their own broker lists — the created option
-    // carries the two-way name-link data so it links without a page reload
-    transportName: party.transportName ?? null,
-    ownerName: party.name,
-  };
-}
-
-export async function createVehicleInline(input: {
-  number: string;
-  ownershipType?: "OWNER" | "BROKER" | "RELATIVE";
-  ownerId?: string;
-  isOwn?: boolean;
-  ownerNames?: string;
-  vehicleType?: string;
-  chassisNo?: string;
-  engineNo?: string;
-  permitNo?: string;
-  insuranceNo?: string;
-}): Promise<Option> {
-  const s = requireSession();
-  await authorize(s, "masters", "create");
-  const v = await withTenant(s.tenantId, async (tx) => {
-    const created = await tx.vehicle.create({
-      data: {
-        tenantId: s.tenantId,
-        number: input.number.toUpperCase().replace(/\s+/g, ""),
-        ownershipType: input.ownershipType ?? (input.isOwn ? "OWNER" : "BROKER"),
-        ownerId: input.ownerId || null,
-        isOwn: input.ownershipType ? input.ownershipType === "OWNER" : input.isOwn ?? false,
-        ownerNames: input.isOwn ? input.ownerNames || null : null,
-        vehicleType: input.vehicleType || null,
-        chassisNo: input.chassisNo ? input.chassisNo.toUpperCase() : null,
-        engineNo: input.engineNo ? input.engineNo.toUpperCase() : null,
-        permitNo: input.permitNo || null,
-        insuranceNo: input.insuranceNo || null,
-      },
-      include: { owner: true },
-    });
-    return created;
-  });
-  revalidateTag(lookupTag.vehicles(s.tenantId));
-  return { value: v.id, label: v.number, meta: vehicleMeta(v) };
-}
-
-export async function createProductInline(input: {
-  name: string;
-  groupId?: string;
-  unit?: string;
-  hsnCode?: string;
-  gstPct?: number;
-}): Promise<Option> {
-  const s = requireSession();
-  await authorize(s, "masters", "create");
-  const p = await withTenant(s.tenantId, async (tx) => {
-    if (input.unit) {
-      const unit = await tx.unit.findFirst({
-        where: { name: { equals: input.unit, mode: "insensitive" } },
-      });
-      if (!unit) throw new Error(`Unit "${input.unit}" is not in the Unit Master`);
-      input.unit = unit.name;
+  return withTenant(s.tenantId, async (tx) => {
+    switch (kind) {
+      case "party": {
+        const p = await tx.party.findUniqueOrThrow({ where: { id } });
+        return {
+          value: p.id,
+          label: p.name,
+          // same meta as getPartyOptions so the new row searches like the rest
+          meta: [p.alias, p.transportName, p.gstin, p.pan].filter(Boolean).join(" · ") || undefined,
+          // chalan / broker-slip keep their own broker lists — the created option
+          // carries the two-way name-link data so it links without a page reload
+          transportName: p.transportName ?? null,
+          ownerName: p.name,
+        };
+      }
+      case "vehicle": {
+        const v = await tx.vehicle.findUniqueOrThrow({ where: { id }, include: { owner: true } });
+        return { value: v.id, label: v.number, meta: vehicleMeta(v) };
+      }
+      case "city": {
+        const c = await tx.city.findUniqueOrThrow({ where: { id }, include: { state: true } });
+        return { value: c.id, label: c.name, meta: c.state.name };
+      }
+      case "product": {
+        const p = await tx.product.findUniqueOrThrow({ where: { id }, include: { group: true } });
+        return { value: p.id, label: p.name, meta: p.group.name };
+      }
+      case "productGroup": {
+        const g = await tx.productGroup.findUniqueOrThrow({ where: { id } });
+        return { value: g.id, label: g.name };
+      }
+      case "unit": {
+        // keyed by NAME like getUnitNameOptions — Product.unit stores the name
+        const u = await tx.unit.findUniqueOrThrow({ where: { id } });
+        return { value: u.name, label: u.name };
+      }
     }
-    let groupId = input.groupId;
-    if (!groupId) {
-      const g = await tx.productGroup.upsert({
-        where: { tenantId_name: { tenantId: s.tenantId, name: "GENERAL" } },
-        create: { tenantId: s.tenantId, name: "GENERAL" },
-        update: {},
-      });
-      groupId = g.id;
-    }
-    return tx.product.create({
-      data: {
-        tenantId: s.tenantId,
-        name: input.name.toUpperCase().trim(),
-        groupId,
-        unit: input.unit ?? null,
-        hsnCode: input.hsnCode,
-        gstPct: input.gstPct ?? 0,
-      },
-      include: { group: true },
-    });
   });
-  revalidateTag(lookupTag.products(s.tenantId));
-  return { value: p.id, label: p.name, meta: p.group.name };
 }
 
 /** Rate lookup for LR entry: party + product + source + destination */

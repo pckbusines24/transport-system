@@ -722,11 +722,13 @@ export function BrokerSlipForm({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      createLabel="+ Create party"
       renderCreateDialog={(closeAndSelect) => (
         <PartyDialog
           open
           onOpenChange={(o) => {
-            if (!o) closeAndSelect("");
+            // Cancel keeps whatever was already selected
+            if (!o) closeAndSelect(value ?? "");
           }}
           onCreated={(opt) => {
             setOptions((prev) => [...prev, opt]);
@@ -748,11 +750,12 @@ export function BrokerSlipForm({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      createLabel="+ Create city"
       renderCreateDialog={(closeAndSelect) => (
         <CityDialog
           open
           onOpenChange={(o) => {
-            if (!o) closeAndSelect("");
+            if (!o) closeAndSelect(value ?? "");
           }}
           onCreated={(opt) => {
             setCityOptions((prev) => [...prev, opt]);
@@ -943,11 +946,12 @@ export function BrokerSlipForm({
               value={form.vehicleId}
               onChange={onVehicleChange}
               placeholder="Select vehicle..."
+              createLabel="+ Create vehicle"
               renderCreateDialog={(closeAndSelect) => (
                 <VehicleDialog
                   open
                   onOpenChange={(o) => {
-                    if (!o) closeAndSelect("");
+                    if (!o) closeAndSelect(form.vehicleId ?? "");
                   }}
                   onCreated={(opt) => {
                     setVehicleOptions((prev) => [...prev, opt]);
@@ -1041,11 +1045,12 @@ export function BrokerSlipForm({
                 }));
               }}
               placeholder="Optional..."
+              createLabel="+ Create product"
               renderCreateDialog={(closeAndSelect) => (
                 <ProductDialog
                   open
                   onOpenChange={(o) => {
-                    if (!o) closeAndSelect("");
+                    if (!o) closeAndSelect(form.productId ?? "");
                   }}
                   onCreated={(opt) => {
                     setProductOptions((prev) => [...prev, opt]);

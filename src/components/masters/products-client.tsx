@@ -4,6 +4,8 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import type { MasterOption } from "@/components/data/master-combobox";
 import { SimpleMaster } from "@/components/masters/simple-master";
+import { productDefaults, productFields } from "@/components/masters/field-defs";
+import { ProductGroupCreateDialog, UnitCreateDialog } from "@/components/masters/inline-dialogs";
 import { saveProduct, deleteProduct, importProducts } from "@/app/(app)/masters/products/actions";
 
 interface Row {
@@ -73,40 +75,20 @@ export function ProductsClient({
         { type: "text", key: "q", label: "Search product..." },
         { type: "combobox", key: "groupId", label: "Group", options: groupOptions },
       ]}
-      fields={[
-        { name: "groupId", label: "Product Group *", type: "combobox", options: groupOptions },
-        { name: "name", label: "Name *", type: "text", uppercase: true },
-        { name: "unit", label: "Unit *", type: "combobox", options: unitOptions },
-        { name: "hsnCode", label: "HSN Code", type: "text" },
-        {
-          name: "productType",
-          label: "Product Type",
-          type: "radio",
-          options: [
-            { value: "NORMAL", label: "Normal" },
-            { value: "ODC", label: "ODC (Over-Dimensional Cargo)" },
-          ],
-        },
-        { name: "gstPct", label: "GST %", type: "number" },
-        { name: "type", label: "Type", type: "text" },
-        { name: "className", label: "Class", type: "text" },
-        { name: "division", label: "Division", type: "text" },
-      ]}
-      defaults={{
-        groupId: null,
-        name: "",
-        unit: null,
-        hsnCode: "",
-        gstPct: "0",
-        type: "",
-        className: "",
-        division: "",
-      }}
+      // same field list as the inline "+ Create product" dialog (field-defs.tsx)
+      fields={productFields({
+        groupOptions,
+        unitOptions,
+        groupCreate: (p) => <ProductGroupCreateDialog {...p} />,
+        unitCreate: (p) => <UnitCreateDialog {...p} />,
+      })}
+      defaults={productDefaults}
       toForm={(r) => ({
         groupId: r.groupId,
         name: r.name,
         unit: r.unit,
         hsnCode: r.hsnCode ?? "",
+        productType: r.productType,
         gstPct: String(r.gstPct),
         type: r.type ?? "",
         className: r.className ?? "",

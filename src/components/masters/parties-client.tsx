@@ -3,7 +3,16 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import type { MasterOption } from "@/components/data/master-combobox";
-import { SimpleMaster, type FormState } from "@/components/masters/simple-master";
+import { SimpleMaster } from "@/components/masters/simple-master";
+import {
+  PARTY_GROUPS as GROUPS,
+  partyDefaults,
+  partyDialogClassName,
+  partyFields,
+  partyGroupLabel as groupLabel,
+  partyTransform,
+} from "@/components/masters/field-defs";
+import { CityCreateDialog } from "@/components/masters/inline-dialogs";
 import { saveParty, deleteParty, importParties } from "@/app/(app)/masters/parties/actions";
 import { formatMoney } from "@/lib/utils";
 
@@ -34,21 +43,6 @@ export interface PartyRow {
   bankIfsc: string | null;
   isActive: boolean;
 }
-
-// INCOME / OFFICE / EXPENSE / RELATIVE removed from the party master per requirements
-// (relatives are just an ownership *type* on vehicles, backed by Owner/Broker parties);
-// BANK / CASH live in the dedicated Bank & Cash Heads master.
-// Existing records with removed groups still render via groupLabel.
-const GROUPS = [
-  "CONSIGNEE_CONSIGNOR",
-  "DRIVER",
-  "OWNER_BROKER",
-  "STAFF",
-  "SUPPLIERS",
-];
-
-const groupLabel = (g: string) =>
-  g.split("_").map((w) => w.charAt(0) + w.slice(1).toLowerCase()).join(" / ");
 
 const columns: ColumnDef<PartyRow, unknown>[] = [
   { accessorKey: "name", header: "Name" },
@@ -135,78 +129,13 @@ export function PartiesClient({
           ],
         },
       ]}
-      fields={[
-        { name: "name", label: "Name *", type: "text", uppercase: true },
-        {
-          name: "ledgerGroup",
-          label: "Ledger Group *",
-          type: "select",
-          options: GROUPS.map((g) => ({ value: g, label: groupLabel(g) })),
-        },
-        // for owners/brokers the trade name belongs right under the name
-        {
-          name: "transportName",
-          label: "Transport Name (owners / brokers)",
-          type: "text",
-          uppercase: true,
-          visibleIf: (f: FormState) => f.ledgerGroup === "OWNER_BROKER",
-          span2: true,
-        },
-        { name: "alias", label: "Alias / Short Name", type: "text" },
-        {
-          name: "tallyName",
-          label: "Tally Name",
-          type: "text",
-          uppercase: true,
-          placeholder: "fill only when the name differs in Tally",
-        },
-        { name: "address1", label: "Address 1", type: "text", span2: true },
-        { name: "address2", label: "Address 2", type: "text", span2: true },
-        { name: "stateId", label: "State", type: "combobox", options: stateOptions },
-        { name: "cityId", label: "City", type: "combobox", options: cityOptions },
-        { name: "gstin", label: "GSTIN", type: "text", uppercase: true },
-        { name: "pan", label: "PAN", type: "text", uppercase: true },
-        // vendor code pairs with mobile so no column is left blank
-        { name: "vendorCode", label: "Vendor Code", type: "text" },
-        { name: "mobile", label: "Mobile", type: "text" },
-        { name: "phone", label: "Phone", type: "text" },
-        { name: "email", label: "Email", type: "text" },
-        { name: "ownerName", label: "Owner / Contact Person", type: "text", span2: true },
-        { name: "openingBalance", label: "Opening Balance", type: "number" },
-        {
-          name: "openingSide",
-          label: "Opening Side",
-          type: "radio",
-          options: [
-            { value: "DEBIT", label: "Debit" },
-            { value: "CREDIT", label: "Credit" },
-          ],
-        },
-        {
-          name: "tdsMode",
-          label: "TDS Handling (owners/brokers)",
-          type: "radio",
-          options: [
-            { value: "TDS_APPLICABLE", label: "TDS Applicable" },
-            { value: "DECLARATION", label: "Declaration (No TDS)" },
-          ],
-          visibleIf: (f: FormState) => f.ledgerGroup === "OWNER_BROKER",
-          span2: true,
-        },
-        { name: "bankName", label: "Bank Name", type: "text" },
-        { name: "bankAccount", label: "Bank A/c No", type: "text" },
-        { name: "bankIfsc", label: "IFSC", type: "text", uppercase: true },
-        { name: "isActive", label: "Active", type: "switch" },
-      ]}
-      // openingSide has NO default — the user chooses Dr/Cr; the server
-      // rejects an opening amount saved without a chosen side
-      defaults={{
-        name: "",
-        ledgerGroup: "CONSIGNEE_CONSIGNOR",
-        openingBalance: 0,
-        tdsMode: "TDS_APPLICABLE",
-        isActive: true,
-      }}
+      // same field list as the inline "+ Create party" dialog (field-defs.tsx)
+      fields={partyFields({
+        stateOptions,
+        cityOptions,
+        cityCreate: (p) => <CityCreateDialog {...p} />,
+      })}
+      defaults={partyDefaults}
       toForm={(r) => ({ ...r })}
       getId={(r) => r.id}
       save={saveParty}
@@ -218,8 +147,8 @@ export function PartiesClient({
         templateName: "parties",
       }}
       canDelete={canDelete}
-      transform={(f) => ({ ...f, openingBalance: Number(f.openingBalance) || 0 })}
-      dialogClassName="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+      transform={partyTransform}
+      dialogClassName={partyDialogClassName}
     />
   );
 }

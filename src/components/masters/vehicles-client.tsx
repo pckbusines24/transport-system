@@ -4,6 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import type { MasterOption } from "@/components/data/master-combobox";
 import { SimpleMaster } from "@/components/masters/simple-master";
+import { vehicleDefaults, vehicleFields } from "@/components/masters/field-defs";
 import { PartyCreateDialog } from "@/components/masters/inline-dialogs";
 import { saveVehicle, deleteVehicle, importVehicles } from "@/app/(app)/masters/vehicles/actions";
 
@@ -92,45 +93,12 @@ export function VehiclesClient({
           ],
         },
       ]}
-      fields={[
-        { name: "number", label: "Vehicle Number *", type: "text", uppercase: true },
-        {
-          name: "ownershipType",
-          label: "Ownership *",
-          type: "radio",
-          options: [
-            { value: "OWNER", label: "Owner" },
-            { value: "BROKER", label: "Broker" },
-            { value: "RELATIVE", label: "Relative" },
-          ],
-        },
-        // unified list — same combobox for Owner / Broker / Relative
-        {
-          name: "ownerId",
-          label: "Name * (optional for Broker)",
-          type: "combobox",
-          options: ownerOptions,
-          createDialog: (props: Parameters<typeof PartyCreateDialog>[0]) => (
-            <PartyCreateDialog {...props} defaultGroup="OWNER_BROKER" />
-          ),
-          span2: true,
-        },
-        { name: "vehicleType", label: "Vehicle Type", type: "text" },
-        { name: "chassisNo", label: "Chassis No", type: "text", uppercase: true },
-        { name: "engineNo", label: "Engine No", type: "text", uppercase: true },
-        { name: "permitNo", label: "Permit No", type: "text" },
-        { name: "insuranceNo", label: "Insurance No", type: "text" },
-      ]}
-      defaults={{
-        number: "",
-        ownershipType: "OWNER",
-        ownerId: null,
-        vehicleType: "",
-        chassisNo: "",
-        engineNo: "",
-        permitNo: "",
-        insuranceNo: "",
-      }}
+      // same field list as the inline "+ Create vehicle" dialog (field-defs.tsx)
+      fields={vehicleFields({
+        ownerOptions,
+        ownerCreate: (p) => <PartyCreateDialog {...p} defaultGroup="OWNER_BROKER" />,
+      })}
+      defaults={vehicleDefaults}
       toForm={(r) => ({
         number: r.number,
         ownershipType: r.ownershipType,

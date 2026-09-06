@@ -2,6 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { SimpleMaster } from "@/components/masters/simple-master";
+import { unitDefaults, unitFields } from "@/components/masters/field-defs";
 import { saveUnit, deleteUnit, importUnits } from "@/app/(app)/masters/units/actions";
 
 interface Row {
@@ -36,11 +37,8 @@ export function UnitsClient({
       ]}
       exportName="units"
       filters={[{ type: "text", key: "q", label: "Search name..." }]}
-      fields={[
-        { name: "name", label: "Name *", type: "text", uppercase: true },
-        { name: "value", label: "Value", type: "number" },
-      ]}
-      defaults={{ name: "", value: "1" }}
+      fields={unitFields}
+      defaults={unitDefaults}
       toForm={(r) => ({ name: r.name, value: String(r.value) })}
       getId={(r) => r.id}
       save={saveUnit}
