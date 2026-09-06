@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "prisma migrate deploy && next start",
+    "start:local": "next start",
+    "check": "tsc --noEmit && next lint && prisma generate && next build",
     "migrate:prod": "prisma migrate deploy",
     "lint": "next lint",
     "test": "vitest run",

@@ -1,5 +1,26 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Local testing against the live database
+
+No Docker or local Postgres is needed. `.env` already points at the
+DigitalOcean managed Postgres, so the app runs on this machine against the
+real data. Test every change here before pushing — each push triggers a
+DigitalOcean App Platform build and burns build minutes.
+
+One-time: DigitalOcean only accepts connections from IPs listed under
+**Databases -> your cluster -> Settings -> Trusted Sources**. Add this
+machine's public IP there (it changes when your ISP reassigns it; re-add if
+`prisma migrate status` reports P1001 "Can't reach database server").
+
+```bash
+npm run dev          # hot-reloading dev server on http://localhost:3000
+npm run check        # what the DO build runs: typecheck, lint, prisma generate, next build
+npm run start:local  # serve the production build locally WITHOUT running migrations
+```
+
+Never use plain `npm start` locally: it runs `prisma migrate deploy` against
+the live database, which is the production deploy step.
+
 ## Getting Started
 
 
