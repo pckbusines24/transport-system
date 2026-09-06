@@ -1897,18 +1897,20 @@ model TripExpense {
   @@index([tenantId])
 }
 
-// Owner Withdrawal: an owner drawing money out of a vehicle's earnings. Not an
-// expense — it never touches the vehicle P&L's net; it only reduces the
-// vehicle's running balance (lifetime net − lifetime withdrawals). Posts to
-// the owner party's ledger (DEBIT) and the paying bank/cash book (CREDIT).
+// Owner Withdrawal / Deposit: an owner drawing money out of a vehicle's
+// earnings (WITHDRAWAL) or putting money in (DEPOSIT). Neither is an expense
+// or income — they never touch the vehicle P&L's net; they only move the
+// vehicle's running balance (lifetime net − withdrawals + deposits).
+// Withdrawal posts DEBIT owner / CREDIT bank-cash; deposit is the mirror.
 model VehicleWithdrawal {
   id            String    @id @default(cuid())
   tenantId      String
   firmId        String
   fyId          String
   vehicleId     String
-  partyId       String // the owner party who took the money
-  payPartyId    String // BANK / CASH / CARD party the money left from
+  kind          String    @default("WITHDRAWAL") // WITHDRAWAL | DEPOSIT
+  partyId       String // the owner party who took / gave the money
+  payPartyId    String // BANK / CASH / CARD party the money left from / went to
   date          DateTime
   amount        Decimal   @db.Decimal(14, 2)
   remarks       String?

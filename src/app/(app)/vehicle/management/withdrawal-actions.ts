@@ -9,13 +9,16 @@ import { audit } from "@/lib/audit";
 import { postLedger, reverseLedger } from "@/lib/ledger";
 
 /**
- * Owner Withdrawal — an owner drawing money out of a vehicle's earnings.
- * Not an expense: net profit stays untouched; only the vehicle's running
- * balance (lifetime net − lifetime withdrawals) goes down. Ledger: DEBIT the
- * owner party, CREDIT the paying bank/cash party — so the owner's ledger and
- * the bank/cash book both carry the entry automatically.
+ * Owner Withdrawal — an owner drawing money out of a vehicle's earnings —
+ * and its mirror, Owner Deposit — the owner putting money in. Neither is an
+ * expense or income: net profit stays untouched; only the vehicle's running
+ * balance (lifetime net − withdrawals + deposits) moves. Ledger:
+ *   WITHDRAWAL  DEBIT owner party,  CREDIT the paying bank/cash party
+ *   DEPOSIT     CREDIT owner party, DEBIT the receiving bank/cash party
+ * so the owner's ledger and the bank/cash book both carry the entry.
  */
 const withdrawalSchema = z.object({
+  kind: z.enum(["WITHDRAWAL", "DEPOSIT"]).default("WITHDRAWAL"),
   vehicleId: z.string().min(1, "Vehicle is required"),
   partyId: z.string().min(1, "Owner (party) is required"),
   payPartyId: z.string().min(1, "Paid-from bank/cash is required"),
@@ -56,6 +59,7 @@ export async function saveVehicleWithdrawal(
           firmId: session.firmId,
           fyId: session.fyId,
           vehicleId: d.vehicleId,
+          kind: d.kind,
           partyId: d.partyId,
           payPartyId: d.payPartyId,
           date: new Date(d.date),
@@ -65,13 +69,14 @@ export async function saveVehicleWithdrawal(
         },
       });
 
-      const refNo = `NIK-${created.id.slice(-6).toUpperCase()}`;
-      const narration = `Owner withdrawal — ${vehicle.number}${d.remarks ? ` (${d.remarks})` : ""}`;
+      const deposit = d.kind === "DEPOSIT";
+      const refNo = `${deposit ? "JMA" : "NIK"}-${created.id.slice(-6).toUpperCase()}`;
+      const narration = `Owner ${deposit ? "deposit" : "withdrawal"} — ${vehicle.number}${d.remarks ? ` (${d.remarks})` : ""}`;
       await postLedger(tx, session, [
         {
           date: new Date(d.date),
           partyId: d.partyId,
-          side: "DEBIT",
+          side: deposit ? "CREDIT" : "DEBIT",
           amount: d.amount,
           refType: "VEH_WITHDRAWAL",
           refId: created.id,
@@ -81,7 +86,7 @@ export async function saveVehicleWithdrawal(
         {
           date: new Date(d.date),
           partyId: d.payPartyId,
-          side: "CREDIT",
+          side: deposit ? "DEBIT" : "CREDIT",
           amount: d.amount,
           refType: "VEH_WITHDRAWAL",
           refId: created.id,
@@ -114,7 +119,7 @@ export async function deleteVehicleWithdrawal(
       const before = await tx.vehicleWithdrawal.findFirst({
         where: { id, firmId: session.firmId, deletedAt: null },
       });
-      if (!before) return { ok: false as const, error: "Withdrawal entry not found." };
+      if (!before) return { ok: false as const, error: "Withdrawal / deposit entry not found." };
       await reverseLedger(tx, "VEH_WITHDRAWAL", id);
       const deleted = await tx.vehicleWithdrawal.update({
         where: { id },

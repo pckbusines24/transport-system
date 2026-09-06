@@ -88,18 +88,23 @@ export interface VehiclePnlRow {
   wdPeriod: number;
   /** owner withdrawals since the beginning */
   wdLifetime: number;
+  /** owner deposits in the selected period */
+  dpPeriod: number;
+  /** owner deposits since the beginning */
+  dpLifetime: number;
   /** net profit since the beginning (all FYs), behind the running balance */
   lifetimeNet: number;
-  /** lifetime net − lifetime withdrawals — continues across periods */
+  /** lifetime net − withdrawals + deposits — continues across periods */
   runningBalance: number;
   wdEntries: {
     id: string;
+    kind: "WITHDRAWAL" | "DEPOSIT";
     date: string;
     party: string;
     payParty: string;
     amount: number;
     remarks: string;
-    /** net through the entry's month − withdrawals up to & incl. this entry */
+    /** net through the entry's month − withdrawals + deposits up to & incl. this entry */
     balanceAfter: number;
   }[];
   trips: PnlTrip[];
@@ -177,6 +182,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
     const net = sum((r) => r.net);
     const trips = sum((r) => r.tripCount);
     const withdrawals = sum((r) => r.wdPeriod);
+    const deposits = sum((r) => r.dpPeriod);
     const runningBalance = sum((r) => r.runningBalance);
     const sorted = [...rows].sort((a, b) => b.net - a.net);
     const monthly = new Map<string, number>();
@@ -186,7 +192,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-12)
       .map(([month, m]) => ({ month, net: Math.round(m) }));
-    return { freight, parts, expenses, net, trips, withdrawals, runningBalance, sorted, months };
+    return { freight, parts, expenses, net, trips, withdrawals, deposits, runningBalance, sorted, months };
   }, [rows]);
 
   if (!rows.length) return null;
@@ -214,7 +220,7 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
   return (
     <div className="space-y-3">
       {/* tiles */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             Net Profit / Loss
@@ -243,6 +249,15 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Owner Deposit
+          </div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+            {lakh(t.deposits)}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">in this period</div>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             Running Balance
           </div>
           <div
@@ -250,7 +265,9 @@ function PnlOverview({ rows }: { rows: VehiclePnlRow[] }) {
           >
             {lakh(t.runningBalance)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">since inception: profit − withdrawals</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            since inception: profit − withdrawals + deposits
+          </div>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -431,8 +448,14 @@ export function VehiclePnlClient({
   const [tripOf, setTripOf] = React.useState<{ vehicle: VehiclePnlRow; trip: PnlTrip } | null>(null);
   const [emiOf, setEmiOf] = React.useState<VehiclePnlRow | null>(null);
   const [wdListOf, setWdListOf] = React.useState<VehiclePnlRow | null>(null);
-  // owner withdrawal entry form
+  // owner withdrawal / deposit entry form (one form, `wdKind` flips the sides)
   const [wdOpen, setWdOpen] = React.useState(false);
+  const [wdKind, setWdKind] = React.useState<"WITHDRAWAL" | "DEPOSIT">("WITHDRAWAL");
+  const openWd = (kind: "WITHDRAWAL" | "DEPOSIT") => {
+    setWdKind(kind);
+    setWdOpen(true);
+  };
+  const isDeposit = wdKind === "DEPOSIT";
   const [wdSaving, setWdSaving] = React.useState(false);
   const [wdVehicleId, setWdVehicleId] = React.useState<string | null>(null);
   const [wdPartyId, setWdPartyId] = React.useState<string | null>(null);
@@ -455,6 +478,7 @@ export function VehiclePnlClient({
     setWdSaving(true);
     try {
       const res = await saveVehicleWithdrawal({
+        kind: wdKind,
         vehicleId: wdVehicleId,
         partyId: wdPartyId,
         payPartyId: wdPayPartyId,
@@ -463,7 +487,9 @@ export function VehiclePnlClient({
         remarks: wdRemarks,
       });
       if (res.ok) {
-        toast({ title: "Withdrawal saved — ledger & running balance updated" });
+        toast({
+          title: `${isDeposit ? "Deposit" : "Withdrawal"} saved — ledger & running balance updated`,
+        });
         setWdOpen(false);
         setWdAmount(0);
         setWdRemarks("");
@@ -479,7 +505,7 @@ export function VehiclePnlClient({
   const removeWd = async (id: string) => {
     const res = await deleteVehicleWithdrawal(id);
     if (res.ok) {
-      toast({ title: "Withdrawal entry deleted — ledger reversed" });
+      toast({ title: "Entry deleted — ledger reversed" });
       setWdListOf(null);
       router.refresh();
     } else {
@@ -597,7 +623,7 @@ export function VehiclePnlClient({
           <button
             type="button"
             className="tabular-nums text-orange-600 underline-offset-2 hover:underline dark:text-orange-400"
-            title="View owner withdrawal entries"
+            title="View owner withdrawal / deposit entries"
             onClick={(e) => {
               e.stopPropagation();
               setWdListOf(row.original);
@@ -614,12 +640,36 @@ export function VehiclePnlClient({
       } satisfies DataTableColumnMeta<VehiclePnlRow>,
     },
     {
+      accessorKey: "dpPeriod",
+      header: "Deposits",
+      cell: ({ row }) =>
+        row.original.wdEntries.length ? (
+          <button
+            type="button"
+            className="tabular-nums text-emerald-600 underline-offset-2 hover:underline dark:text-emerald-400"
+            title="View owner withdrawal / deposit entries"
+            onClick={(e) => {
+              e.stopPropagation();
+              setWdListOf(row.original);
+            }}
+          >
+            {formatMoney(row.original.dpPeriod)}
+          </button>
+        ) : (
+          <span className="tabular-nums text-muted-foreground">{formatMoney(0)}</span>
+        ),
+      meta: {
+        numeric: true,
+        total: (rs) => formatMoney(rs.reduce((s, r) => s + r.dpPeriod, 0)),
+      } satisfies DataTableColumnMeta<VehiclePnlRow>,
+    },
+    {
       accessorKey: "runningBalance",
       header: "Running Balance",
       cell: ({ row }) => (
         <span
           className={`font-semibold tabular-nums ${row.original.runningBalance < 0 ? "text-destructive" : ""}`}
-          title={`Lifetime net ${formatMoney(row.original.lifetimeNet)} − withdrawals ${formatMoney(row.original.wdLifetime)}`}
+          title={`Lifetime net ${formatMoney(row.original.lifetimeNet)} − withdrawals ${formatMoney(row.original.wdLifetime)} + deposits ${formatMoney(row.original.dpLifetime)}`}
         >
           {formatMoney(row.original.runningBalance)}
         </span>
@@ -636,8 +686,11 @@ export function VehiclePnlClient({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Trip Profit &amp; Loss with Expenses</h1>
         <div className="flex items-center gap-2">
-        <Button size="sm" onClick={() => setWdOpen(true)}>
+        <Button size="sm" onClick={() => openWd("WITHDRAWAL")}>
           <Plus className="h-4 w-4" /> Owner Withdrawal
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => openWd("DEPOSIT")}>
+          <Plus className="h-4 w-4" /> Owner Deposit
         </Button>
         <ExportButton
           rows={rows}
@@ -655,6 +708,7 @@ export function VehiclePnlClient({
             { header: "Net Profit / Loss", key: "net", numeric: true },
             { header: "Margin %", key: "margin", numeric: true },
             { header: "Withdrawals", key: "wdPeriod", numeric: true },
+            { header: "Deposits", key: "dpPeriod", numeric: true },
             { header: "Running Balance", key: "runningBalance", numeric: true },
           ]}
         />
@@ -1132,23 +1186,24 @@ export function VehiclePnlClient({
         </DialogContent>
       </Dialog>
 
-      {/* -------- owner withdrawal list (lifetime, with balance-after) -------- */}
+      {/* -------- owner withdrawal / deposit list (lifetime, with balance-after) -------- */}
       <Dialog open={!!wdListOf} onOpenChange={(o) => !o && setWdListOf(null)}>
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Owner Withdrawal — {wdListOf?.vehicle}</DialogTitle>
+            <DialogTitle>Owner Withdrawal / Deposit — {wdListOf?.vehicle}</DialogTitle>
             <DialogDescription>
               Running Balance {formatMoney(wdListOf?.runningBalance ?? 0)} = lifetime net{" "}
-              {formatMoney(wdListOf?.lifetimeNet ?? 0)} − total withdrawals{" "}
-              {formatMoney(wdListOf?.wdLifetime ?? 0)}. Balance After = profit through that month −
-              withdrawals up to then.
+              {formatMoney(wdListOf?.lifetimeNet ?? 0)} − withdrawals{" "}
+              {formatMoney(wdListOf?.wdLifetime ?? 0)} + deposits{" "}
+              {formatMoney(wdListOf?.dpLifetime ?? 0)}. Balance After = profit through that month −
+              withdrawals + deposits up to then.
             </DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr>
-                  {["Date", "Owner", "Paid From", "Remarks", "Amount", "Balance After", ""].map((h) => (
+                  {["Date", "Type", "Party", "Bank / Cash", "Remarks", "Amount", "Balance After", ""].map((h) => (
                     <th key={h} className="border px-1.5 py-1 text-left font-semibold">
                       {h}
                     </th>
@@ -1159,10 +1214,24 @@ export function VehiclePnlClient({
                 {wdListOf?.wdEntries.map((w) => (
                   <tr key={w.id}>
                     <td className="border px-1.5 py-1">{formatDate(w.date)}</td>
+                    <td className="border px-1.5 py-1">
+                      {w.kind === "DEPOSIT" ? (
+                        <span className="text-emerald-600 dark:text-emerald-400">Deposit</span>
+                      ) : (
+                        <span className="text-orange-600 dark:text-orange-400">Withdrawal</span>
+                      )}
+                    </td>
                     <td className="border px-1.5 py-1">{w.party}</td>
                     <td className="border px-1.5 py-1">{w.payParty}</td>
                     <td className="border px-1.5 py-1 text-muted-foreground">{w.remarks || "—"}</td>
-                    <td className="border px-1.5 py-1 text-right font-medium tabular-nums text-orange-600 dark:text-orange-400">
+                    <td
+                      className={`border px-1.5 py-1 text-right font-medium tabular-nums ${
+                        w.kind === "DEPOSIT"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-orange-600 dark:text-orange-400"
+                      }`}
+                    >
+                      {w.kind === "DEPOSIT" ? "+" : "−"}
                       {formatMoney(w.amount)}
                     </td>
                     <td
@@ -1187,11 +1256,26 @@ export function VehiclePnlClient({
               {!!wdListOf?.wdEntries.length && (
                 <tfoot>
                   <tr className="font-semibold">
-                    <td colSpan={4} className="border px-1.5 py-1">
+                    <td colSpan={5} className="border px-1.5 py-1">
                       Total Withdrawals
                     </td>
-                    <td className="border px-1.5 py-1 text-right tabular-nums">
+                    <td className="border px-1.5 py-1 text-right tabular-nums text-orange-600 dark:text-orange-400">
                       {formatMoney(wdListOf.wdLifetime)}
+                    </td>
+                    <td className="border" colSpan={2} />
+                  </tr>
+                  <tr className="font-semibold">
+                    <td colSpan={5} className="border px-1.5 py-1">
+                      Total Deposits
+                    </td>
+                    <td className="border px-1.5 py-1 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {formatMoney(wdListOf.dpLifetime)}
+                    </td>
+                    <td className="border" colSpan={2} />
+                  </tr>
+                  <tr className="font-semibold">
+                    <td colSpan={6} className="border px-1.5 py-1">
+                      Running Balance
                     </td>
                     <td className="border px-1.5 py-1 text-right tabular-nums">
                       {formatMoney(wdListOf.runningBalance)}
@@ -1210,14 +1294,15 @@ export function VehiclePnlClient({
         </DialogContent>
       </Dialog>
 
-      {/* -------- owner withdrawal entry form -------- */}
+      {/* -------- owner withdrawal / deposit entry form -------- */}
       <Dialog open={wdOpen} onOpenChange={setWdOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Owner Withdrawal</DialogTitle>
+            <DialogTitle>{isDeposit ? "Owner Deposit" : "Owner Withdrawal"}</DialogTitle>
             <DialogDescription>
-              On save it debits the owner&rsquo;s ledger, credits the bank/cash book, and drops the
-              vehicle&rsquo;s running balance. No effect on net profit — a withdrawal is not an expense.
+              {isDeposit
+                ? "On save it credits the owner\u2019s ledger, debits the bank/cash book, and raises the vehicle\u2019s running balance. No effect on net profit \u2014 a deposit is not income."
+                : "On save it debits the owner\u2019s ledger, credits the bank/cash book, and drops the vehicle\u2019s running balance. No effect on net profit \u2014 a withdrawal is not an expense."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1256,7 +1341,9 @@ export function VehiclePnlClient({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Paid From (Bank / Cash) *</Label>
+              <Label className="text-xs">
+                {isDeposit ? "Deposited To (Bank / Cash) *" : "Paid From (Bank / Cash) *"}
+              </Label>
               <MasterCombobox
                 options={payOptions}
                 value={wdPayPartyId}
@@ -1279,7 +1366,7 @@ export function VehiclePnlClient({
               Cancel
             </Button>
             <Button onClick={() => void saveWd()} disabled={wdSaving}>
-              {wdSaving ? "Saving..." : "Save Withdrawal"}
+              {wdSaving ? "Saving..." : isDeposit ? "Save Deposit" : "Save Withdrawal"}
             </Button>
           </DialogFooter>
         </DialogContent>

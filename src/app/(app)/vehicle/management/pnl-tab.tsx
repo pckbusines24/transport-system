@@ -370,7 +370,7 @@ export async function VehiclePnlTab({
     if (total > 0) bumpLife(vid, monthKey(emi.payDate), -total);
   }
 
-  // owner withdrawals per vehicle, lifetime, dates ascending
+  // owner withdrawals AND deposits per vehicle, lifetime, dates ascending
   const wdByVehicle = new Map<string, typeof withdrawals>();
   for (const w of withdrawals) {
     const list = wdByVehicle.get(w.vehicleId) ?? [];
@@ -465,17 +465,22 @@ export async function VehiclePnlTab({
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([month, m]) => ({ month, net: m }));
 
-      // running balance: lifetime net − lifetime withdrawals, continues across
+      // running balance: lifetime net − withdrawals + deposits, continues across
       // periods/FYs regardless of the filters above
       const lm = lifeMonthly.get(v.id) ?? new Map<string, number>();
       const lifetimeNet = r2(Array.from(lm.values()).reduce((s, x) => s + x, 0));
       const wds = wdByVehicle.get(v.id) ?? [];
-      const wdLifetime = r2(wds.reduce((s, w) => s + toNum(String(w.amount)), 0));
-      const runningBalance = r2(lifetimeNet - wdLifetime);
-      const wdPeriod = r2(
-        wds.filter((w) => inPeriod(w.date)).reduce((s, w) => s + toNum(String(w.amount)), 0)
-      );
-      // balance after each entry ≈ net through the entry's month − withdrawals so far
+      // a deposit is the mirror of a withdrawal: it ADDS to the running balance
+      const isDp = (w: (typeof wds)[number]) => w.kind === "DEPOSIT";
+      const sumOf = (list: typeof wds) => r2(list.reduce((s, w) => s + toNum(String(w.amount)), 0));
+      const wdLifetime = sumOf(wds.filter((w) => !isDp(w)));
+      const dpLifetime = sumOf(wds.filter(isDp));
+      const runningBalance = r2(lifetimeNet - wdLifetime + dpLifetime);
+      const inP = wds.filter((w) => inPeriod(w.date));
+      const wdPeriod = sumOf(inP.filter((w) => !isDp(w)));
+      const dpPeriod = sumOf(inP.filter(isDp));
+      // balance after each entry ≈ net through the entry's month − withdrawals
+      // + deposits so far
       const monthsAsc = Array.from(lm.keys()).sort();
       const cumByMonth = new Map<string, number>();
       let cum = 0;
@@ -491,11 +496,12 @@ export async function VehiclePnlTab({
         }
         return last;
       };
-      let wdCum = 0;
+      let wdCum = 0; // signed: withdrawals +, deposits −
       const wdEntries = wds.map((w) => {
-        wdCum = r2(wdCum + toNum(String(w.amount)));
+        wdCum = r2(wdCum + (isDp(w) ? -1 : 1) * toNum(String(w.amount)));
         return {
           id: w.id,
+          kind: (isDp(w) ? "DEPOSIT" : "WITHDRAWAL") as "WITHDRAWAL" | "DEPOSIT",
           date: w.date.toISOString(),
           party: partyName.get(w.partyId) ?? "",
           payParty: partyName.get(w.payPartyId) ?? "",
@@ -527,6 +533,8 @@ export async function VehiclePnlTab({
         ),
         wdPeriod,
         wdLifetime,
+        dpPeriod,
+        dpLifetime,
         lifetimeNet,
         runningBalance,
         wdEntries,
