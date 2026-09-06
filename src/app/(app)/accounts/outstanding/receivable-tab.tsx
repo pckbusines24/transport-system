@@ -91,7 +91,11 @@ export async function OutstandingReceivableTab({
         ? Promise.resolve([])
         : tx.officeTransaction.findMany({ where: officeWhere, orderBy: { date: "asc" } }),
       tx.party.findMany({
-        where: { ledgerGroup: { in: ["CONSIGNEE_CONSIGNOR", "OWNER_BROKER"] }, isActive: true },
+        // drivers too: a negative settlement chain puts a driver on this register
+        where: {
+          ledgerGroup: { in: ["CONSIGNEE_CONSIGNOR", "OWNER_BROKER", "DRIVER"] },
+          isActive: true,
+        },
         orderBy: { name: "asc" },
       }),
       // the ONE settlement formula (money + TDS + shortage + other + round-off,
@@ -268,10 +272,15 @@ export async function OutstandingReceivableTab({
     {
       type: "combobox",
       key: "party",
-      label: "Party / Broker",
+      label: "Party / Broker / Driver",
       options: parties.map((p) => ({
         value: p.id,
-        label: p.ledgerGroup === "OWNER_BROKER" ? `${p.name} (Broker)` : p.name,
+        label:
+          p.ledgerGroup === "OWNER_BROKER"
+            ? `${p.name} (Broker)`
+            : p.ledgerGroup === "DRIVER"
+              ? `${p.name} (Driver)`
+              : p.name,
       })),
     },
     {
