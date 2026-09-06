@@ -346,21 +346,21 @@ export function BrokerSlipForm({
     setSide(side, { rate, freight: auto });
   };
 
+  // Owner side "Copy from booking": mirror EVERY broker-side field, rate basis
+  // included. An own vehicle keeps its TDS / Comm / Mamool at 0 (no third
+  // party to deduct from), exactly as onVehicleChange sets them.
   const copyFromBooking = () => {
-    setForm((f) => ({
-      ...f,
-      v: {
-        ...f.v,
-        rate: f.p.rate,
-        freight: f.p.freight,
-        detention: f.p.detention,
-        odcAmt: f.p.odcAmt,
-        fineAmt: f.p.fineAmt,
-        otherAmt: f.p.otherAmt,
-        ldCharge: f.p.ldCharge,
-        shortageAmt: f.p.shortageAmt,
-      },
-    }));
+    setForm((f) => {
+      const own = !!f.vehicleId && ownVehicleIds.includes(f.vehicleId);
+      return {
+        ...f,
+        vRateBasis: f.pRateBasis,
+        v: {
+          ...f.p,
+          ...(own ? { tdsPct: 0, tdsAmt: 0, commPct: 0, commAmt: 0, mamool: 0 } : {}),
+        },
+      };
+    });
   };
 
   const onVehicleChange = (v: string | null) => {
