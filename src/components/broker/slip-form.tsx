@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { DateInput } from "@/components/data/date-input";
+import { DateInput, IsoDateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import {
   CityCreateDialog as CityDialog,
@@ -1190,10 +1190,10 @@ export function BrokerSlipForm({
                 />
                 <div className="space-y-1">
                   <Label className="text-xs">Date</Label>
-                  <DateInput
+                  <IsoDateInput
                     className="h-8"
-                    value={a.date ? isoToText(a.date) : ""}
-                    onChange={(t) => updateAdvance(idx, { date: textToIso(t) || null })}
+                    value={a.date}
+                    onChange={(iso) => updateAdvance(idx, { date: iso })}
                   />
                 </div>
                 <div className="flex items-end gap-1">

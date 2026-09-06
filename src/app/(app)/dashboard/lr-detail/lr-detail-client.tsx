@@ -5,6 +5,7 @@ import { formatDate, formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { IsoDateInput } from "@/components/data/date-input";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ExportButton } from "@/components/data/export-button";
 import { LR_VIEW_META, type LrView } from "../lr-views";
@@ -133,20 +134,18 @@ export function LrDetailClient({
       <div className="flex flex-wrap items-end gap-2 rounded-md border p-2">
         <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
           From Date
-          <Input
-            type="date"
+          <IsoDateInput
             className="h-8 w-[130px] text-xs"
-            value={filters.from ?? ""}
-            onChange={(e) => set({ from: sel(e.target.value) })}
+            value={filters.from}
+            onChange={(iso) => set({ from: sel(iso ?? undefined) })}
           />
         </label>
         <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
           To Date
-          <Input
-            type="date"
+          <IsoDateInput
             className="h-8 w-[130px] text-xs"
-            value={filters.to ?? ""}
-            onChange={(e) => set({ to: sel(e.target.value) })}
+            value={filters.to}
+            onChange={(iso) => set({ to: sel(iso ?? undefined) })}
           />
         </label>
         {(

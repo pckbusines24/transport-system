@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { DateInput } from "@/components/data/date-input";
+import { DateInput, IsoDateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import { Field, NumInput, PartyCombobox, VehicleCombobox, enterAdvances } from "@/components/fleet/fields";
 import { LrPicker, SelectedLrList, type PendingLrRow } from "@/components/fleet/lr-picker";
@@ -996,8 +996,8 @@ export function ChalanForm({
                 <NumInput value={a.amount} onChange={(n) => setAdvance(i, { amount: n })} />
               </Field>
               <Field label="Date">
-                <DateInput
-                  value={a.date ? formatDate(new Date(a.date)) : ""}
+                <IsoDateInput
+                  value={a.date}
                   onChange={(_, d) => setAdvance(i, { date: d ? d.toISOString() : null })}
                 />
               </Field>

@@ -7,6 +7,7 @@ import { waLink } from "@/lib/phone";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { IsoDateInput } from "@/components/data/date-input";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ExportButton } from "@/components/data/export-button";
 import type { OutSide, OutstandingData } from "../outstanding-actions";
@@ -98,15 +99,15 @@ export function OutstandingClient({
           )}
           <label className="flex items-center gap-1 text-xs text-muted-foreground">
             As on
-            <input
-              type="date"
+            <IsoDateInput
               aria-label="As-on date"
-              className="h-8 rounded-md border border-input bg-background px-1.5 text-xs"
-              value={asOf ?? ""}
-              onChange={(e) => {
+              className="h-8 w-[130px] text-xs"
+              value={asOf}
+              onChange={(iso) => {
                 // the custom date REPLACES an FY pick — one as-on truth at a time
+                if (iso === (asOf ?? null)) return;
                 const p = new URLSearchParams({ side });
-                if (e.target.value) p.set("asof", e.target.value);
+                if (iso) p.set("asof", iso);
                 window.location.href = `/dashboard/outstanding?${p.toString()}`;
               }}
             />

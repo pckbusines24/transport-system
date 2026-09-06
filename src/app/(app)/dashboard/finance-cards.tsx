@@ -4,7 +4,7 @@ import * as React from "react";
 import { IndianRupee } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { IsoDateInput } from "@/components/data/date-input";
 import { InfoHint } from "@/components/ui/info-hint";
 import { getFinanceCards, type FinanceCards } from "./actions";
 
@@ -94,19 +94,15 @@ export function FinanceCardsSection({ defaultFrom, defaultTo }: { defaultFrom: s
             Margin Summary
           </span>
           <span className="flex items-center gap-1.5 text-xs">
-            <Input
-              type="date"
+            <IsoDateInput
               value={from}
-              max={to}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={(iso) => iso && setFrom(iso)}
               className="h-8 w-[140px] text-xs"
             />
             <span className="text-muted-foreground">to</span>
-            <Input
-              type="date"
+            <IsoDateInput
               value={to}
-              min={from}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(iso) => iso && setTo(iso)}
               className="h-8 w-[140px] text-xs"
             />
           </span>

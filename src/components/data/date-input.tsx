@@ -129,3 +129,55 @@ export function DateInput({ value, onChange, className, onBlur, ...props }: Date
     </div>
   );
 }
+
+interface IsoDateInputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
+  /** Stored value: "yyyy-mm-dd", a full ISO timestamp, or empty/null. */
+  value: string | null | undefined;
+  /** Emits "yyyy-mm-dd" once the typed text is a valid date, or null when cleared. */
+  onChange: (iso: string | null, date: Date | null) => void;
+}
+
+function isoToLocalDate(iso: string): Date | null {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * DateInput for state that stores an ISO date rather than dd/mm/yyyy text
+ * (advance rows, dashboard filters). Keeps the partially-typed text locally so
+ * a half-entered date is not wiped on every keystroke, and pushes the ISO
+ * value up only when the text parses — the same feel as the LR Entry dates.
+ */
+export function IsoDateInput({ value, onChange, ...props }: IsoDateInputProps) {
+  const external = value ? isoToLocalDate(value) : null;
+  const externalText = external ? formatDate(external) : "";
+  const [text, setText] = React.useState(externalText);
+  const lastExternal = React.useRef(externalText);
+  // adopt outside changes (e.g. a reset or an edit loaded from the server)
+  React.useEffect(() => {
+    if (externalText !== lastExternal.current) {
+      lastExternal.current = externalText;
+      setText(externalText);
+    }
+  }, [externalText]);
+
+  return (
+    <DateInput
+      {...props}
+      value={text}
+      onChange={(t, d) => {
+        setText(t);
+        if (!t.trim()) {
+          lastExternal.current = "";
+          onChange(null, null);
+        } else if (d) {
+          lastExternal.current = formatDate(d);
+          onChange(toIsoDay(d), d);
+        }
+      }}
+    />
+  );
+}

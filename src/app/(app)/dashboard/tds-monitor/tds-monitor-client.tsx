@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { IsoDateInput } from "@/components/data/date-input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -322,11 +323,10 @@ export function TdsMonitorClient({ data, error }: { data: TdsMonitorData; error:
             </p>
             <div className="space-y-1">
               <Label className="text-xs">Date</Label>
-              <Input
-                type="date"
+              <IsoDateInput
                 className="h-8 text-xs"
                 value={dForm.date}
-                onChange={(e) => setDForm({ ...dForm, date: e.target.value })}
+                onChange={(iso) => setDForm({ ...dForm, date: iso ?? "" })}
               />
             </div>
             <div className="space-y-1">
