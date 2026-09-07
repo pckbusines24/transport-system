@@ -58,6 +58,7 @@ export default async function AccountHeadsPage({
         system: isSystemHeadName(r.name),
       }))}
       canDelete={canDelete}
+      canManageSystem={canDelete}
     />
   );
 }

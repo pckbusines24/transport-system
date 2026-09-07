@@ -19,7 +19,7 @@ interface Row {
   name: string;
   kind: string;
   pnlScope: PnlScope;
-  /** software-owned head — seeded automatically, cannot be edited or deleted */
+  /** software-owned head — seeded automatically; only Admin / Owner may edit or delete */
   system: boolean;
 }
 
@@ -93,7 +93,7 @@ const columns: ColumnDef<Row, unknown>[] = [
     header: "Source",
     cell: ({ row }) =>
       row.original.system ? (
-        <Badge variant="outline" title="Created and used by the software — cannot be edited or deleted">
+        <Badge variant="outline" title="Created and used by the software — only Admin / Owner may edit or delete it">
           SYSTEM
         </Badge>
       ) : (
@@ -102,7 +102,16 @@ const columns: ColumnDef<Row, unknown>[] = [
   },
 ];
 
-export function AccountHeadsClient({ rows, canDelete }: { rows: Row[]; canDelete: boolean }) {
+export function AccountHeadsClient({
+  rows,
+  canDelete,
+  canManageSystem,
+}: {
+  rows: Row[];
+  canDelete: boolean;
+  /** Admin / Owner may edit or delete SYSTEM heads; everyone else sees them locked */
+  canManageSystem: boolean;
+}) {
   return (
     <SimpleMaster
       title="Account Head"
@@ -155,8 +164,8 @@ export function AccountHeadsClient({ rows, canDelete }: { rows: Row[]; canDelete
       }}
       canDelete={canDelete}
       rowLocked={(r) =>
-        r.system
-          ? `"${r.name}" is a system ledger head — the software posts to it automatically, so it cannot be edited or deleted.`
+        r.system && !canManageSystem
+          ? `"${r.name}" is a system ledger head — the software posts to it automatically; only Admin / Owner may edit or delete it.`
           : null
       }
     />
