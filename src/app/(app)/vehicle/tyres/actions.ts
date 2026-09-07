@@ -285,7 +285,8 @@ export async function deleteTyre(
         where: { id: tyreId, firmId: session.firmId },
         include: { cycles: true },
       });
-      // the cascade would silently wipe the fitment history with the tyre
+      // a tyre still fitted on a vehicle must be removed there first; a
+      // removed tyre goes together with its own fitment history
       await assertNotReferenced(tx, "tyre", { id: tyreId });
       await tx.tyre.delete({ where: { id: tyreId } });
       await audit(tx, session, { entity: "Tyre", entityId: tyreId, action: "DELETE", before });

@@ -237,8 +237,17 @@ const INVOICE_RULES: RefRule[] = [
 ];
 const HIRE_SLIP_RULES: RefRule[] = [allocationRule(["LORRY_HIRE"], "payment vouchers")];
 const DELIVERY_RULES: RefRule[] = [allocationRule(["CASH_MEMO"], "receipt vouchers")];
+// a tyre's closed cycles are its OWN history (deleted with it, as the screen
+// says); only an OPEN cycle — the tyre is on a vehicle right now — blocks
 const TYRE_RULES: RefRule[] = [
-  { model: "TyreCycle", columns: ["tyreId"], label: "tyre fitment cycles (history)" },
+  {
+    model: "TyreCycle",
+    columns: ["tyreId"],
+    label: "vehicles it is currently fitted on",
+    extraWhere: { removalDate: null },
+    select: { vehicleId: true },
+    sample: (r) => String(r.vehicleId ?? ""),
+  },
 ];
 
 export const MASTER_RULES: Record<MasterKind, RefRule[]> = {

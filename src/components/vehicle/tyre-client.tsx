@@ -767,6 +767,7 @@ export function TyreClient({
       <DeletePrecheckDialog
         state={tyreCheck.state}
         subject={`tyre ${tyreToDelete?.tyreNo ?? ""}`}
+        extraNote="Its complete fitment history goes with it."
         deleting={tyreDeleting}
         onCancel={() => {
           tyreCheck.close();
