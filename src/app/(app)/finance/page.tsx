@@ -43,7 +43,7 @@ export default async function FinancePage({
     ? (searchParams.tab as string)
     : "loans";
 
-  const [{ loans, txns }, partyOptions, bankOptions, vehicleOptions] = await Promise.all([
+  const [{ loans, emis, txns }, partyOptions, bankOptions, vehicleOptions] = await Promise.all([
     getFinanceData(),
     getPartyOptions(),
     getBankOptions(),
@@ -57,6 +57,7 @@ export default async function FinancePage({
       {tab === "loans" && (
         <LoanRegisterClient
           loans={loans}
+          emis={emis}
           partyOptions={partyOptions}
           bankOptions={bankOptions}
           vehicleOptions={vehicleOptions}

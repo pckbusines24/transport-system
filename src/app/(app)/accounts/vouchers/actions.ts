@@ -539,6 +539,15 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
             "This is a chalan/broker-slip settlement voucher — DELETE it here and settle again from the document; it cannot be edited from the register."
           );
         }
+        // a loan instalment's voucher carries loan-specific legs (principal to
+        // the lender, interest/TDS heads); the generic form would repost plain
+        // party-to-bank lines and the loan report would no longer match the books
+        const emiOwner = await loanEmiOfVoucher(tx, data.id);
+        if (emiOwner) {
+          throw new Error(
+            `This voucher belongs to Loan ${emiOwner.loan.loanNo} instalment ${emiOwner.emiNo} — it cannot be edited here. Delete that instalment from Finance → Loan Register and record it again.`
+          );
+        }
         prevRowShortage = round2(
           before.allocations.reduce((s, a) => s + Number(a.deduction), 0)
         );
@@ -1066,6 +1075,14 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
   return { ok: false, error: "Voucher number already exists" };
 }
 
+/** The live loan instalment this voucher was created by, if any. */
+async function loanEmiOfVoucher(tx: Tx, voucherId: string) {
+  return tx.loanEmi.findFirst({
+    where: { voucherId, deletedAt: null, loan: { deletedAt: null } },
+    select: { emiNo: true, loan: { select: { loanNo: true } } },
+  });
+}
+
 export async function deleteVoucher(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -1083,6 +1100,14 @@ export async function deleteVoucher(
         include: { allocations: true },
       });
       if (!before) throw new Error("Voucher not found in this firm");
+      // the instalment row would outlive its voucher: the loan would still
+      // show the EMI as paid while the books say the money never moved
+      const emiOwner = await loanEmiOfVoucher(tx, id);
+      if (emiOwner) {
+        throw new Error(
+          `This voucher belongs to Loan ${emiOwner.loan.loanNo} instalment ${emiOwner.emiNo} — delete that instalment from Finance → Loan Register instead; it removes the voucher and its postings together.`
+        );
+      }
       const adv = await tx.partyAdvance.findFirst({ where: { voucherId: id, deletedAt: null } });
       if (adv && Number(adv.consumedAmount) > 0.009) {
         throw new Error(

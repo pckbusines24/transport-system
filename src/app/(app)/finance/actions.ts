@@ -523,6 +523,16 @@ export async function deleteLoanEmi(
       const before = await tx.loanEmi.findFirstOrThrow({
         where: { id, deletedAt: null, loan: { firmId: session.firmId } },
       });
+      // instalments are numbered and their due dates derived in sequence, so
+      // only the latest one can go — undo from the end, like a stack
+      const later = await tx.loanEmi.count({
+        where: { loanId: before.loanId, deletedAt: null, emiNo: { gt: before.emiNo } },
+      });
+      if (later > 0) {
+        throw new Error(
+          `Instalment ${before.emiNo} is not the latest — delete the ${later} later instalment(s) first.`
+        );
+      }
       await tx.loanEmi.update({ where: { id }, data: { deletedAt: new Date() } });
       if (before.voucherId) {
         await tx.voucher.update({

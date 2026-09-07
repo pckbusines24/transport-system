@@ -31,9 +31,9 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
-import { deleteLoan, saveLoan } from "@/app/(app)/finance/actions";
+import { deleteLoan, deleteLoanEmi, saveLoan } from "@/app/(app)/finance/actions";
 import { EmiPayDialog, type EmiPayTarget } from "@/components/finance/emi-pay-dialog";
-import type { LoanRow } from "@/app/(app)/finance/queries";
+import type { EmiRow, LoanRow } from "@/app/(app)/finance/queries";
 
 function textToIso(text: string): string {
   const d = parseDdMmYyyy(text);
@@ -73,12 +73,14 @@ const emptyLoan = {
  */
 export function LoanRegisterClient({
   loans,
+  emis,
   partyOptions,
   bankOptions,
   vehicleOptions,
   canDelete,
 }: {
   loans: LoanRow[];
+  emis: EmiRow[];
   partyOptions: MasterOption[];
   bankOptions: MasterOption[];
   vehicleOptions: MasterOption[];
@@ -93,6 +95,32 @@ export function LoanRegisterClient({
   const [emiTarget, setEmiTarget] = React.useState<EmiPayTarget | null>(null);
   const [toDelete, setToDelete] = React.useState<LoanRow | null>(null);
   const [view, setView] = React.useState<LoanRow | null>(null);
+  const [emiToDelete, setEmiToDelete] = React.useState<EmiRow | null>(null);
+
+  // instalments of the loan being viewed, latest first (only that one can go)
+  const viewEmis = React.useMemo(
+    () => (view ? emis.filter((e) => e.loanId === view.id).sort((a, b) => b.emiNo - a.emiNo) : []),
+    [emis, view]
+  );
+
+  const confirmEmiDelete = async () => {
+    if (!emiToDelete) return;
+    setBusy(true);
+    try {
+      const res = await deleteLoanEmi(emiToDelete.id);
+      if (res.ok) {
+        toast({
+          title: `Instalment ${emiToDelete.emiNo} of ${emiToDelete.loanNo} deleted`,
+          description: `Voucher ${emiToDelete.voucherNo} and its postings reversed`,
+        });
+        setEmiToDelete(null);
+        setView(null);
+        router.refresh();
+      } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const setLoan = (p: Partial<typeof emptyLoan>) => setLoanForm((f) => ({ ...f, ...p }));
 
@@ -579,7 +607,7 @@ export function LoanRegisterClient({
 
       {/* ---------------- view ---------------- */}
       <Dialog open={!!view} onOpenChange={(o: boolean) => !o && setView(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Loan {view?.loanNo}</DialogTitle>
             <DialogDescription>
@@ -618,6 +646,69 @@ export function LoanRegisterClient({
               ))}
             </div>
           )}
+          {view && (
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Instalments</div>
+              {viewEmis.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No instalment paid yet.</div>
+              ) : (
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="px-2 py-1 text-left">#</th>
+                        <th className="px-2 py-1 text-left">Paid On</th>
+                        <th className="px-2 py-1 text-right">Principal</th>
+                        <th className="px-2 py-1 text-right">Interest</th>
+                        <th className="px-2 py-1 text-right">TDS</th>
+                        <th className="px-2 py-1 text-right">Bank</th>
+                        <th className="px-2 py-1 text-left">Voucher</th>
+                        {canDelete && <th className="px-2 py-1" />}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewEmis.map((e, idx) => (
+                        <tr key={e.id} className="border-t">
+                          <td className="px-2 py-1">
+                            {e.emiNo}
+                            {e.isSettlement && <span className="ml-1 text-muted-foreground">(settlement)</span>}
+                          </td>
+                          <td className="px-2 py-1 whitespace-nowrap">{formatDate(e.payDate)}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{formatMoney(e.principal)}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{formatMoney(e.interest)}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{formatMoney(e.tdsAmt)}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{formatMoney(e.netPaid)}</td>
+                          <td className="px-2 py-1 whitespace-nowrap">{e.voucherNo || "—"}</td>
+                          {canDelete && (
+                            <td className="px-1 py-0.5 text-right">
+                              {idx === 0 ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-destructive"
+                                  title="Delete this instalment (removes its voucher and postings)"
+                                  onClick={() => setEmiToDelete(e)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              ) : (
+                                <span
+                                  className="text-[10px] text-muted-foreground"
+                                  title="Only the latest instalment can be deleted — remove the later ones first"
+                                >
+                                  locked
+                                </span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" asChild>
               <Link href={`/print/loan/${view?.id}`} target="_blank">
@@ -629,6 +720,31 @@ export function LoanRegisterClient({
         </DialogContent>
       </Dialog>
 
+      {/* ---------------- delete instalment ---------------- */}
+      <Dialog open={!!emiToDelete} onOpenChange={(o: boolean) => !o && setEmiToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Delete instalment {emiToDelete?.emiNo} of loan {emiToDelete?.loanNo}?
+            </DialogTitle>
+            <DialogDescription>
+              Voucher {emiToDelete?.voucherNo} is deleted and every posting it made (bank, lender,
+              interest, TDS) is reversed. The principal of{" "}
+              {emiToDelete ? formatMoney(emiToDelete.principal) : ""} becomes outstanding again and
+              a closed loan reopens.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmiToDelete(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmEmiDelete} disabled={busy}>
+              {busy ? "Deleting..." : "Delete Instalment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ---------------- delete ---------------- */}
       <Dialog open={!!toDelete} onOpenChange={(o: boolean) => !o && setToDelete(null)}>
         <DialogContent>
@@ -636,7 +752,8 @@ export function LoanRegisterClient({
             <DialogTitle>Delete loan {toDelete?.loanNo}?</DialogTitle>
             <DialogDescription>
               The loan and its disbursement posting are removed. A loan that already has
-              instalments cannot be deleted — delete those first, so no voucher is ever orphaned.
+              instalments cannot be deleted — open the loan and delete its instalments first, so no
+              voucher is ever orphaned.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

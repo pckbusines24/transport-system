@@ -91,6 +91,15 @@ export async function VoucherRegisterTab({
       tx.party.findMany({ select: { id: true, name: true } }),
     ]);
     const partyName = new Map(parties.map((p) => [p.id, p.name]));
+    // vouchers born from a loan instalment: edit/delete only via the loan
+    const loanVouchers = new Map(
+      (
+        await tx.loanEmi.findMany({
+          where: { voucherId: { in: vouchers.map((v) => v.id) }, deletedAt: null },
+          select: { voucherId: true, emiNo: true, loan: { select: { loanNo: true } } },
+        })
+      ).map((e) => [e.voucherId as string, `${e.loan.loanNo} / EMI ${e.emiNo}`])
+    );
     const totals: VoucherRegisterTotals = {
       amount: toNum(agg._sum.amount),
       tdsAmt: toNum(agg._sum.tdsAmt),
@@ -118,6 +127,7 @@ export async function VoucherRegisterTab({
       )
         ? 1
         : 0,
+      loanRef: loanVouchers.get(v.id) ?? null,
     }));
     return { rows, total, totals };
   });

@@ -28,6 +28,9 @@ export interface RegisterRow {
   netAmount: number;
   /** 1 = auto-created chalan/slip settlement voucher (delete-and-redo only) */
   settlement: number;
+  /** "LN-1 / EMI 3" when a loan instalment created this voucher — it is
+   *  managed from the Loan Register only */
+  loanRef: string | null;
   [key: string]: string | number | null;
 }
 
@@ -122,7 +125,16 @@ export function VoucherRegisterTable({
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex gap-0.5">
-          {row.original.settlement ? (
+          {row.original.loanRef ? (
+            // loan instalment voucher: the instalment owns it — remove the
+            // instalment from the Loan Register and this voucher goes with it
+            <span
+              className="px-1 text-[10px] text-muted-foreground"
+              title={`Voucher of loan ${row.original.loanRef} — delete the instalment from Finance → Loan Register to remove it`}
+            >
+              loan
+            </span>
+          ) : row.original.settlement ? (
             // auto-created settlement voucher: figures live with the chalan /
             // slip — delete here and re-settle from the document instead
             <span
@@ -142,7 +154,7 @@ export function VoucherRegisterTable({
               </Link>
             </Button>
           )}
-          {canDelete && (
+          {canDelete && !row.original.loanRef && (
             <Button
               variant="ghost"
               size="icon"
