@@ -66,6 +66,9 @@ export function MasterCombobox({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
   const focused = React.useRef(false);
+  // did the focus come from the user's own click? A dialog auto-focusing its
+  // first field must not pop the list over an already-selected value.
+  const pointerFocus = React.useRef(false);
 
   // keep display text in sync when value/options change from outside
   React.useEffect(() => {
@@ -227,10 +230,16 @@ export function MasterCombobox({
         placeholder={placeholder}
         value={text}
         className="pr-8"
+        onPointerDown={() => {
+          pointerFocus.current = true;
+        }}
         onFocus={(e) => {
           focused.current = true;
           e.target.select();
-          setOpen(true);
+          // open on focus only when there is nothing chosen yet, or the user
+          // clicked in — typing and ArrowDown open it at any time
+          if (pointerFocus.current || !selected) setOpen(true);
+          pointerFocus.current = false;
           setHighlight(0);
           // focus is not engagement — see `interacted`
           setInteracted(false);
