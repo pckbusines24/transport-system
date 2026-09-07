@@ -41,3 +41,6 @@ next-env.d.ts
 
 # parity harness scratch modules
 /scripts/parity/.tmp/
+
+# uploaded documents (disk driver) — never in the repo
+/data/

@@ -70,18 +70,31 @@ services:
         type: SECRET
       - key: AUTH_SECRET
         type: SECRET
+      # EVERY storage variable must be RUN_AND_BUILD_TIME. A "Build time"
+      # scope (the console's easy mistake) drops the variable at runtime: the
+      # app then silently falls back to the disk driver, uploads "succeed"
+      # into the container's throwaway disk and the bucket stays empty.
+      # Verify on the live site: /api/uploads/status (Admin / Owner).
       - key: STORAGE_DRIVER
         value: s3
+        scope: RUN_AND_BUILD_TIME
       - key: S3_BUCKET
         value: transport-tms-uploads
+        scope: RUN_AND_BUILD_TIME
       # R2: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
       - key: S3_ENDPOINT
         type: SECRET
+        scope: RUN_AND_BUILD_TIME
       - key: S3_REGION
         value: auto
+        scope: RUN_AND_BUILD_TIME
       - key: S3_ACCESS_KEY_ID
         type: SECRET
+        scope: RUN_AND_BUILD_TIME
       - key: S3_SECRET_ACCESS_KEY
         type: SECRET
+        scope: RUN_AND_BUILD_TIME
+      # read by the browser bundle at build time AND by server rendering at run time
       - key: NEXT_PUBLIC_APP_NAME
         value: TransportTMS
+        scope: RUN_AND_BUILD_TIME
