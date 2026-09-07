@@ -140,6 +140,8 @@ export function PartiesClient({
       getId={(r) => r.id}
       save={saveParty}
       remove={deleteParty}
+      refKind="party"
+      deleteMode="deactivate"
       importConfig={{
         action: importParties,
         templateHeaders: ["Name", "Group", "GSTIN", "PAN", "Mobile", "Email", "Address", "Transport Name", "Opening Balance", "Opening Side"],

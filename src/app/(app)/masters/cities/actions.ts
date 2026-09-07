@@ -7,6 +7,7 @@ import { runImport, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { audit } from "@/lib/audit";
 import { actionError, optStr, zodError, type ActionResult } from "../_lib/util";
 
@@ -58,6 +59,7 @@ export async function deleteCity(id: string): Promise<ActionResult> {
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.city.findUniqueOrThrow({ where: { id } });
+      await assertNotReferenced(tx, "city", { id });
       await tx.city.delete({ where: { id } });
       await audit(tx, session, { entity: "City", entityId: id, action: "DELETE", before });
     });

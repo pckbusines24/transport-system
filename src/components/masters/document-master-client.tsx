@@ -66,6 +66,7 @@ export function DocumentMasterClient({
       getId={(r) => r.id}
       save={saveDocumentType}
       remove={deleteDocumentType}
+      refKind="documentType"
       importConfig={{
         action: importDocumentTypes,
         templateHeaders: ["Name", "Description", "Reminder Days"],

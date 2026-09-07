@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/session";
 import { runImport, matchEnum, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { audit } from "@/lib/audit";
 import { isSystemHeadName } from "@/lib/account-heads";
 import { actionError, zodError, type ActionResult } from "../_lib/util";
@@ -94,6 +95,7 @@ export async function deleteAccountHead(id: string): Promise<ActionResult> {
           `"${before.name}" is a system ledger head used by the software itself — it cannot be deleted.`
         );
       }
+      await assertNotReferenced(tx, "accountHead", { id });
       await tx.accountHead.delete({ where: { id } });
       await audit(tx, session, { entity: "AccountHead", entityId: id, action: "DELETE", before });
     });

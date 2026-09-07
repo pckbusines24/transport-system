@@ -112,6 +112,8 @@ export function VehiclesClient({
       getId={(r) => r.id}
       save={saveVehicle}
       remove={deleteVehicle}
+      refKind="vehicle"
+      deleteMode="deactivate"
       importConfig={{
         action: importVehicles,
         templateHeaders: ["Vehicle No", "Ownership", "Name", "Type", "Chassis No", "Engine No", "Permit No", "Insurance No"],

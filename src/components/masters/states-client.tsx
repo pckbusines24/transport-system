@@ -36,6 +36,7 @@ export function StatesClient({ rows, canDelete }: { rows: Row[]; canDelete: bool
       getId={(r) => r.id}
       save={saveState}
       remove={deleteState}
+      refKind="state"
       importConfig={{
         action: importStates,
         templateHeaders: ["State", "GST Code"],

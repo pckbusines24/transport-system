@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/session";
 import { runImport, num as importNum, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { audit } from "@/lib/audit";
 import { actionError, optStr, zodError, type ActionResult } from "../_lib/util";
 
@@ -54,6 +55,7 @@ export async function deleteDocumentType(id: string): Promise<ActionResult> {
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.documentType.findUniqueOrThrow({ where: { id } });
+      await assertNotReferenced(tx, "documentType", { id });
       await tx.documentType.delete({ where: { id } });
       await audit(tx, session, { entity: "DocumentType", entityId: id, action: "DELETE", before });
     });

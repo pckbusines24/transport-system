@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getMasterReferences } from "@/app/(app)/masters/_lib/ref-actions";
+import type { MasterKind, MasterRefReport } from "@/lib/master-refs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,6 +82,8 @@ export interface MasterFormDialogProps {
   onSaved: (id: string, form: FormState) => void | Promise<void>;
   /** Delete handler for the edit dialog; the button shows only when provided. */
   onDelete?: () => Promise<void>;
+  /** button text — "Deactivate" for masters that are hidden rather than removed */
+  deleteLabel?: string;
 }
 
 /**
@@ -100,6 +105,7 @@ export function MasterFormDialog({
   dialogClassName,
   onSaved,
   onDelete,
+  deleteLabel = "Delete",
 }: MasterFormDialogProps) {
   const { toast } = useToast();
   const [form, setForm] = React.useState<FormState>(initial);
@@ -303,7 +309,7 @@ export function MasterFormDialog({
               className="sm:mr-auto"
             >
               <Trash2 className="h-4 w-4" />
-              Delete
+              {deleteLabel}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
@@ -335,6 +341,15 @@ interface SimpleMasterProps<T> {
   save: (input: unknown) => Promise<ActionResult>;
   remove?: (id: string) => Promise<ActionResult>;
   canDelete: boolean;
+  /**
+   * Which master this is, for the "where is it used?" check that runs before
+   * a delete. Without it the dialog falls back to a plain confirm (leaf
+   * masters nothing points at, e.g. rates).
+   */
+  refKind?: MasterKind;
+  /** "deactivate": the record is hidden, not removed — references are shown
+   *  for information and the action is still allowed */
+  deleteMode?: "delete" | "deactivate";
   /** Optional payload transform before calling `save`. */
   transform?: (form: FormState) => unknown;
   /** Extra content rendered below the fields (hints, computed values). */
@@ -365,6 +380,8 @@ export function SimpleMaster<T>({
   save,
   remove,
   canDelete,
+  refKind,
+  deleteMode = "delete",
   transform,
   renderExtra,
   dialogClassName,
@@ -374,6 +391,11 @@ export function SimpleMaster<T>({
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
+  // delete pre-check: null = closed, "loading" = asking the server, else the report
+  const [delCheck, setDelCheck] = React.useState<null | "loading" | MasterRefReport>(null);
+  const [deleting, setDeleting] = React.useState(false);
+  const deactivate = deleteMode === "deactivate";
+  const verb = deactivate ? "Deactivate" : "Delete";
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [initial, setInitial] = React.useState<FormState>(defaults);
 
@@ -394,18 +416,50 @@ export function SimpleMaster<T>({
     setOpen(true);
   };
 
-  const handleDelete = async () => {
+  const runDelete = async () => {
     if (!editingId || !remove) return;
-    if (!window.confirm(`Delete this ${title.toLowerCase()}? This cannot be undone.`)) return;
-    const res = await remove(editingId);
-    if (res.ok) {
-      toast({ title: `${title} deleted` });
-      setOpen(false);
-      router.refresh();
-    } else {
-      toast({ variant: "destructive", title: "Delete failed", description: res.error });
+    setDeleting(true);
+    try {
+      const res = await remove(editingId);
+      if (res.ok) {
+        toast({ title: `${title} ${deactivate ? "deactivated" : "deleted"}` });
+        setDelCheck(null);
+        setOpen(false);
+        router.refresh();
+      } else {
+        toast({ variant: "destructive", title: `${verb} failed`, description: res.error });
+      }
+    } finally {
+      setDeleting(false);
     }
   };
+
+  // Delete = look up every entry that still points at this record FIRST.
+  // Hard-delete masters are blocked while anything references them; the
+  // server action repeats the check, so this is the explanation, not the guard.
+  const handleDelete = async () => {
+    if (!editingId || !remove) return;
+    if (!refKind) {
+      if (!window.confirm(`${verb} this ${title.toLowerCase()}? This cannot be undone.`)) return;
+      await runDelete();
+      return;
+    }
+    setDelCheck("loading");
+    try {
+      setDelCheck(await getMasterReferences(refKind, editingId));
+    } catch (e) {
+      setDelCheck(null);
+      toast({
+        variant: "destructive",
+        title: "Could not check references",
+        description: e instanceof Error ? e.message : "Try again",
+      });
+    }
+  };
+
+  const report = delCheck && delCheck !== "loading" ? delCheck : null;
+  const blocked = !!report && report.total > 0 && !deactivate;
+  const busyLabel = deactivate ? "Deactivating…" : "Deleting…";
 
   return (
     <div className={embedded ? "space-y-4" : "space-y-4 p-4"}>
@@ -443,7 +497,75 @@ export function SimpleMaster<T>({
           router.refresh();
         }}
         onDelete={canDelete && remove ? handleDelete : undefined}
+        deleteLabel={verb}
       />
+
+      {/* -------- delete pre-check: where is this record used? -------- */}
+      <Dialog open={delCheck !== null} onOpenChange={(o) => !o && !deleting && setDelCheck(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {delCheck === "loading"
+                ? `Checking where this ${title.toLowerCase()} is used…`
+                : blocked
+                  ? `Cannot delete — this ${title.toLowerCase()} is in use`
+                  : report && report.total > 0
+                    ? `This ${title.toLowerCase()} is in use`
+                    : `${verb} this ${title.toLowerCase()}?`}
+            </DialogTitle>
+            <DialogDescription>
+              {delCheck === "loading"
+                ? "Looking through LRs, chalans, slips, vouchers and other entries."
+                : blocked
+                  ? "Deleting it now would leave the entries below pointing at nothing. Delete or re-point those entries first, then delete this record."
+                  : report && report.total > 0
+                    ? "It stays on every entry below for history. Deactivating only hides it from new entries."
+                    : "Nothing else refers to it. This cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          {report && report.total > 0 && (
+            <div className="max-h-72 overflow-y-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium">Used in</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Entries</th>
+                    <th className="px-3 py-1.5 text-left font-medium">Examples</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.groups.map((g) => (
+                    <tr key={g.label} className="border-t">
+                      <td className="px-3 py-1.5 capitalize">{g.label}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{g.count}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {g.samples.join(", ")}
+                        {g.count > g.samples.length && g.samples.length > 0 ? ", …" : ""}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t font-semibold">
+                    <td className="px-3 py-1.5">Total</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{report.total}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDelCheck(null)} disabled={deleting}>
+              {blocked ? "Close" : "Cancel"}
+            </Button>
+            {report && !blocked && (
+              <Button variant="destructive" onClick={() => void runDelete()} disabled={deleting}>
+                <Trash2 className="h-4 w-4" />
+                {deleting ? busyLabel : report.total > 0 ? `${verb} anyway` : verb}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

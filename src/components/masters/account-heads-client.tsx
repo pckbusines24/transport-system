@@ -146,6 +146,7 @@ export function AccountHeadsClient({ rows, canDelete }: { rows: Row[]; canDelete
       getId={(r) => r.id}
       save={saveAccountHead}
       remove={deleteAccountHead}
+      refKind="accountHead"
       importConfig={{
         action: importAccountHeads,
         templateHeaders: ["Name", "Kind"],

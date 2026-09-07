@@ -97,6 +97,7 @@ export function ProductsClient({
       getId={(r) => r.id}
       save={saveProduct}
       remove={deleteProduct}
+      refKind="product"
       importConfig={{
         action: importProducts,
         templateHeaders: ["Product", "Group", "Unit", "HSN Code", "GST %", "Product Type"],

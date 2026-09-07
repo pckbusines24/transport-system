@@ -7,6 +7,7 @@ import { runImport, num as importNum, enumKey, type ImportSummary } from "@/lib/
 import { authorize } from "@/lib/authz";
 import { lookupTag } from "@/lib/cached-lookups";
 import { withTenant } from "@/lib/db";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { audit } from "@/lib/audit";
 import { actionError, optStr, zodError, type ActionResult } from "../_lib/util";
 
@@ -70,6 +71,7 @@ export async function deleteProduct(id: string): Promise<ActionResult> {
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.product.findUniqueOrThrow({ where: { id } });
+      await assertNotReferenced(tx, "product", { id });
       await tx.product.delete({ where: { id } });
       await audit(tx, session, { entity: "Product", entityId: id, action: "DELETE", before });
     });

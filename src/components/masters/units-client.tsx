@@ -43,6 +43,7 @@ export function UnitsClient({
       getId={(r) => r.id}
       save={saveUnit}
       remove={deleteUnit}
+      refKind="unit"
       importConfig={{
         action: importUnits,
         templateHeaders: ["Unit", "Value"],

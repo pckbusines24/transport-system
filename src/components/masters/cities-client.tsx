@@ -63,6 +63,7 @@ export function CitiesClient({
       getId={(r) => r.id}
       save={saveCity}
       remove={deleteCity}
+      refKind="city"
       importConfig={{
         action: importCities,
         templateHeaders: ["City", "State", "District", "Pincode", "STD Code"],

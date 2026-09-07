@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 
@@ -93,6 +94,7 @@ export async function deleteTdsSection(
   try {
     await withTenant(session.tenantId, async (tx) => {
       const before = await tx.tdsSection.findUniqueOrThrow({ where: { id } });
+      await assertNotReferenced(tx, "tdsSection", { id });
       await tx.tdsSection.update({ where: { id }, data: { deletedAt: new Date() } });
       await audit(tx, session, { entity: "TdsSection", entityId: id, action: "DELETE", before });
     });

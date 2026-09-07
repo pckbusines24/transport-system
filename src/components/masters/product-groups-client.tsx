@@ -43,6 +43,7 @@ export function ProductGroupsClient({
       getId={(r) => r.id}
       save={saveProductGroup}
       remove={deleteProductGroup}
+      refKind="productGroup"
       importConfig={{
         action: importProductGroups,
         templateHeaders: ["Group"],
