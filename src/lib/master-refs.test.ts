@@ -12,6 +12,7 @@ const models = new Map(Prisma.dmmf.datamodel.models.map((m) => [m.name, m]));
 describe("master reference registry matches the schema", () => {
   for (const [kind, rules] of Object.entries(MASTER_RULES)) {
     describe(kind, () => {
+      it("is registered", () => expect(Array.isArray(rules)).toBe(true));
       for (const rule of rules) {
         it(`${rule.model}.${rule.columns.join("|")}`, () => {
           const model = models.get(rule.model);

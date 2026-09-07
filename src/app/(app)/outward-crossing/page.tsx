@@ -67,6 +67,7 @@ export default async function OutwardCrossingPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveOutwardCrossing}
       remove={deleteOutwardCrossing}
+      refKind="outwardCrossing"
       rows={rows.map((r) => ({
         id: r.id,
         ocNo: r.ocNo,

@@ -49,6 +49,7 @@ export default async function ArrivalPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveArrival}
       remove={deleteArrival}
+      refKind="arrival"
       rows={rows.map((r) => ({
         id: r.id,
         arrivalNo: r.arrivalNo,

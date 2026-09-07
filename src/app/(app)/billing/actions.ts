@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { requireSession, type Session } from "@/lib/session";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { withTenant, type Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
@@ -1064,6 +1065,9 @@ export async function deleteInvoice(
       include: { lrs: true },
     });
     if (!invoice) return { ok: false as const, error: "Invoice not found." };
+    // a receipt already allocated to this bill, or a submission carrying it,
+    // would be left pointing at nothing
+    await assertNotReferenced(tx, "invoice", { id });
     for (const il of invoice.lrs) {
       const hasPod = await tx.pod.findFirst({ where: { lrId: il.lrId } });
       await tx.lr.update({

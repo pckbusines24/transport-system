@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getMasterReferences } from "@/app/(app)/masters/_lib/ref-actions";
 import type { MasterKind, MasterRefReport } from "@/lib/master-refs";
+import { DeletePrecheckDialog } from "@/components/data/delete-precheck";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -457,9 +457,6 @@ export function SimpleMaster<T>({
     }
   };
 
-  const report = delCheck && delCheck !== "loading" ? delCheck : null;
-  const blocked = !!report && report.total > 0 && !deactivate;
-  const busyLabel = deactivate ? "Deactivating…" : "Deleting…";
 
   return (
     <div className={embedded ? "space-y-4" : "space-y-4 p-4"}>
@@ -500,72 +497,14 @@ export function SimpleMaster<T>({
         deleteLabel={verb}
       />
 
-      {/* -------- delete pre-check: where is this record used? -------- */}
-      <Dialog open={delCheck !== null} onOpenChange={(o) => !o && !deleting && setDelCheck(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {delCheck === "loading"
-                ? `Checking where this ${title.toLowerCase()} is used…`
-                : blocked
-                  ? `Cannot delete — this ${title.toLowerCase()} is in use`
-                  : report && report.total > 0
-                    ? `This ${title.toLowerCase()} is in use`
-                    : `${verb} this ${title.toLowerCase()}?`}
-            </DialogTitle>
-            <DialogDescription>
-              {delCheck === "loading"
-                ? "Looking through LRs, chalans, slips, vouchers and other entries."
-                : blocked
-                  ? "Deleting it now would leave the entries below pointing at nothing. Delete or re-point those entries first, then delete this record."
-                  : report && report.total > 0
-                    ? "It stays on every entry below for history. Deactivating only hides it from new entries."
-                    : "Nothing else refers to it. This cannot be undone."}
-            </DialogDescription>
-          </DialogHeader>
-          {report && report.total > 0 && (
-            <div className="max-h-72 overflow-y-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-1.5 text-left font-medium">Used in</th>
-                    <th className="px-3 py-1.5 text-right font-medium">Entries</th>
-                    <th className="px-3 py-1.5 text-left font-medium">Examples</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.groups.map((g) => (
-                    <tr key={g.label} className="border-t">
-                      <td className="px-3 py-1.5 capitalize">{g.label}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">{g.count}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground">
-                        {g.samples.join(", ")}
-                        {g.count > g.samples.length && g.samples.length > 0 ? ", …" : ""}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="border-t font-semibold">
-                    <td className="px-3 py-1.5">Total</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{report.total}</td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDelCheck(null)} disabled={deleting}>
-              {blocked ? "Close" : "Cancel"}
-            </Button>
-            {report && !blocked && (
-              <Button variant="destructive" onClick={() => void runDelete()} disabled={deleting}>
-                <Trash2 className="h-4 w-4" />
-                {deleting ? busyLabel : report.total > 0 ? `${verb} anyway` : verb}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeletePrecheckDialog
+        state={delCheck}
+        subject={title.toLowerCase()}
+        mode={deleteMode}
+        deleting={deleting}
+        onCancel={() => setDelCheck(null)}
+        onConfirm={() => void runDelete()}
+      />
     </div>
   );
 }

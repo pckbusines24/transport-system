@@ -83,6 +83,7 @@ export default async function DeliveryPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveDelivery}
       remove={deleteDelivery}
+      refKind="delivery"
       rows={rows.map((r) => ({
         id: r.id,
         delNo: r.delNo,

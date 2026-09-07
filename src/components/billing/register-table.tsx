@@ -8,18 +8,11 @@ import type { InvoiceKind } from "@prisma/client";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { DataTable, type DataTableColumnMeta } from "@/components/data/data-table";
 import { ExportButton } from "@/components/data/export-button";
 import { deleteInvoice } from "@/app/(app)/billing/actions";
+import { DeletePrecheckDialog, useDeletePrecheck } from "@/components/data/delete-precheck";
 
 export interface BillingRegisterRow {
   id: string;
@@ -73,6 +66,16 @@ export function BillingRegisterTable({
   const { toast } = useToast();
   const [toDelete, setToDelete] = React.useState<BillingRegisterRow | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  // where is this bill used? (receipts, submissions) — asked before Delete is offered
+  const check = useDeletePrecheck("invoice");
+  const startCheck = check.start;
+  const askDelete = React.useCallback(
+    (row: BillingRegisterRow) => {
+      setToDelete(row);
+      void startCheck(row.id);
+    },
+    [startCheck]
+  );
 
   const confirmDelete = async () => {
     if (!toDelete) return;
@@ -81,6 +84,7 @@ export function BillingRegisterTable({
       const res = await deleteInvoice(toDelete.id);
       if (res.ok) {
         toast({ title: `Invoice ${toDelete.invoiceNo} deleted; its LRs are pending again` });
+        check.close();
         setToDelete(null);
         router.refresh();
       } else {
@@ -149,7 +153,7 @@ export function BillingRegisterTable({
               size="icon"
               className="h-7 w-7 text-destructive"
               title="Delete invoice"
-              onClick={() => setToDelete(row.original)}
+              onClick={() => askDelete(row.original)}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -157,7 +161,7 @@ export function BillingRegisterTable({
         </div>
       ),
     } satisfies ColumnDef<BillingRegisterRow>,
-  ], [canDelete, router]);
+  ], [canDelete, router, askDelete]);
 
   return (
     <div className="space-y-2">
@@ -187,24 +191,17 @@ export function BillingRegisterTable({
         onRowClick={(row) => router.push(`/billing/${KIND_PATHS[row.kind]}?id=${row.id}`)}
       />
 
-      <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete invoice {toDelete?.invoiceNo}?</DialogTitle>
-            <DialogDescription>
-              The invoice will be soft-deleted and its LRs revert to pending billing.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setToDelete(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
-              {deleting ? "Deleting..." : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeletePrecheckDialog
+        state={check.state}
+        subject={`invoice ${toDelete?.invoiceNo ?? ""}`}
+        deleting={deleting}
+        extraNote="Its LRs become pending again."
+        onCancel={() => {
+          check.close();
+          setToDelete(null);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

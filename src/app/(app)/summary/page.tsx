@@ -50,6 +50,7 @@ export default async function SummaryPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveSummary}
       remove={deleteSummary}
+      refKind="summary"
       rows={rows.map((r) => ({
         id: r.id,
         summaryNo: r.summaryNo,

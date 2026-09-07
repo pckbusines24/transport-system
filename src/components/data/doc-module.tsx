@@ -7,6 +7,7 @@
  */
 
 import * as React from "react";
+import type { MasterKind } from "@/lib/master-refs";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import type { MasterOption } from "@/components/data/master-combobox";
@@ -54,6 +55,7 @@ export function DocModule({
   save,
   remove,
   canDelete,
+  refKind,
   numericFields,
   totals,
 }: {
@@ -68,6 +70,8 @@ export function DocModule({
   save: (input: unknown) => Promise<ActionResult>;
   remove?: (id: string) => Promise<ActionResult>;
   canDelete: boolean;
+  /** reference-registry kind for the delete pre-check dialog */
+  refKind?: MasterKind;
   /** form fields coerced to numbers before save */
   numericFields?: string[];
   /**
@@ -148,6 +152,7 @@ export function DocModule({
       save={save}
       remove={remove}
       canDelete={canDelete}
+      refKind={refKind}
       transform={(f) => {
         const out: FormState = { ...f };
         for (const k of numericFields ?? []) out[k] = Number(out[k]) || 0;

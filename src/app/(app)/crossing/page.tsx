@@ -71,6 +71,7 @@ export default async function CrossingPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveCrossing}
       remove={deleteCrossing}
+      refKind="crossing"
       rows={rows.map((r) => ({
         id: r.id,
         chalanNo: r.chalanNo,

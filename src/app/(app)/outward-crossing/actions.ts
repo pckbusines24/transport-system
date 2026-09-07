@@ -9,6 +9,7 @@ import { round2 } from "@/lib/calc/tds";
 
 const CFG: DocCrudConfig = {
   delegate: "outwardCrossing",
+  refKind: "outwardCrossing",
   entity: "OutwardCrossing",
   path: "/outward-crossing",
   docType: "OUTWARD_CROSSING",

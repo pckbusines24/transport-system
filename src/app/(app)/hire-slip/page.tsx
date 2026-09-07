@@ -75,6 +75,7 @@ export default async function HireSlipPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveHireSlip}
       remove={deleteHireSlip}
+      refKind="hireSlip"
       rows={rows.map((r) => ({
         id: r.id,
         slipNo: r.slipNo,

@@ -8,6 +8,7 @@ import { parseDateInput, optStr } from "../masters/_lib/util";
 
 const CFG: DocCrudConfig = {
   delegate: "arrival",
+  refKind: "arrival",
   entity: "Arrival",
   path: "/arrival",
   docType: "ARRIVAL",

@@ -9,6 +9,7 @@ import { round2 } from "@/lib/calc/tds";
 
 const CFG: DocCrudConfig = {
   delegate: "loadingChalan",
+  refKind: "loadingChalan",
   entity: "LoadingChalan",
   path: "/loading-chalan",
   docType: "LOADING_CHALAN",

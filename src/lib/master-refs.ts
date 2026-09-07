@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type ModuleLink } from "@prisma/client";
 import type { Tx } from "./db";
 
 /**
@@ -15,6 +15,7 @@ import type { Tx } from "./db";
  */
 
 export type MasterKind =
+  // masters
   | "city"
   | "state"
   | "product"
@@ -24,7 +25,17 @@ export type MasterKind =
   | "documentType"
   | "tdsSection"
   | "party"
-  | "vehicle";
+  | "vehicle"
+  // documents that other records (vouchers, submissions, history) hang off
+  | "invoice"
+  | "hireSlip"
+  | "delivery"
+  | "tyre"
+  | "loadingChalan"
+  | "crossing"
+  | "outwardCrossing"
+  | "summary"
+  | "arrival";
 
 export const MASTER_LABEL: Record<MasterKind, string> = {
   city: "city",
@@ -37,6 +48,15 @@ export const MASTER_LABEL: Record<MasterKind, string> = {
   tdsSection: "TDS section",
   party: "party",
   vehicle: "vehicle",
+  invoice: "invoice",
+  hireSlip: "hire slip",
+  delivery: "delivery",
+  tyre: "tyre",
+  loadingChalan: "loading chalan",
+  crossing: "crossing",
+  outwardCrossing: "outward crossing",
+  summary: "settlement summary",
+  arrival: "arrival",
 };
 
 /** The master being checked: id always, name where a table stores the name. */
@@ -60,7 +80,20 @@ interface RefRule {
   extraWhere?: Record<string, unknown>;
   /** match by master NAME instead of id (units are stored by name) */
   byName?: boolean;
+  /** sample through a relation: what to select and how to name the row */
+  select?: Record<string, unknown>;
+  sample?: (row: Record<string, unknown>) => string;
 }
+
+/** a voucher allocation of the given types settles the document */
+const allocationRule = (types: ModuleLink[], label: string): RefRule => ({
+  model: "VoucherAllocation",
+  columns: ["refId"],
+  label,
+  extraWhere: { refType: { in: types }, voucher: { deletedAt: null } },
+  select: { voucher: { select: { voucherNo: true } } },
+  sample: (r) => String((r.voucher as { voucherNo?: string } | null)?.voucherNo ?? ""),
+});
 
 const SOFT = true;
 
@@ -197,7 +230,28 @@ const VEHICLE_RULES: RefRule[] = [
   { model: "VehicleTracking", columns: ["vehicleId"], label: "tracking entries" },
 ];
 
+const INVOICE_RULES: RefRule[] = [
+  allocationRule(["BILLING", "GST_BILLING"], "receipt vouchers"),
+  { model: "BillSubmission", columns: ["invoiceId"], label: "bill submissions", numberCol: "billNo" },
+  { model: "InvoiceSubmissionItem", columns: ["invoiceId"], label: "invoice submission entries" },
+];
+const HIRE_SLIP_RULES: RefRule[] = [allocationRule(["LORRY_HIRE"], "payment vouchers")];
+const DELIVERY_RULES: RefRule[] = [allocationRule(["CASH_MEMO"], "receipt vouchers")];
+const TYRE_RULES: RefRule[] = [
+  { model: "TyreCycle", columns: ["tyreId"], label: "tyre fitment cycles (history)" },
+];
+
 export const MASTER_RULES: Record<MasterKind, RefRule[]> = {
+  invoice: INVOICE_RULES,
+  hireSlip: HIRE_SLIP_RULES,
+  delivery: DELIVERY_RULES,
+  tyre: TYRE_RULES,
+  // leaf documents: nothing points at them, so only the explicit confirm applies
+  loadingChalan: [],
+  crossing: [],
+  outwardCrossing: [],
+  summary: [],
+  arrival: [],
   city: CITY_RULES,
   state: STATE_RULES,
   product: PRODUCT_RULES,
@@ -229,7 +283,7 @@ type Delegate = {
   count: (args: { where: Record<string, unknown> }) => Promise<number>;
   findMany: (args: {
     where: Record<string, unknown>;
-    select: Record<string, boolean>;
+    select: Record<string, unknown>;
     take: number;
   }) => Promise<Record<string, unknown>[]>;
 };
@@ -270,7 +324,10 @@ export async function masterReferences(
       const count = await delegate.count({ where });
       if (!count) return null;
       let samples: string[] = [];
-      if (rule.numberCol) {
+      if (rule.select && rule.sample) {
+        const rows = await delegate.findMany({ where, select: rule.select, take: SAMPLE_LIMIT });
+        samples = rows.map(rule.sample).filter(Boolean);
+      } else if (rule.numberCol) {
         const rows = await delegate.findMany({
           where,
           select: { [rule.numberCol]: true },

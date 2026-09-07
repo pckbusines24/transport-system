@@ -10,6 +10,7 @@ import { round2 } from "@/lib/calc/tds";
 
 const CFG: DocCrudConfig = {
   delegate: "hireSlip",
+  refKind: "hireSlip",
   entity: "HireSlip",
   path: "/hire-slip",
   docType: "HIRE_SLIP",

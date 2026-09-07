@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
+import { assertNotReferenced } from "@/lib/master-refs";
 import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
@@ -284,6 +285,8 @@ export async function deleteTyre(
         where: { id: tyreId, firmId: session.firmId },
         include: { cycles: true },
       });
+      // the cascade would silently wipe the fitment history with the tyre
+      await assertNotReferenced(tx, "tyre", { id: tyreId });
       await tx.tyre.delete({ where: { id: tyreId } });
       await audit(tx, session, { entity: "Tyre", entityId: tyreId, action: "DELETE", before });
     });

@@ -85,6 +85,7 @@ export default async function LoadingChalanPage({
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       save={saveLoadingChalan}
       remove={deleteLoadingChalan}
+      refKind="loadingChalan"
       rows={rows.map((r) => ({
         id: r.id,
         chalanNo: r.chalanNo,

@@ -37,6 +37,7 @@ import {
   transferTyre,
   updateTyre,
 } from "@/app/(app)/vehicle/tyres/actions";
+import { DeletePrecheckDialog, useDeletePrecheck } from "@/components/data/delete-precheck";
 
 export interface TyreCycleRow {
   vehicle: string;
@@ -107,6 +108,26 @@ export function TyreClient({
   const [newOpen, setNewOpen] = React.useState(false);
   const [form, setForm] = React.useState(emptyNew);
   const set = (p: Partial<typeof emptyNew>) => setForm((f) => ({ ...f, ...p }));
+
+  // delete pre-check: a tyre with fitment history is blocked (the cascade would wipe it)
+  const [tyreToDelete, setTyreToDelete] = React.useState<TyreRow | null>(null);
+  const [tyreDeleting, setTyreDeleting] = React.useState(false);
+  const tyreCheck = useDeletePrecheck("tyre");
+  const confirmTyreDelete = async () => {
+    if (!tyreToDelete) return;
+    setTyreDeleting(true);
+    try {
+      const res = await deleteTyre(tyreToDelete.id);
+      if (res.ok) {
+        toast({ title: `Tyre ${tyreToDelete.tyreNo} deleted` });
+        tyreCheck.close();
+        setTyreToDelete(null);
+        router.refresh();
+      } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
+    } finally {
+      setTyreDeleting(false);
+    }
+  };
 
   const [transferOf, setTransferOf] = React.useState<TyreRow | null>(null);
   const [transfer, setTransfer] = React.useState({
@@ -243,18 +264,9 @@ export function TyreClient({
               size="sm"
               className="h-6 px-2 text-xs text-destructive"
               title="Delete tyre (Admin/Owner only)"
-              onClick={async () => {
-                if (
-                  !confirm(
-                    `Delete tyre ${row.original.tyreNo} and its complete history? This cannot be undone.`
-                  )
-                )
-                  return;
-                const res = await deleteTyre(row.original.id);
-                if (res.ok) {
-                  toast({ title: `Tyre ${row.original.tyreNo} deleted` });
-                  router.refresh();
-                } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
+              onClick={() => {
+                setTyreToDelete(row.original);
+                void tyreCheck.start(row.original.id);
               }}
             >
               Delete
@@ -303,7 +315,7 @@ export function TyreClient({
         </div>
       ),
     },
-  ], [canDelete, canEdit, router, toast]);
+  ], [canDelete, canEdit, tyreCheck]);
 
   const openCycle = (t: TyreRow | null) => t?.cycles.find((c) => !c.removalDate);
 
@@ -752,6 +764,17 @@ export function TyreClient({
       </Dialog>
 
       {/* ---------------- history view ---------------- */}
+      <DeletePrecheckDialog
+        state={tyreCheck.state}
+        subject={`tyre ${tyreToDelete?.tyreNo ?? ""}`}
+        deleting={tyreDeleting}
+        onCancel={() => {
+          tyreCheck.close();
+          setTyreToDelete(null);
+        }}
+        onConfirm={() => void confirmTyreDelete()}
+      />
+
       <Dialog open={!!viewOf} onOpenChange={(o) => !o && setViewOf(null)}>
         <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>

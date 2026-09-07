@@ -4,6 +4,7 @@ import { withTenant, type Tx } from "./db";
 import type { Session } from "./session";
 import { audit } from "./audit";
 import { nextDocNumber, syncSequenceTo } from "./sequences";
+import { assertNotReferenced, type MasterKind } from "./master-refs";
 
 export type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -22,6 +23,8 @@ export interface DocCrudConfig {
   scope: "firmfy" | "firm" | "tenant";
   /** soft delete via deletedAt (true) or hard delete (false) */
   softDelete: boolean;
+  /** reference-registry kind: delete is refused while anything points at the row */
+  refKind?: MasterKind;
 }
 
 type FullSession = Session & { firmId: string; fyId: string };
@@ -122,6 +125,8 @@ export async function deleteDocRow(
     await withTenant(session.tenantId, async (tx) => {
       const d = delegateOf(tx, cfg.delegate);
       const before = await d.findUniqueOrThrow({ where: { id } });
+      // e.g. a hire slip settled by a payment voucher must not vanish under it
+      if (cfg.refKind) await assertNotReferenced(tx, cfg.refKind, { id });
       if (cfg.softDelete) await d.update({ where: { id }, data: { deletedAt: new Date() } });
       else await d.delete({ where: { id } });
       await audit(tx, session, { entity: cfg.entity, entityId: id, action: "DELETE", before });
