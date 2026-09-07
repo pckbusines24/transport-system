@@ -97,7 +97,7 @@ const columns: ColumnDef<Row, unknown>[] = [
           SYSTEM
         </Badge>
       ) : (
-        <Badge variant="secondary" title="Created by a user">
+        <Badge variant="outline" title="Created by a user">
           USER
         </Badge>
       ),
