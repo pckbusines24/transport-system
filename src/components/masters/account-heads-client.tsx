@@ -97,7 +97,9 @@ const columns: ColumnDef<Row, unknown>[] = [
           SYSTEM
         </Badge>
       ) : (
-        <span className="text-xs text-muted-foreground">User</span>
+        <Badge variant="secondary" title="Created by a user">
+          USER
+        </Badge>
       ),
   },
 ];
