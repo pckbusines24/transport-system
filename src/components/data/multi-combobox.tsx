@@ -50,6 +50,7 @@ export function MultiCombobox({
   };
 
   const toggle = (value: string) => {
+    if (byValue.get(value)?.disabled && !values.includes(value)) return;
     onChange(
       values.includes(value) ? values.filter((v) => v !== value) : [...values, value]
     );
@@ -166,10 +167,12 @@ export function MultiCombobox({
           )}
           {filtered.map((opt, idx) => {
             const picked = values.includes(opt.value);
+            const off = !!opt.disabled && !picked;
             return (
               <div
                 key={opt.value}
                 data-idx={idx}
+                aria-disabled={off || undefined}
                 // mousedown fires before the input's blur, so the toggle wins
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -177,8 +180,9 @@ export function MultiCombobox({
                 }}
                 onMouseEnter={() => setHighlight(idx)}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
-                  idx === highlight && "bg-accent text-accent-foreground"
+                  "flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm",
+                  off ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                  idx === highlight && !off && "bg-accent text-accent-foreground"
                 )}
               >
                 <span

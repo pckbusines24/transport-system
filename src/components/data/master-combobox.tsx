@@ -12,6 +12,8 @@ export interface MasterOption {
   value: string;
   label: string;
   meta?: string;
+  /** shown but not selectable (e.g. already owned by another record) */
+  disabled?: boolean;
 }
 
 /** Rendered-suggestion cap; filtering and selection still span every option. */

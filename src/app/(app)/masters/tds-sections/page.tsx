@@ -34,9 +34,14 @@ const SEED = [
   },
 ];
 
-export default async function TdsSectionsPage() {
+export default async function TdsSectionsPage({
+  searchParams,
+}: {
+  searchParams: { q?: string };
+}) {
   const session = requireSession();
   await authorize(session, "masters", "view");
+  const q = searchParams.q?.trim();
 
   const { sections, heads } = await withTenant(session.tenantId, async (tx) => {
     if ((await tx.tdsSection.count()) === 0) {
@@ -45,7 +50,21 @@ export default async function TdsSectionsPage() {
       }
     }
     const [sections, heads] = await Promise.all([
-      tx.tdsSection.findMany({ where: { deletedAt: null }, orderBy: { code: "asc" } }),
+      tx.tdsSection.findMany({
+        where: {
+          deletedAt: null,
+          ...(q
+            ? {
+                OR: [
+                  { code: { contains: q, mode: "insensitive" } },
+                  { oldCode: { contains: q, mode: "insensitive" } },
+                  { name: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: { code: "asc" },
+      }),
       tx.accountHead.findMany({ where: { kind: "EXPENSE" }, orderBy: { name: "asc" } }),
     ]);
     return { sections, heads };
@@ -67,6 +86,7 @@ export default async function TdsSectionsPage() {
         moduleRefs: s.moduleRefs as ("CHALAN" | "BROKER_SLIP" | "HIRE")[],
       }))}
       heads={heads.map((h) => ({ id: h.id, name: h.name }))}
+      canDelete={session.role === "ADMIN" || session.role === "OWNER"}
     />
   );
 }

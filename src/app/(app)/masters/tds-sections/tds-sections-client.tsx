@@ -1,25 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast";
 import { InfoHint } from "@/components/ui/info-hint";
+import { SimpleMaster, type FieldDef, type FormState } from "@/components/masters/simple-master";
+import type { MasterOption } from "@/components/data/master-combobox";
+import type { ActionResult } from "../_lib/util";
 import { deleteTdsSection, saveTdsSection } from "./actions";
 
-interface SectionRow {
+type ModuleRef = "CHALAN" | "BROKER_SLIP" | "HIRE";
+
+export interface SectionRow {
   id: string;
   code: string;
   oldCode: string | null;
@@ -30,13 +23,18 @@ interface SectionRow {
   rateCompany: number;
   basis: "FULL" | "EXCESS";
   headIds: string[];
-  moduleRefs: ("CHALAN" | "BROKER_SLIP" | "HIRE")[];
+  moduleRefs: ModuleRef[];
 }
 
-const MODULES: { value: "CHALAN" | "BROKER_SLIP" | "HIRE"; label: string }[] = [
+const MODULES: { value: ModuleRef; label: string }[] = [
   { value: "CHALAN", label: "Challan (Owner)" },
   { value: "BROKER_SLIP", label: "Broker Slip (Owner)" },
   { value: "HIRE", label: "Hire Slip" },
+];
+
+const BASIS_OPTIONS: MasterOption[] = [
+  { value: "EXCESS", label: "Only the amount ABOVE the annual limit (194Q style)" },
+  { value: "FULL", label: "The FULL year's amount once crossed (194C style)" },
 ];
 
 interface HeadOpt {
@@ -44,369 +42,227 @@ interface HeadOpt {
   name: string;
 }
 
-const EMPTY = {
-  id: null as string | null,
-  code: "",
-  oldCode: "",
-  name: "",
-  annualLimit: 0,
-  singleBillLimit: 0,
-  rateIndividual: 0,
-  rateCompany: 0,
-  basis: "FULL" as "FULL" | "EXCESS",
-  headIds: [] as string[],
-  moduleRefs: [] as ("CHALAN" | "BROKER_SLIP" | "HIRE")[],
-};
-
+/**
+ * TDS Master on the shared master component — same table, filters, export
+ * and edit/delete flow as every other master. The two "one owner only"
+ * rules (an expense head or a freight module belongs to a single section)
+ * are shown as disabled options tagged with the section that owns them; the
+ * server enforces the same rule on save.
+ */
 export function TdsSectionsClient({
   sections,
   heads,
+  canDelete,
 }: {
   sections: SectionRow[];
   heads: HeadOpt[];
+  canDelete: boolean;
 }) {
-  const router = useRouter();
-  const { toast } = useToast();
-  const [form, setForm] = React.useState<typeof EMPTY | null>(null);
-  const [headQ, setHeadQ] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
+  const headName = React.useMemo(() => new Map(heads.map((h) => [h.id, h.name])), [heads]);
 
-  const headName = new Map(heads.map((h) => [h.id, h.name]));
-  const usedElsewhere = (headId: string) =>
-    sections.find((s) => s.id !== form?.id && s.headIds.includes(headId))?.code;
+  const columns: ColumnDef<SectionRow, unknown>[] = [
+    {
+      accessorKey: "code",
+      header: "Section",
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap font-medium">
+          {row.original.code}
+          {row.original.oldCode && (
+            <span className="ml-1 text-muted-foreground">(old: {row.original.oldCode})</span>
+          )}
+        </span>
+      ),
+    },
+    { accessorKey: "name", header: "Name" },
+    {
+      accessorKey: "annualLimit",
+      header: "Annual Limit",
+      cell: ({ row }) => <span className="tabular-nums">{formatMoney(row.original.annualLimit)}</span>,
+      meta: { numeric: true },
+    },
+    {
+      accessorKey: "singleBillLimit",
+      header: "Single Bill",
+      cell: ({ row }) => (
+        <span className="tabular-nums">
+          {row.original.singleBillLimit > 0 ? formatMoney(row.original.singleBillLimit) : "—"}
+        </span>
+      ),
+      meta: { numeric: true },
+    },
+    {
+      accessorKey: "rateIndividual",
+      header: "Ind/HUF %",
+      cell: ({ row }) => <span className="tabular-nums">{row.original.rateIndividual}%</span>,
+      meta: { numeric: true },
+    },
+    {
+      accessorKey: "rateCompany",
+      header: "Company %",
+      cell: ({ row }) => <span className="tabular-nums">{row.original.rateCompany}%</span>,
+      meta: { numeric: true },
+    },
+    {
+      accessorKey: "basis",
+      header: "TDS On",
+      cell: ({ row }) => (
+        <Badge variant={row.original.basis === "EXCESS" ? "secondary" : "outline"}>
+          {row.original.basis === "EXCESS" ? "Above limit only" : "Full amount"}
+        </Badge>
+      ),
+    },
+    {
+      id: "connected",
+      header: "Connected Heads",
+      cell: ({ row }) => {
+        const s = row.original;
+        if (s.headIds.length === 0 && s.moduleRefs.length === 0)
+          return <span className="text-muted-foreground">none</span>;
+        return (
+          <span className="flex flex-wrap gap-1">
+            {s.moduleRefs.map((m) => (
+              <Badge key={m} variant="secondary">
+                {MODULES.find((x) => x.value === m)?.label ?? m}
+              </Badge>
+            ))}
+            {s.headIds.map((h) => (
+              <Badge key={h} variant="outline">
+                {headName.get(h) ?? "?"}
+              </Badge>
+            ))}
+          </span>
+        );
+      },
+    },
+  ];
 
-  const openEdit = (s?: SectionRow) => {
-    setHeadQ("");
-    setForm(
-      s
-        ? {
-            id: s.id,
-            code: s.code,
-            oldCode: s.oldCode ?? "",
-            name: s.name,
-            annualLimit: s.annualLimit,
-            singleBillLimit: s.singleBillLimit,
-            rateIndividual: s.rateIndividual,
-            rateCompany: s.rateCompany,
-            basis: s.basis,
-            headIds: [...s.headIds],
-            moduleRefs: [...s.moduleRefs],
-          }
-        : { ...EMPTY, headIds: [], moduleRefs: [] }
-    );
+  // a head / module already owned by ANOTHER section is offered disabled,
+  // tagged with that section's code — the same rule the server enforces
+  const ownerOf = (editingId: string | null, pick: (s: SectionRow) => string[]) => {
+    const m = new Map<string, string>();
+    for (const s of sections) if (s.id !== editingId) for (const k of pick(s)) m.set(k, s.code);
+    return m;
   };
 
-  const save = async () => {
-    if (!form) return;
-    setSaving(true);
-    const res = await saveTdsSection({
-      id: form.id,
-      code: form.code,
-      oldCode: form.oldCode || null,
-      name: form.name,
-      annualLimit: Number(form.annualLimit) || 0,
-      singleBillLimit: Number(form.singleBillLimit) || 0,
-      rateIndividual: Number(form.rateIndividual) || 0,
-      rateCompany: Number(form.rateCompany) || 0,
-      basis: form.basis,
-      headIds: form.headIds,
-      moduleRefs: form.moduleRefs,
-    });
-    setSaving(false);
-    if (res.ok) {
-      toast({ title: "Section saved" });
-      setForm(null);
-      router.refresh();
-    } else {
-      toast({ variant: "destructive", title: res.error });
-    }
-  };
+  const fields: FieldDef[] = [
+    { name: "code", label: "Section Code *", type: "text", uppercase: true, placeholder: "194C" },
+    { name: "oldCode", label: "Old Code (hint)", type: "text", uppercase: true, placeholder: "e.g. 194C before renumbering" },
+    { name: "name", label: "Name *", type: "text", span2: true },
+    { name: "annualLimit", label: "Annual Limit (₹)", type: "number" },
+    { name: "singleBillLimit", label: "Single Bill Limit (₹, 0 = none)", type: "number" },
+    { name: "rateIndividual", label: "Individual / HUF % (PAN 4th letter P/H)", type: "number" },
+    { name: "rateCompany", label: "Company / Firm %", type: "number" },
+    { name: "basis", label: "TDS Applies On", type: "select", options: BASIS_OPTIONS, span2: true },
+    {
+      name: "moduleRefs",
+      label: "Freight Modules (labels chalan / slip TDS in the TDS Payable report only)",
+      type: "multicombobox",
+      span2: true,
+      placeholder: "Select modules...",
+      optionsFor: ({ editingId }) => {
+        const taken = ownerOf(editingId, (s) => s.moduleRefs);
+        return MODULES.map((m) => {
+          const other = taken.get(m.value);
+          return { value: m.value, label: m.label, disabled: !!other, meta: other ? `in ${other}` : undefined };
+        });
+      },
+    },
+    {
+      name: "headIds",
+      label: "Connected Expense Heads (a head belongs to one section only)",
+      type: "multicombobox",
+      span2: true,
+      placeholder: "Search heads...",
+      optionsFor: ({ editingId }) => {
+        const taken = ownerOf(editingId, (s) => s.headIds);
+        return heads.map((h) => {
+          const other = taken.get(h.id);
+          return { value: h.id, label: h.name, disabled: !!other, meta: other ? `in ${other}` : undefined };
+        });
+      },
+    },
+  ];
 
-  const remove = async (s: SectionRow) => {
-    if (!window.confirm(`Delete section ${s.code}? The monitor stops tracking its heads.`)) return;
-    const res = await deleteTdsSection(s.id);
-    if (res.ok) {
-      toast({ title: "Section deleted" });
-      router.refresh();
-    } else {
-      toast({ variant: "destructive", title: res.error });
-    }
-  };
-
-  const cell = "border px-2 py-1 text-xs";
-  const filteredHeads = heads.filter((h) => h.name.toLowerCase().includes(headQ.toLowerCase()));
+  const toResult = (r: { ok: true } | { ok: false; error: string }, id: string): ActionResult =>
+    r.ok ? { ok: true, id } : r;
 
   return (
-    <div className="space-y-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="page-title flex items-center gap-2">
-          TDS Master
-          <InfoHint>
-            Each section carries its threshold limits, rates (by PAN 4th letter:
-            Individual/HUF vs Company/Firm) and the expense heads connected to it. A head can
-            belong to only one section. Old section codes stay visible as hints while the new
-            Income Tax Act numbering is adopted.
-          </InfoHint>
-        </h1>
-        <Button size="sm" className="h-8" onClick={() => openEdit()}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Add Section
-        </Button>
-      </div>
-
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full border-collapse text-xs">
-          <thead className="bg-muted/60">
-            <tr>
-              {["Section", "Name", "Annual Limit", "Single Bill", "Ind/HUF %", "Company %", "TDS On", "Connected Heads", ""].map(
-                (h) => (
-                  <th key={h} className={`${cell} whitespace-nowrap text-left font-semibold`}>
-                    {h}
-                  </th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {sections.map((s) => (
-              <tr key={s.id} className="odd:bg-muted/20">
-                <td className={`${cell} font-medium whitespace-nowrap`}>
-                  {s.code}
-                  {s.oldCode && <span className="ml-1 text-muted-foreground">(old: {s.oldCode})</span>}
-                </td>
-                <td className={cell}>{s.name}</td>
-                <td className={`${cell} text-right tabular-nums`}>{formatMoney(s.annualLimit)}</td>
-                <td className={`${cell} text-right tabular-nums`}>
-                  {s.singleBillLimit > 0 ? formatMoney(s.singleBillLimit) : "—"}
-                </td>
-                <td className={`${cell} text-right tabular-nums`}>{s.rateIndividual}%</td>
-                <td className={`${cell} text-right tabular-nums`}>{s.rateCompany}%</td>
-                <td className={cell}>
-                  <Badge variant={s.basis === "EXCESS" ? "secondary" : "outline"}>
-                    {s.basis === "EXCESS" ? "Above limit only" : "Full amount"}
-                  </Badge>
-                </td>
-                <td className={cell}>
-                  {s.headIds.length === 0 && s.moduleRefs.length === 0 ? (
-                    <span className="text-muted-foreground">none</span>
-                  ) : (
-                    <span className="flex flex-wrap gap-1">
-                      {s.moduleRefs.map((m) => (
-                        <Badge key={m} variant="secondary">
-                          {MODULES.find((x) => x.value === m)?.label ?? m}
-                        </Badge>
-                      ))}
-                      {s.headIds.map((h) => (
-                        <Badge key={h} variant="outline">
-                          {headName.get(h) ?? "?"}
-                        </Badge>
-                      ))}
-                    </span>
-                  )}
-                </td>
-                <td className={`${cell} whitespace-nowrap`}>
-                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(s)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-destructive"
-                    onClick={() => remove(s)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-            {sections.length === 0 && (
-              <tr>
-                <td colSpan={9} className={`${cell} py-6 text-center text-muted-foreground`}>
-                  No sections yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <Dialog open={!!form} onOpenChange={(o) => !o && setForm(null)}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{form?.id ? "Edit Section" : "Add Section"}</DialogTitle>
-          </DialogHeader>
-          {form && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Section Code</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    value={form.code}
-                    onChange={(e) => setForm({ ...form, code: e.target.value })}
-                    placeholder="e.g. 194Q or new code"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Old Code (hint)</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    value={form.oldCode}
-                    onChange={(e) => setForm({ ...form, oldCode: e.target.value })}
-                    placeholder="e.g. 194Q"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Name</Label>
-                <Input
-                  className="h-8 text-xs"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. Purchase of Goods"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Annual Limit (₹)</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="number"
-                    value={form.annualLimit || ""}
-                    onChange={(e) => setForm({ ...form, annualLimit: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Single Bill Limit (₹, 0 = none)</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="number"
-                    value={form.singleBillLimit || ""}
-                    onChange={(e) => setForm({ ...form, singleBillLimit: Number(e.target.value) })}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Individual / HUF % (PAN 4th letter P/H)</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="number"
-                    step="0.01"
-                    value={form.rateIndividual || ""}
-                    onChange={(e) => setForm({ ...form, rateIndividual: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Company / Firm %</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="number"
-                    step="0.01"
-                    value={form.rateCompany || ""}
-                    onChange={(e) => setForm({ ...form, rateCompany: Number(e.target.value) })}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">TDS Applies On</Label>
-                <select
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                  value={form.basis}
-                  onChange={(e) => setForm({ ...form, basis: e.target.value as "FULL" | "EXCESS" })}
-                >
-                  <option value="EXCESS">Only the amount ABOVE the annual limit (194Q style)</option>
-                  <option value="FULL">The FULL year&apos;s amount once crossed (194C style)</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">
-                  Freight Modules (labels chalan / slip TDS in the TDS Payable report only — the
-                  monitor never reads these)
-                </Label>
-                <div className="flex flex-wrap gap-3 rounded-md border p-2">
-                  {MODULES.map((m) => {
-                    const other = sections.find(
-                      (s) => s.id !== form.id && s.moduleRefs.includes(m.value)
-                    )?.code;
-                    return (
-                      <label
-                        key={m.value}
-                        className={`flex items-center gap-1.5 text-xs ${other ? "opacity-50" : "cursor-pointer"}`}
-                      >
-                        <input
-                          type="checkbox"
-                          disabled={!!other}
-                          checked={form.moduleRefs.includes(m.value)}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              moduleRefs: e.target.checked
-                                ? [...form.moduleRefs, m.value]
-                                : form.moduleRefs.filter((x) => x !== m.value),
-                            })
-                          }
-                        />
-                        {m.label}
-                        {other && <span className="text-muted-foreground">(in {other})</span>}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">
-                  Connected Expense Heads ({form.headIds.length} selected)
-                </Label>
-                <Input
-                  className="h-8 text-xs"
-                  placeholder="Search heads..."
-                  value={headQ}
-                  onChange={(e) => setHeadQ(e.target.value)}
-                />
-                <div className="max-h-48 space-y-0.5 overflow-y-auto rounded-md border p-2">
-                  {filteredHeads.map((h) => {
-                    const other = usedElsewhere(h.id);
-                    const checked = form.headIds.includes(h.id);
-                    return (
-                      <label
-                        key={h.id}
-                        className={`flex items-center gap-2 text-xs ${other ? "opacity-50" : "cursor-pointer"}`}
-                      >
-                        <input
-                          type="checkbox"
-                          disabled={!!other}
-                          checked={checked}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              headIds: e.target.checked
-                                ? [...form.headIds, h.id]
-                                : form.headIds.filter((x) => x !== h.id),
-                            })
-                          }
-                        />
-                        {h.name}
-                        {other && <span className="text-muted-foreground">(in {other})</span>}
-                      </label>
-                    );
-                  })}
-                  {filteredHeads.length === 0 && (
-                    <p className="text-xs text-muted-foreground">No heads match.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setForm(null)}>
-              Cancel
-            </Button>
-            <Button onClick={save} disabled={saving}>
-              {saving ? "Saving..." : "Save Section"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+    <SimpleMaster
+      title="TDS Section"
+      heading="TDS Master"
+      titleExtra={
+        <InfoHint>
+          Each section carries its threshold limits, rates (by PAN 4th letter: Individual/HUF vs
+          Company/Firm) and the expense heads connected to it. A head can belong to only one
+          section. Old section codes stay visible as hints while the new Income Tax Act numbering
+          is adopted.
+        </InfoHint>
+      }
+      newLabel="Add Section"
+      rows={sections}
+      columns={columns}
+      exportColumns={[
+        { header: "Section", key: "code" },
+        { header: "Old Code", key: "oldCode" },
+        { header: "Name", key: "name" },
+        { header: "Annual Limit", key: "annualLimit", numeric: true },
+        { header: "Single Bill Limit", key: "singleBillLimit", numeric: true },
+        { header: "Ind/HUF %", key: "rateIndividual", numeric: true },
+        { header: "Company %", key: "rateCompany", numeric: true },
+        { header: "TDS On", accessor: (r) => (r.basis === "EXCESS" ? "Above limit only" : "Full amount") },
+        {
+          header: "Freight Modules",
+          accessor: (r) => r.moduleRefs.map((m) => MODULES.find((x) => x.value === m)?.label ?? m).join(", "),
+        },
+        {
+          header: "Connected Heads",
+          accessor: (r) => r.headIds.map((h) => headName.get(h) ?? "?").join(", "),
+        },
+      ]}
+      exportName="tds-sections"
+      filters={[{ type: "text", key: "q", label: "Search section or name..." }]}
+      fields={fields}
+      defaults={{
+        code: "",
+        oldCode: "",
+        name: "",
+        annualLimit: 0,
+        singleBillLimit: 0,
+        rateIndividual: 0,
+        rateCompany: 0,
+        basis: "FULL",
+        headIds: [],
+        moduleRefs: [],
+      }}
+      toForm={(r) => ({
+        code: r.code,
+        oldCode: r.oldCode ?? "",
+        name: r.name,
+        annualLimit: r.annualLimit,
+        singleBillLimit: r.singleBillLimit,
+        rateIndividual: r.rateIndividual,
+        rateCompany: r.rateCompany,
+        basis: r.basis,
+        headIds: [...r.headIds],
+        moduleRefs: [...r.moduleRefs],
+      })}
+      getId={(r) => r.id}
+      transform={(f: FormState) => ({
+        ...f,
+        oldCode: (f.oldCode as string) || null,
+        annualLimit: Number(f.annualLimit) || 0,
+        singleBillLimit: Number(f.singleBillLimit) || 0,
+        rateIndividual: Number(f.rateIndividual) || 0,
+        rateCompany: Number(f.rateCompany) || 0,
+      })}
+      save={async (input) => {
+        const d = input as Parameters<typeof saveTdsSection>[0];
+        return toResult(await saveTdsSection(d), d.id ?? "");
+      }}
+      remove={async (id) => toResult(await deleteTdsSection(id), id)}
+      canDelete={canDelete}
+      refKind="tdsSection"
+      dialogClassName="max-h-[92vh] overflow-y-auto sm:max-w-2xl"
+    />
   );
 }

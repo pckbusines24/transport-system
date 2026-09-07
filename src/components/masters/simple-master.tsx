@@ -50,6 +50,9 @@ export interface FieldDef {
   label: string;
   type: "text" | "number" | "textarea" | "switch" | "select" | "combobox" | "multicombobox" | "date" | "radio";
   options?: MasterOption[];
+  /** options that depend on the form or on which record is being edited
+   *  (e.g. mark choices owned by ANOTHER record as disabled) */
+  optionsFor?: (ctx: { form: FormState; editingId: string | null }) => MasterOption[];
   placeholder?: string;
   /** Render field only when true. */
   visibleIf?: (form: FormState) => boolean;
@@ -154,6 +157,9 @@ export function MasterFormDialog({
 
   const renderField = (f: FieldDef) => {
     if (f.visibleIf && !f.visibleIf(form)) return null;
+    const fieldOptions = f.optionsFor
+      ? f.optionsFor({ form, editingId: editingId ?? null })
+      : (f.options ?? []);
     const value = form[f.name];
     const wrapCls = f.span2 ? "space-y-1.5 sm:col-span-2" : "space-y-1.5";
     let control: React.ReactNode;
@@ -197,7 +203,7 @@ export function MasterFormDialog({
               <SelectValue placeholder={f.placeholder ?? "Select..."} />
             </SelectTrigger>
             <SelectContent>
-              {(f.options ?? []).map((o) => (
+              {fieldOptions.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
@@ -209,7 +215,7 @@ export function MasterFormDialog({
       case "radio":
         control = (
           <div className="flex h-10 flex-wrap items-center gap-4">
-            {(f.options ?? []).map((o) => (
+            {fieldOptions.map((o) => (
               <label key={o.value} className="flex cursor-pointer items-center gap-1.5 text-sm">
                 <input
                   type="radio"
@@ -225,7 +231,7 @@ export function MasterFormDialog({
         );
         break;
       case "combobox": {
-        const options = [...(f.options ?? []), ...(extraOptions[f.name] ?? [])];
+        const options = [...fieldOptions, ...(extraOptions[f.name] ?? [])];
         control = (
           <MasterCombobox
             options={options}
@@ -258,7 +264,7 @@ export function MasterFormDialog({
       case "multicombobox":
         control = (
           <MultiCombobox
-            options={f.options ?? []}
+            options={fieldOptions}
             values={Array.isArray(value) ? (value as string[]) : []}
             onChange={(vals) => set(f.name, vals)}
             placeholder={f.placeholder ?? "Select..."}
@@ -325,7 +331,12 @@ export function MasterFormDialog({
 }
 
 interface SimpleMasterProps<T> {
+  /** record name: dialog title ("New City"), toasts, delete dialog */
   title: string;
+  /** page heading when it differs from the record name (default: title) */
+  heading?: string;
+  /** rendered beside the heading, e.g. an InfoHint */
+  titleExtra?: React.ReactNode;
   /** rendered inside a tabbed screen that owns the heading and padding */
   embedded?: boolean;
   newLabel?: string;
@@ -366,6 +377,8 @@ interface SimpleMasterProps<T> {
 
 export function SimpleMaster<T>({
   title,
+  heading,
+  titleExtra,
   embedded = false,
   newLabel = "New",
   rows,
@@ -463,7 +476,14 @@ export function SimpleMaster<T>({
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* inside a tabbed screen the page owns the heading; the empty div
             keeps the action bar right-aligned */}
-        {embedded ? <div /> : <h1 className="text-xl font-semibold">{title}</h1>}
+        {embedded ? (
+          <div />
+        ) : (
+          <h1 className="flex items-center gap-2 text-xl font-semibold">
+            {heading ?? title}
+            {titleExtra}
+          </h1>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {importConfig && <ImportButton config={importConfig} />}
           <ExportButton rows={rows} columns={exportColumns} fileName={exportName} />
