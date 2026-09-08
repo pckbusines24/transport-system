@@ -90,7 +90,7 @@ export default async function ChalanPrintPage({
   // NOTE: booking freight is intentionally NOT rendered anywhere on the print.
   const cancelled = !!chalan.cancelledAt;
   const Copy = ({ n }: { n: number }) => (
-    <div className="relative mx-auto max-w-[190mm] break-after-page border border-black p-4 text-sm">
+    <div className="relative mx-auto max-w-[190mm] break-after-page border border-black p-4 text-sm last:break-after-auto">
       {/* a cancelled chalan must scream it on paper — watermark + reason band */}
       {cancelled && (
         <>

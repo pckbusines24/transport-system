@@ -541,7 +541,7 @@ export function InvoicePrintView({
               <img
                 src={firm.sealUrl}
                 alt=""
-                className="my-0.5 mr-3 h-14 w-14 object-contain"
+                className="my-0.5 mr-3 h-28 w-auto max-w-full object-contain"
               />
             )}
             <div className="mt-4">Authorized Signatory</div>

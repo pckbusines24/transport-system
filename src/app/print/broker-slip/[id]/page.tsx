@@ -86,6 +86,7 @@ export default async function BrokerSlipPrintPage({
   });
 
   const brokerParty = parties.find((p) => p.id === (slip.transporterId ?? slip.partyId));
+  const ownerParty = slip.ownerId ? parties.find((p) => p.id === slip.ownerId) : undefined;
   const unit = slip.unit ?? "";
   /** the basis the rate is quoted against decides which quantity multiplies it */
   const basisLabel: Record<string, string> = {
@@ -199,7 +200,7 @@ export default async function BrokerSlipPrintPage({
     const roundOff = isP ? toNum(slip.pRoundOff) : toNum(slip.vRoundOff);
 
     return (
-      <div className="mx-auto max-w-[190mm] break-after-page border border-black p-4 text-sm">
+      <div className="mx-auto max-w-[190mm] break-after-page border border-black p-4 text-sm last:break-after-auto">
         <div className="border-b border-black pb-2 text-center">
           <div className="text-xl font-bold uppercase">{firm?.name}</div>
           <div className="text-xs">
@@ -223,19 +224,17 @@ export default async function BrokerSlipPrintPage({
         <SlipDetails side={side} />
 
         <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+          {/* both sides carry the same three lines: who, their transport
+              name, their PAN — the owner side used to print the name alone */}
           <div>
             <b>{isP ? "Broker Name" : "Owner Name"}:</b> {isP ? brokerName : ownerName}
           </div>
-          {isP && (
-            <>
-              <div>
-                <b>Transporter:</b> {brokerParty?.transportName ?? ""}
-              </div>
-              <div>
-                <b>PAN:</b> {brokerParty?.pan ?? ""}
-              </div>
-            </>
-          )}
+          <div>
+            <b>Transporter:</b> {(isP ? brokerParty : ownerParty)?.transportName ?? ""}
+          </div>
+          <div>
+            <b>PAN:</b> {(isP ? brokerParty : ownerParty)?.pan ?? ""}
+          </div>
         </div>
 
         <div className="mt-3 flex gap-4">
