@@ -103,7 +103,7 @@ export async function OutstandingReceivableTab({
       // voucher grid reads, so a rounding or an adjustment can never linger
       // here as a phantom receivable. BROKER_ENTRY allocations are deliberately
       // NOT counted: a voucher allocated to a broker slip settles its OWNER
-      // (payable) side; the party side settles only from the slip's own screen.
+      // (payable) side; the party side is BROKER_SLIP_PARTY, counted below.
       settledByRef(tx, {
         firmId: session.firmId,
         fyId: session.fyId,
@@ -180,15 +180,15 @@ export async function OutstandingReceivableTab({
 
     // broker slip party side: total = pNetAmt; received = advance + the slip's
     // own settlement fields (round-off / shortage written off there count as
-    // adjusted). Voucher allocations do NOT contribute — a voucher allocated
-    // to a slip settles its owner (payable) side, never this one.
+    // adjusted) + Receipt Voucher allocations typed BROKER_SLIP_PARTY
     const slipRows = slips.map((s) => {
       const net = toNum(String(s.pNetAmt));
       const received =
         toNum(String(s.pAdvance)) +
         toNum(String(s.pPaidAmount)) +
         toNum(String(s.pRoundOff)) +
-        toNum(String(s.pShortage));
+        toNum(String(s.pShortage)) +
+        (settled.get(s.id) ?? 0);
       const outstanding = Math.round((net - received) * 100) / 100;
       return {
         refNo: s.slipNo,

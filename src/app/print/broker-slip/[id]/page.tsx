@@ -29,7 +29,7 @@ export default async function BrokerSlipPrintPage({
       where: { id: params.id, firmId: session.firmId, deletedAt: null },
     });
     if (!slip) return null;
-    const [firm, parties, cities, vehicles, vAlloc] = await Promise.all([
+    const [firm, parties, cities, vehicles, vAlloc, pAlloc] = await Promise.all([
       tx.firm.findUnique({ where: { id: slip.firmId } }),
       tx.party.findMany(),
       tx.city.findMany(),
@@ -42,12 +42,27 @@ export default async function BrokerSlipPrintPage({
         refTypes: ["BROKER_ENTRY"],
         refIds: [slip.id],
       }),
+      // party-side settlements made through Receipt Vouchers
+      settledByRef(tx, {
+        firmId: slip.firmId,
+        fyId: slip.fyId,
+        refTypes: ["BROKER_SLIP_PARTY"],
+        refIds: [slip.id],
+      }),
     ]);
-    return { slip, firm, parties, cities, vehicles, vSettled: vAlloc.get(slip.id) ?? 0 };
+    return {
+      slip,
+      firm,
+      parties,
+      cities,
+      vehicles,
+      vSettled: vAlloc.get(slip.id) ?? 0,
+      pSettled: pAlloc.get(slip.id) ?? 0,
+    };
   });
 
   if (!data) notFound();
-  const { slip, firm, parties, cities, vehicles, vSettled } = data;
+  const { slip, firm, parties, cities, vehicles, vSettled, pSettled } = data;
   const partyName = (id: string | null) => (id ? parties.find((p) => p.id === id)?.name ?? "" : "");
   const cityName = (id: string | null) => (id ? cities.find((c) => c.id === id)?.name ?? "" : "");
   const vehicleNo = (id: string | null) =>
@@ -61,13 +76,18 @@ export default async function BrokerSlipPrintPage({
   const brokerName = partyName(slip.transporterId) || partyName(slip.partyId);
   const ownerName = partyName(slip.ownerId) || slip.ownerName || "";
 
+  // live party-side position: the slip's own block PLUS receipt vouchers,
+  // against the recomputed receivable (never the stored pBalance column)
+  const pLiveBalance = round2(toNum(slip.pNetAmt) - toNum(slip.pAdvance));
+  const pLivePaid = round2(toNum(slip.pPaidAmount) + pSettled);
   const pStatus = brokerBalanceStatus({
     side: "P",
-    paymentStatus: slip.pPaymentStatus,
-    paidAmount: toNum(slip.pPaidAmount),
+    paymentStatus:
+      slip.pPaymentStatus === "RECEIVED" || pSettled > 0.009 ? "RECEIVED" : slip.pPaymentStatus,
+    paidAmount: pLivePaid,
     roundOff: toNum(slip.pRoundOff),
     shortage: toNum(slip.pShortage),
-    balance: toNum(slip.pBalance),
+    balance: pLiveBalance,
   });
   // live owner-side position: own-screen payment PLUS voucher allocations,
   // against the recomputed payable (never the stored vBalance column)
@@ -191,9 +211,9 @@ export default async function BrokerSlipPrintPage({
         ];
     const sideAdvances = advances.filter((a) => a.side === side);
     const advanceTotal = isP ? toNum(slip.pAdvance) : toNum(slip.vAdvance);
-    const balance = isP ? toNum(slip.pBalance) : vLiveBalance;
+    const balance = isP ? pLiveBalance : vLiveBalance;
     const status = isP ? pStatus : vStatus;
-    const paid = isP ? toNum(slip.pPaidAmount) : vLivePaid;
+    const paid = isP ? pLivePaid : vLivePaid;
     const paymentDate = isP ? slip.pPaymentDate : slip.vPaymentDate;
     // deducted at settlement — shown so the printed balance reconciles
     const shortage = isP ? toNum(slip.pShortage) : toNum(slip.vShortage);

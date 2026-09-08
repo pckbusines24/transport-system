@@ -76,6 +76,9 @@ enum ModuleLink {
   BILLING
   LORRY_HIRE
   BROKER_ENTRY
+  // the broker/party (receivable) side of a broker slip — BROKER_ENTRY is its
+  // owner (payable) side, so a Receipt Voucher needs its own reference type
+  BROKER_SLIP_PARTY
   FREIGHT_CHALLAN
   CASH_MEMO
   GST_BILLING

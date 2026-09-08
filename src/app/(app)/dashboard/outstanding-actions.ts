@@ -10,6 +10,7 @@ import {
   driverNetFigures,
   driverNetPositions,
   invoiceSettlement,
+  brokerPartySettlement,
   payableSettlement,
   refPositions,
 } from "@/lib/settlement";
@@ -233,6 +234,20 @@ async function collect(
       tx.driver.findMany({ select: { id: true, partyId: true, name: true } }),
     ]);
     const settle = await invoiceSettlement(tx, { ...scope, invoices, asOf });
+    // receipts allocated to the party side of a slip (own figures are gated
+    // by their own date below, so they are passed as 0 here)
+    const slipPos = await brokerPartySettlement(tx, {
+      ...scope,
+      asOf,
+      docs: slips.map((s) => ({
+        id: s.id,
+        pNetAmt: toNum(String(s.pNetAmt)),
+        pAdvance: toNum(String(s.pAdvance)),
+        pPaidAmount: 0,
+        pShortage: 0,
+        pRoundOff: 0,
+      })),
+    });
     for (const i of invoices) {
       const s = settle.get(i.id);
       if (!s || s.outstanding <= 0.009) continue;
@@ -257,7 +272,8 @@ async function collect(
           toNum(String(s.pPaidAmount)) + toNum(String(s.pShortage)) + toNum(String(s.pRoundOff))
         )
       );
-      const outstanding = round2(balance - own);
+      const settledAll = round2(own + (slipPos.get(s.id)?.voucherSettled ?? 0));
+      const outstanding = round2(balance - settledAll);
       if (outstanding <= 0.009) continue;
       out.push({
         partyId: s.partyId,
@@ -266,7 +282,7 @@ async function collect(
         date: s.slipDate,
         type: "BROKER SLIP (PARTY)",
         amount: balance,
-        settled: own,
+        settled: settledAll,
         outstanding,
       });
     }

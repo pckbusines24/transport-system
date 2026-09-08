@@ -37,6 +37,8 @@ export const ALL_PAYABLE_REF_TYPES: ModuleLink[] = [
 /** Everything a Receipt Voucher can settle. */
 export const ALL_RECEIVABLE_REF_TYPES: ModuleLink[] = [
   ...BILL_REF_TYPES,
+  // the broker's balance on a broker slip (its party side)
+  "BROKER_SLIP_PARTY",
   "OFFICE_INCOME",
   // an advance is money the staff member owes back
   "STAFF_ADVANCE",
@@ -307,6 +309,47 @@ export async function payableSettlement(
     });
   }
   return out;
+}
+
+/**
+ * Party (broker) side of a broker slip. Its receivable is net amount less the
+ * advance; it settles from the slip's own balance-received block AND from
+ * Receipt Voucher allocations typed BROKER_SLIP_PARTY. Every reader of the
+ * party side goes through here so the register, the outstanding tiles, the
+ * voucher grid and the printed slip never disagree.
+ */
+export interface BrokerPartyDoc {
+  id: string;
+  pNetAmt: number;
+  pAdvance: number;
+  /** the slip's own balance-received figures (pass 0s when gating by date) */
+  pPaidAmount: number;
+  pShortage: number;
+  pRoundOff: number;
+}
+
+export async function brokerPartySettlement(
+  tx: Tx,
+  opts: {
+    firmId: string;
+    docs: BrokerPartyDoc[];
+    excludeVoucherId?: string | null;
+    asOf?: Date | null;
+  }
+): Promise<Map<string, PayablePosition>> {
+  return payableSettlement(tx, {
+    firmId: opts.firmId,
+    refType: "BROKER_SLIP_PARTY",
+    excludeVoucherId: opts.excludeVoucherId,
+    asOf: opts.asOf,
+    docs: opts.docs.map((d) => ({
+      id: d.id,
+      balance: round2(d.pNetAmt - d.pAdvance),
+      ownPaid: d.pPaidAmount,
+      ownShortage: d.pShortage,
+      ownRoundOff: d.pRoundOff,
+    })),
+  });
 }
 
 /**

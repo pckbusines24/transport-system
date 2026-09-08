@@ -103,18 +103,18 @@ export default async function BrokerSlipPage({
     meta,
   }));
 
-  // owner-side settlement voucher figures (voucher-era slip columns are 0)
-  const vPos = slip
-    ? await withTenant(session.tenantId, async (tx) =>
-        (
-          await payableSettlement(tx, {
-            firmId: session.firmId,
-            refType: "BROKER_ENTRY",
-            docs: [{ id: slip.id, balance: 0, ownPaid: 0, ownShortage: 0, ownRoundOff: 0 }],
-          })
-        ).get(slip.id)
-      )
-    : undefined;
+  // settlement voucher figures per side: Payment Vouchers on the owner side
+  // (voucher-era slip columns are 0), Receipt Vouchers on the party side
+  const [pPos, vPos] = slip
+    ? await withTenant(session.tenantId, async (tx) => {
+        const docs = [{ id: slip.id, balance: 0, ownPaid: 0, ownShortage: 0, ownRoundOff: 0 }];
+        const [p, v] = await Promise.all([
+          payableSettlement(tx, { firmId: session.firmId, refType: "BROKER_SLIP_PARTY", docs }),
+          payableSettlement(tx, { firmId: session.firmId, refType: "BROKER_ENTRY", docs }),
+        ]);
+        return [p.get(slip.id), v.get(slip.id)] as const;
+      })
+    : [undefined, undefined];
 
   let initial: BrokerSlipFormData | null = null;
   if (slip) {
@@ -191,7 +191,13 @@ export default async function BrokerSlipPage({
       // balance settlement is edited in the slip itself, not a register dialog
       settle: {
         P: {
-          status: slip.pPaymentStatus,
+          // a party side fully collected through receipt vouchers reads as
+          // received even though the slip's own block was never used
+          status:
+            slip.pPaymentStatus === "RECEIVED" ||
+            (pPos?.voucherSettled ?? 0) + 0.009 >= n(slip.pNetAmt) - n(slip.pAdvance)
+              ? "RECEIVED"
+              : slip.pPaymentStatus,
           roundOff: n(slip.pRoundOff),
           shortage: n(slip.pShortage),
           paidAmount: n(slip.pPaidAmount),
@@ -199,6 +205,14 @@ export default async function BrokerSlipPage({
           paymentHeadId: slip.pPaymentHeadId,
           paymentMode: slip.pPaymentMode ?? "BANK",
           remarks: slip.pPaymentRemarks ?? "",
+          // combined saved figures (slip block + receipt vouchers) — display only
+          settledPaid:
+            n(slip.pPaidAmount) +
+            (pPos?.voucherPaid ?? 0) +
+            (pPos?.voucherTds ?? 0) +
+            (pPos?.voucherOther ?? 0),
+          settledShortage: n(slip.pShortage) + (pPos?.voucherShortage ?? 0),
+          settledRoundOff: n(slip.pRoundOff) + (pPos?.voucherRoundOff ?? 0),
         },
         V: {
           status: slip.vPaymentStatus,

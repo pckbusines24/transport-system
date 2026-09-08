@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { round2 } from "@/lib/calc/tds";
-import { payableSettlement } from "@/lib/settlement";
+import { brokerPartySettlement, payableSettlement } from "@/lib/settlement";
 import { Button } from "@/components/ui/button";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
@@ -40,9 +40,11 @@ export default async function BrokerRegisterPage({
   // vstatus filters on the LIVE settled position computed after the query, so
   // it cannot be pushed into SQL — with vstatus set, the full filtered set is
   // fetched and paged in memory instead of at the database
-  const dbPaged = !searchParams.vstatus;
+  // both balance filters run on the LIVE settled position (voucher
+  // allocations included), so the page slice is taken after filtering
+  const dbPaged = !searchParams.vstatus && !searchParams.pstatus;
 
-  const { rows, totalCount, vPos, vehicles, brokers, cityById, partyById, vehicleById, userById } = await withTenant(
+  const { rows, totalCount, vPos, pPos, vehicles, brokers, cityById, partyById, vehicleById, userById } = await withTenant(
     session.tenantId,
     async (tx) => {
       // date filter beats FY (FY continuity): dates set → any year's slips
@@ -65,10 +67,8 @@ export default async function BrokerRegisterPage({
         where.slipNo = { contains: searchParams.q, mode: "insensitive" };
       if (searchParams.vehicle) where.vehicleId = searchParams.vehicle;
       if (searchParams.pod) where.podAttached = searchParams.pod === "yes";
-      if (searchParams.pstatus)
-        where.pPaymentStatus = searchParams.pstatus === "received" ? "RECEIVED" : "PENDING";
-      // vstatus filters on the LIVE settled position (below), not the stored
-      // column — a slip settled by a payment voucher is genuinely paid
+      // pstatus / vstatus filter on the LIVE settled position (below), not the
+      // stored columns — a slip settled by a voucher is genuinely settled
       if (searchParams.party) {
         if (searchParams.side === "PARTY") where.partyId = searchParams.party;
         else if (searchParams.side === "OWNER") {
@@ -119,10 +119,25 @@ export default async function BrokerRegisterPage({
         })),
       });
 
+      // LIVE party-side settlement: the slip's own balance-received block
+      // plus Receipt Voucher allocations (BROKER_SLIP_PARTY)
+      const pPos = await brokerPartySettlement(tx, {
+        firmId: session.firmId,
+        docs: slips.map((s) => ({
+          id: s.id,
+          pNetAmt: Number(s.pNetAmt),
+          pAdvance: Number(s.pAdvance),
+          pPaidAmount: Number(s.pPaidAmount),
+          pShortage: Number(s.pShortage),
+          pRoundOff: Number(s.pRoundOff),
+        })),
+      });
+
       return {
         rows: slips,
         totalCount,
         vPos,
+        pPos,
         vehicles: vehicleRows,
         brokers: partyRows.filter((p) => p.ledgerGroup === "OWNER_BROKER" || p.ledgerGroup === "RELATIVE"),
         cityById: new Map(cityRows.map((c) => [c.id, c.name])),
@@ -145,7 +160,8 @@ export default async function BrokerRegisterPage({
     qty: Number(s.qty),
     actualWt: Number(s.actualWt),
     pFreight: Number(s.pFreight),
-    pBalance: Number(s.pBalance),
+    // recomputed, never the stored column
+    pBalance: round2(Number(s.pNetAmt) - Number(s.pAdvance)),
     vFreight: Number(s.vFreight),
     vNetAmt: Number(s.vNetAmt),
     vAdvance: Number(s.vAdvance),
@@ -157,10 +173,18 @@ export default async function BrokerRegisterPage({
     podFilePath: s.podFilePath,
     podFileName: s.podFileName,
     podUploadDate: s.podUploadDate ? s.podUploadDate.toISOString() : null,
-    pPaymentStatus: s.pPaymentStatus,
-    pPaidAmount: Number(s.pPaidAmount),
-    pRoundOff: Number(s.pRoundOff),
-    pShortage: Number(s.pShortage),
+    // live: own block + receipt vouchers. Money, TDS and other deductions a
+    // receipt carried all count as received; shortage and round-off keep
+    // their own lines so the status dialog reconciles
+    pPaymentStatus: (pPos.get(s.id)?.outstanding ?? Infinity) <= 0.009 ? "RECEIVED" : "PENDING",
+    pPaidAmount: round2(
+      Number(s.pPaidAmount) +
+        (pPos.get(s.id)?.voucherPaid ?? 0) +
+        (pPos.get(s.id)?.voucherTds ?? 0) +
+        (pPos.get(s.id)?.voucherOther ?? 0)
+    ),
+    pRoundOff: round2(Number(s.pRoundOff) + (pPos.get(s.id)?.voucherRoundOff ?? 0)),
+    pShortage: round2(Number(s.pShortage) + (pPos.get(s.id)?.voucherShortage ?? 0)),
     pPaymentDate: s.pPaymentDate ? s.pPaymentDate.toISOString() : null,
     vPaymentStatus:
       (vPos.get(s.id)?.outstanding ?? Number(s.vBalance)) <= 0.009 ? "PAID" : "PENDING",
@@ -172,12 +196,18 @@ export default async function BrokerRegisterPage({
     createdAt: s.createdAt.toISOString(),
     createdBy: (s.createdById && userById.get(s.createdById)) || "",
   }));
-  // owner-balance filter runs on the LIVE position computed above
-  const filtered = searchParams.vstatus
-    ? allRows.filter((r) =>
-        searchParams.vstatus === "paid" ? r.vBalance <= 0.009 : r.vBalance > 0.009
-      )
-    : allRows;
+  // balance filters run on the LIVE positions computed above
+  const filtered = allRows.filter((r) => {
+    if (searchParams.vstatus) {
+      const paid = r.vBalance <= 0.009;
+      if (searchParams.vstatus === "paid" ? !paid : paid) return false;
+    }
+    if (searchParams.pstatus) {
+      const received = r.pPaymentStatus === "RECEIVED";
+      if (searchParams.pstatus === "received" ? !received : received) return false;
+    }
+    return true;
+  });
   const total = dbPaged ? totalCount : filtered.length;
   // dbPaged → rows are already the page slice; otherwise slice the filtered set
   const data = dbPaged ? filtered : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);

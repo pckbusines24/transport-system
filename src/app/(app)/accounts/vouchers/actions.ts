@@ -19,6 +19,7 @@ import {
   refPositions,
   ALL_PAYABLE_REF_TYPES,
   ALL_RECEIVABLE_REF_TYPES,
+  brokerPartySettlement,
 } from "@/lib/settlement";
 import {
   externallyRecoveredShortage,
@@ -66,6 +67,7 @@ const allocationSchema = z.object({
       "GST_BILLING",
       "FREIGHT_CHALLAN",
       "BROKER_ENTRY",
+      "BROKER_SLIP_PARTY",
       "LORRY_HIRE",
       "CASH_MEMO",
       "OFFICE_EXPENSE",
@@ -103,6 +105,7 @@ const voucherSchema = z.object({
       "BILLING",
       "LORRY_HIRE",
       "BROKER_ENTRY",
+      "BROKER_SLIP_PARTY",
       "FREIGHT_CHALLAN",
       "CASH_MEMO",
       "GST_BILLING",
@@ -412,6 +415,23 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
                 )
               )
             );
+          } else if (refType === "BROKER_SLIP_PARTY") {
+            // party (receivable) side: net off what the slip's own
+            // balance-received block already settled, so a Receipt cannot
+            // collect the same balance twice
+            const ss = await tx.brokerSlip.findMany({ where: docScope });
+            ss.forEach((s) =>
+              gross.set(
+                s.id,
+                round2(
+                  Number(s.pNetAmt) -
+                    Number(s.pAdvance) -
+                    Number(s.pPaidAmount) -
+                    Number(s.pShortage) -
+                    Number(s.pRoundOff)
+                )
+              )
+            );
           } else if (refType === "LORRY_HIRE") {
             const hs = await tx.hireSlip.findMany({ where: docScope });
             hs.forEach((h) => gross.set(h.id, Number(h.balance)));
@@ -472,8 +492,8 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
           // a handled refType whose document did not survive the scoped lookup
           // is a stale / deleted / foreign reference — never an open ceiling
           const scopedTypes: ModuleLink[] = [
-            "BILLING", "GST_BILLING", "FREIGHT_CHALLAN", "BROKER_ENTRY", "LORRY_HIRE",
-            "CASH_MEMO", "OFFICE_EXPENSE", "OFFICE_INCOME", "STAFF_PAYROLL",
+            "BILLING", "GST_BILLING", "FREIGHT_CHALLAN", "BROKER_ENTRY", "BROKER_SLIP_PARTY",
+            "LORRY_HIRE", "CASH_MEMO", "OFFICE_EXPENSE", "OFFICE_INCOME", "STAFF_PAYROLL",
             "VEHICLE_EXPENSE", "STAFF_ADVANCE", "ADBLUE_PURCHASE", "DRIVER_SETTLEMENT",
           ];
           if (scopedTypes.includes(refType)) {
@@ -1292,6 +1312,7 @@ async function allocatedByRef(
  *  - BILLING / GST_BILLING: party invoices with unallocated balance
  *  - FREIGHT_CHALLAN: broker's final chalans with outstanding balance
  *  - BROKER_ENTRY: broker slips with vehicle-side balance
+ *  - BROKER_SLIP_PARTY: broker slips with party-side (broker) balance
  *  - LORRY_HIRE: hire slips with balance
  *  - CASH_MEMO: deliveries
  */
@@ -1316,6 +1337,7 @@ export async function getAllocationCandidates(input: {
               "GST_BILLING",
               "FREIGHT_CHALLAN",
               "BROKER_ENTRY",
+              "BROKER_SLIP_PARTY",
               "LORRY_HIRE",
               "CASH_MEMO",
               "OFFICE_EXPENSE",
@@ -1429,6 +1451,38 @@ export async function getAllocationCandidates(input: {
             billAmt: Number(s.vNetAmt),
             outstanding,
             tdsPct: Number(s.vTdsPct),
+            module: moduleLink,
+          });
+      }
+    } else if (moduleLink === "BROKER_SLIP_PARTY") {
+      // the broker's balance: what the party still owes on the slip after the
+      // advance, the slip's own balance-received block and earlier receipts
+      const slips = await tx.brokerSlip.findMany({
+        where: { ...scope, partyId: partyId ? partyId : { not: null } },
+        orderBy: { slipDate: "asc" },
+      });
+      const pos = await brokerPartySettlement(tx, {
+        firmId: session.firmId,
+        excludeVoucherId: voucherId,
+        docs: slips.map((s) => ({
+          id: s.id,
+          pNetAmt: Number(s.pNetAmt),
+          pAdvance: Number(s.pAdvance),
+          pPaidAmount: Number(s.pPaidAmount),
+          pShortage: Number(s.pShortage),
+          pRoundOff: Number(s.pRoundOff),
+        })),
+      });
+      for (const s of slips) {
+        const outstanding = pos.get(s.id)?.outstanding ?? 0;
+        if (outstanding > 0)
+          out.push({
+            refId: s.id,
+            refNo: s.slipNo,
+            date: s.slipDate.toISOString(),
+            billAmt: Number(s.pNetAmt),
+            outstanding,
+            tdsPct: Number(s.pTdsPct),
             module: moduleLink,
           });
       }
