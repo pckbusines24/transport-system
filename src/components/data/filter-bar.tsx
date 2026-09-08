@@ -29,6 +29,9 @@ import {
 export interface FilterOption {
   value: string;
   label: string;
+  /** secondary text (e.g. a party's transport name) — shown under the label
+   *  and searched too, so typing either name finds the option */
+  meta?: string;
 }
 
 export interface FilterDef {
@@ -268,7 +271,8 @@ function ComboboxFilter({
               {(def.options ?? []).map((opt) => (
                 <CommandItem
                   key={opt.value}
-                  value={opt.label}
+                  // cmdk matches on `value`, so the meta rides along with the label
+                  value={opt.meta ? `${opt.label} ${opt.meta}` : opt.label}
                   onSelect={() => {
                     onChange(opt.value === value ? null : opt.value);
                     setOpen(false);
@@ -277,7 +281,12 @@ function ComboboxFilter({
                   <Check
                     className={cn("h-4 w-4", value === opt.value ? "opacity-100" : "opacity-0")}
                   />
-                  {opt.label}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{opt.label}</span>
+                    {opt.meta && (
+                      <span className="truncate text-[11px] text-muted-foreground">{opt.meta}</span>
+                    )}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

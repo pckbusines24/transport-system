@@ -99,7 +99,7 @@ export default async function ChalanRegisterPage({
     const brokers = await tx.party.findMany({
       where: { ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] } },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, transportName: true },
     });
     // dropdown offers ONLY this tab's universe (market tab: broker vehicles;
     // own/relative tab: own + relative) — offering the rest made the filter
@@ -218,7 +218,13 @@ export default async function ChalanRegisterPage({
         rows={data}
         mode={tab}
         view={view}
-        brokers={brokers.map((b) => ({ value: b.id, label: b.name }))}
+        // transport name rides along as meta: the filter finds a party by
+        // either name, the same two-way pair the chalan entry form offers
+        brokers={brokers.map((b) => ({
+          value: b.id,
+          label: b.name,
+          meta: b.transportName || undefined,
+        }))}
         vehicles={vehicles.map((v) => ({ value: v.id, label: v.number }))}
         canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       />

@@ -69,7 +69,7 @@ export function ChalanRegisterClient({
   mode: "MARKET" | "OWNREL";
   /** ACTIVE = the normal register; CANCELLED = this tab's Cancel Register */
   view: "ACTIVE" | "CANCELLED";
-  brokers: { value: string; label: string }[];
+  brokers: { value: string; label: string; meta?: string }[];
   vehicles: { value: string; label: string }[];
   canDelete: boolean;
 }) {
