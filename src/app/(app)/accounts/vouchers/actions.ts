@@ -1420,11 +1420,11 @@ export async function getAllocationCandidates(input: {
           });
       }
     } else if (moduleLink === "BROKER_ENTRY") {
+      // the owner side is owed to the OWNER alone — offering it under the
+      // transporter/broker too let a payment settle the owner's balance
+      // while posting it to the broker's ledger
       const slips = await tx.brokerSlip.findMany({
-        where: {
-          ...scope,
-          ...(partyId ? { OR: [{ transporterId: partyId }, { ownerId: partyId }] } : {}),
-        },
+        where: { ...scope, ownerId: partyId ? partyId : { not: null } },
         orderBy: { slipDate: "asc" },
       });
       // same for the owner side of a broker slip
