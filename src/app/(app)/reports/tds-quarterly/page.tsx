@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
@@ -66,7 +67,7 @@ export default async function TdsQuarterlyPage({
       type: "combobox",
       key: "party",
       label: "Party",
-      options: parties.map((p) => ({ value: p.id, label: p.name })),
+      options: parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     {
       type: "select",

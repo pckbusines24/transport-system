@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
@@ -52,7 +53,7 @@ export default async function DeliveryPage({
       tx.party.findMany({
         where: { isActive: true, ledgerGroup: "CONSIGNEE_CONSIGNOR" },
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, transportName: true, alias: true },
       }),
       tx.vehicle.findMany({
         where: { isActive: true },
@@ -70,7 +71,7 @@ export default async function DeliveryPage({
 
   const partyById = new Map(parties.map((p) => [p.id, p.name]));
   const vehicleById = new Map(vehicles.map((v) => [v.id, v.number]));
-  const partyOptions = parties.map((p) => ({ value: p.id, label: p.name }));
+  const partyOptions = parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }));
   const vehicleOptions = vehicles.map((v) => ({ value: v.id, label: v.number }));
   const n = (v: unknown) => toNum(String(v));
 

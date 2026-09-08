@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
@@ -92,7 +93,7 @@ export default async function LrRegisterPage({
       tx.party.findMany({
         where: { ledgerGroup: "CONSIGNEE_CONSIGNOR" },
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, transportName: true, alias: true },
       }),
       tx.vehicle.findMany({ orderBy: { number: "asc" }, select: { id: true, number: true } }),
       tx.party.findMany({ select: { id: true, name: true } }),
@@ -151,7 +152,7 @@ export default async function LrRegisterPage({
       type: "combobox",
       key: "party",
       label: "Party",
-      options: parties.map((p) => ({ value: p.id, label: p.name })),
+      options: parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     {
       type: "combobox",

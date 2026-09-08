@@ -57,7 +57,7 @@ export async function buildTdsPayableRows(
   dateWhere?: { gte?: Date; lte?: Date }
 ): Promise<{
   rows: TdsPayableRow[];
-  parties: { id: string; name: string; pan: string | null }[];
+  parties: { id: string; name: string; pan: string | null; transportName: string | null; alias: string | null }[];
   sectionCodes: string[];
 }> {
   // date filter beats FY (FY continuity): an old-year date range pulls that
@@ -131,7 +131,7 @@ export async function buildTdsPayableRows(
           : {}),
       },
     }),
-    tx.party.findMany({ select: { id: true, name: true, pan: true } }),
+    tx.party.findMany({ select: { id: true, name: true, pan: true, transportName: true, alias: true } }),
   ]);
   const partyById = new Map(parties.map((p) => [p.id, p]));
 

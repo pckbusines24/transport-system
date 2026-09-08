@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
@@ -59,7 +60,7 @@ export default async function PurchaseSalePage({
 
   const { rows, monthKeys, partyOptions } = await withTenant(session.tenantId, async (tx) => {
     const [parties, vehicles] = await Promise.all([
-      tx.party.findMany({ select: { id: true, name: true, ledgerGroup: true } }),
+      tx.party.findMany({ select: { id: true, name: true, ledgerGroup: true, transportName: true, alias: true } }),
       tx.vehicle.findMany({ select: { id: true, ownershipType: true } }),
     ]);
     const partyName = new Map(parties.map((p) => [p.id, p.name]));
@@ -278,7 +279,7 @@ export default async function PurchaseSalePage({
     const groups = side === "SALE" ? ["CONSIGNEE_CONSIGNOR"] : ["OWNER_BROKER", "RELATIVE"];
     const partyOptions = parties
       .filter((p) => groups.includes(p.ledgerGroup))
-      .map((p) => ({ value: p.id, label: p.name }));
+      .map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }));
 
     return { rows, monthKeys, partyOptions };
   });

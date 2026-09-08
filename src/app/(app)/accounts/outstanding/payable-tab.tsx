@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
@@ -469,6 +470,7 @@ export async function OutstandingPayableTab({
       options: parties.map((p) => ({
         value: p.id,
         label: `${p.name} (${p.ledgerGroup.replace(/_/g, " ")})`,
+        meta: partyMeta(p),
       })),
     },
     {

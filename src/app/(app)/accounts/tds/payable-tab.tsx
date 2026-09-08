@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
@@ -69,7 +70,7 @@ export async function TdsPayableTab({
       type: "combobox",
       key: "party",
       label: "Party",
-      options: parties.map((p) => ({ value: p.id, label: p.name })),
+      options: parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     {
       type: "select",

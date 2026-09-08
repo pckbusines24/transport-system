@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import Link from "next/link";
 import type { InvoiceKind, Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
@@ -69,7 +70,7 @@ export default async function BillingRegisterPage({
       tx.party.findMany({
         where: { isActive: true, ledgerGroup: "CONSIGNEE_CONSIGNOR" },
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, transportName: true, alias: true },
       }),
     ]);
     // live settled position — the stored `balance` column is frozen at
@@ -116,7 +117,7 @@ export default async function BillingRegisterPage({
       type: "combobox",
       key: "party",
       label: "Party",
-      options: parties.map((p) => ({ value: p.id, label: p.name })),
+      options: parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     { type: "text", key: "q", label: "Invoice No" },
   ];

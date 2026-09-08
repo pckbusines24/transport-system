@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
@@ -149,7 +150,7 @@ export async function OfficeIncomeExpenseTab({
         partyOptions={parties.map((p) => ({
           value: p.id,
           label: p.name,
-          meta: p.ledgerGroup.replace(/_/g, " "),
+          meta: partyMeta(p, p.ledgerGroup.replace(/_/g, " ")),
         }))}
         bankOptions={banks.map((b) => ({ value: b.id, label: b.name, meta: b.ledgerGroup }))}
         canDelete={session.role === "ADMIN" || session.role === "OWNER"}

@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
@@ -56,7 +57,7 @@ export default async function LoadingChalanPage({
         tx.party.findMany({
           where: { isActive: true, ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] } },
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, transportName: true, alias: true },
         }),
         tx.city.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       ]);
@@ -73,7 +74,7 @@ export default async function LoadingChalanPage({
   const vehicleById = new Map(vehicles.map((v) => [v.id, v.number]));
   const cityById = new Map(cities.map((c) => [c.id, c.name]));
   const vehicleOptions = vehicles.map((v) => ({ value: v.id, label: v.number }));
-  const brokerOptions = brokers.map((b) => ({ value: b.id, label: b.name }));
+  const brokerOptions = brokers.map((b) => ({ value: b.id, label: b.name, meta: partyMeta(b) }));
   const cityOptions = cities.map((c) => ({ value: c.id, label: c.name }));
   const n = (v: unknown) => toNum(String(v));
 

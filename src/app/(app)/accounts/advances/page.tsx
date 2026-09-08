@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
@@ -81,7 +82,7 @@ export default async function AdvanceRegisterPage({
       type: "combobox",
       key: "party",
       label: "Party",
-      options: parties.map((p) => ({ value: p.id, label: p.name })),
+      options: parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     {
       type: "select",

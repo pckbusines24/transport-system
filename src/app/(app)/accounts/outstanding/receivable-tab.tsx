@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
@@ -281,6 +282,7 @@ export async function OutstandingReceivableTab({
             : p.ledgerGroup === "DRIVER"
               ? `${p.name} (Driver)`
               : p.name,
+        meta: partyMeta(p),
       })),
     },
     {

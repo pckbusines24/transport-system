@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
@@ -74,7 +75,7 @@ export default async function BillSubmissionPage({
         partyOptions={parties.map((p) => ({
           value: p.id,
           label: p.name,
-          meta: [p.alias, p.gstin, p.pan].filter(Boolean).join(" · ") || undefined,
+          meta: partyMeta(p, p.gstin, p.pan),
         }))}
       />
     </div>

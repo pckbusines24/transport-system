@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
@@ -97,7 +98,7 @@ export default async function BrokerRegisterPage({
         tx.party.findMany({
           where: { isActive: true },
           orderBy: { name: "asc" },
-          select: { id: true, name: true, ledgerGroup: true },
+          select: { id: true, name: true, ledgerGroup: true, transportName: true, alias: true },
         }),
         tx.city.findMany({ select: { id: true, name: true } }),
         tx.user.findMany({ select: { id: true, name: true } }),
@@ -225,7 +226,7 @@ export default async function BrokerRegisterPage({
       type: "combobox",
       key: "party",
       label: "Transporter / Owner",
-      options: brokers.map((p) => ({ value: p.id, label: p.name })),
+      options: brokers.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     {
       type: "select",

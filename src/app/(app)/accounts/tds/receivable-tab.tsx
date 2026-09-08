@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
@@ -58,7 +59,7 @@ export async function TdsReceivableTab({
       tx.brokerSlip.findMany({
         where: { ...scope, pTdsAmt: { gt: 0 }, ...(dateWhere ? { slipDate: dateWhere } : {}) },
       }),
-      tx.party.findMany({ select: { id: true, name: true, pan: true } }),
+      tx.party.findMany({ select: { id: true, name: true, pan: true, transportName: true, alias: true } }),
     ]);
     const partyById = new Map(parties.map((p) => [p.id, p]));
 
@@ -189,7 +190,7 @@ export async function TdsReceivableTab({
       type: "combobox",
       key: "party",
       label: "Party",
-      options: parties.map((p) => ({ value: p.id, label: p.name })),
+      options: parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
     },
     {
       type: "select",

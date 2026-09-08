@@ -1,3 +1,4 @@
+import { partyMeta } from "@/lib/party-option";
 import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
@@ -34,7 +35,11 @@ export default async function RatesPage({
         skip: (page - 1) * PAGE_SIZE,
       }),
       tx.rateMaster.count({ where }),
-      tx.party.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      tx.party.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, transportName: true, alias: true },
+      }),
       tx.product.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       tx.city.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     ]);
@@ -78,7 +83,7 @@ export default async function RatesPage({
           crossingBasis: r.crossingBasis,
         }))
         .sort((a, b) => a.partyName.localeCompare(b.partyName))}
-      partyOptions={parties.map((p) => ({ value: p.id, label: p.name }))}
+      partyOptions={parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }))}
       productOptions={products.map((p) => ({ value: p.id, label: p.name }))}
       cityOptions={cities.map((c) => ({ value: c.id, label: c.name }))}
       canDelete={canDelete}
