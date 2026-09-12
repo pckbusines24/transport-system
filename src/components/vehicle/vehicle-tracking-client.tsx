@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Printer } from "lucide-react";
 import { formatDate, parseDdMmYyyy } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -249,7 +249,22 @@ export function VehicleTrackingClient({
                 Tracking data is available only for the last {retentionDays} days.
               </span>
             )}
-            <span className="ml-auto">
+            <span className="ml-auto flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  window.open(
+                    `/print/vehicle-tracking${
+                      asOfRows ? `?date=${encodeURIComponent(dateText)}` : ""
+                    }`,
+                    "_blank"
+                  )
+                }
+              >
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
               <ExportButton
                 rows={
                   asOfRows
@@ -439,7 +454,15 @@ export function VehicleTrackingClient({
 
       {tab === "AVAILABLE" && (
         <div className="space-y-2">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.open("/print/vehicle-tracking?view=available", "_blank")}
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
             <ExportButton
               rows={availableRows}
               fileName="available-for-load"

@@ -4,6 +4,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { formatDate, formatMoney, toNum } from "@/lib/utils";
 import { payableSettlement } from "@/lib/settlement";
+import { firmImageUrl } from "@/lib/branding";
 import { PrintToolbar } from "./print-toolbar";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,10 @@ export default async function ChalanPrintPage({
 }) {
   const session = requireSession();
   await authorize(session, "chalan", "print");
-  const copies = Math.min(3, Math.max(1, parseInt(searchParams.copies ?? "1", 10) || 1));
+  const copies = Math.min(
+    3,
+    Math.max(1, parseInt(searchParams.copies ?? "1", 10) || 1),
+  );
 
   const data = await withTenant(session.tenantId, async (tx) => {
     // firm scoped: another firm's chalan must never print under this session
@@ -29,47 +33,59 @@ export default async function ChalanPrintPage({
       },
     });
     if (!chalan) return null;
-    const [firm, broker, vehicle, cities, parties, positions, voucherAllocations] =
-      await Promise.all([
-        tx.firm.findUnique({ where: { id: chalan.firmId } }),
-        tx.party.findUnique({ where: { id: chalan.brokerId } }),
-        tx.vehicle.findUnique({ where: { id: chalan.vehicleId } }),
-        tx.city.findMany(),
-        tx.party.findMany(),
-        // the SAME live settlement the register / status drawer / voucher grid
-        // read — the print must never fall back to the frozen stored balance
-        payableSettlement(tx, {
-          firmId: chalan.firmId,
-          fyId: chalan.fyId,
+    const [
+      firm,
+      broker,
+      vehicle,
+      cities,
+      parties,
+      positions,
+      voucherAllocations,
+    ] = await Promise.all([
+      tx.firm.findUnique({ where: { id: chalan.firmId } }),
+      tx.party.findUnique({ where: { id: chalan.brokerId } }),
+      tx.vehicle.findUnique({ where: { id: chalan.vehicleId } }),
+      tx.city.findMany(),
+      tx.party.findMany(),
+      // the SAME live settlement the register / status drawer / voucher grid
+      // read — the print must never fall back to the frozen stored balance
+      payableSettlement(tx, {
+        firmId: chalan.firmId,
+        fyId: chalan.fyId,
+        refType: "FREIGHT_CHALLAN",
+        docs: [
+          {
+            id: chalan.id,
+            balance: toNum(chalan.balance),
+            ownPaid: toNum(chalan.balPaidAmount),
+            ownShortage: toNum(chalan.balShortage),
+            ownRoundOff: toNum(chalan.balRoundOff),
+            ownAdvanceAdjusted: toNum(chalan.balAdvanceAdjusted),
+          },
+        ],
+      }),
+      // per-voucher detail so the settlement block can name each payment —
+      // ALL years, like the position itself: a later-FY voucher settling
+      // this chalan must appear or the rows total less than "Total Settled"
+      tx.voucherAllocation.findMany({
+        where: {
           refType: "FREIGHT_CHALLAN",
-          docs: [
-            {
-              id: chalan.id,
-              balance: toNum(chalan.balance),
-              ownPaid: toNum(chalan.balPaidAmount),
-              ownShortage: toNum(chalan.balShortage),
-              ownRoundOff: toNum(chalan.balRoundOff),
-              ownAdvanceAdjusted: toNum(chalan.balAdvanceAdjusted),
-            },
-          ],
-        }),
-        // per-voucher detail so the settlement block can name each payment —
-        // ALL years, like the position itself: a later-FY voucher settling
-        // this chalan must appear or the rows total less than "Total Settled"
-        tx.voucherAllocation.findMany({
-          where: {
-            refType: "FREIGHT_CHALLAN",
-            refId: chalan.id,
-            voucher: { deletedAt: null, firmId: chalan.firmId },
-          },
-          include: {
-            voucher: {
-              select: { voucherNo: true, voucherDate: true, type: true, bankPartyId: true },
+          refId: chalan.id,
+          voucher: { deletedAt: null, firmId: chalan.firmId },
+        },
+        include: {
+          voucher: {
+            select: {
+              voucherNo: true,
+              voucherDate: true,
+              type: true,
+              bankPartyId: true,
             },
           },
-          orderBy: { voucher: { voucherDate: "asc" } },
-        }),
-      ]);
+        },
+        orderBy: { voucher: { voucherDate: "asc" } },
+      }),
+    ]);
     return {
       chalan,
       firm,
@@ -83,9 +99,22 @@ export default async function ChalanPrintPage({
   });
 
   if (!data) notFound();
-  const { chalan, firm, broker, vehicle, cities, parties, position, voucherAllocations } = data;
-  const cityName = (id: string | null) => (id ? cities.find((c) => c.id === id)?.name ?? "" : "");
-  const partyName = (id: string) => parties.find((p) => p.id === id)?.name ?? "";
+  const {
+    chalan,
+    firm,
+    broker,
+    vehicle,
+    cities,
+    parties,
+    position,
+    voucherAllocations,
+  } = data;
+  const cityName = (id: string | null) =>
+    id ? (cities.find((c) => c.id === id)?.name ?? "") : "";
+  const partyName = (id: string) =>
+    parties.find((p) => p.id === id)?.name ?? "";
+  // the logo uploaded in Firm Settings, top-left of the header like the LR print
+  const logoUrl = firmImageUrl(firm, "logo");
 
   // NOTE: booking freight is intentionally NOT rendered anywhere on the print.
   const cancelled = !!chalan.cancelledAt;
@@ -100,39 +129,59 @@ export default async function ChalanPrintPage({
           >
             <span
               className="rotate-[-28deg] border-8 border-red-600/70 px-10 py-3 text-[64px] font-black tracking-[0.3em] text-red-600/70"
-              style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+              style={{
+                WebkitPrintColorAdjust: "exact",
+                printColorAdjust: "exact",
+              }}
             >
               CANCELLED
             </span>
           </div>
           <div
             className="mb-2 border-2 border-red-600 py-1 text-center text-[13px] font-black tracking-widest text-red-600"
-            style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+            style={{
+              WebkitPrintColorAdjust: "exact",
+              printColorAdjust: "exact",
+            }}
           >
-            CANCELLED{chalan.cancelledAt ? ` on ${formatDate(chalan.cancelledAt)}` : ""}
+            CANCELLED
+            {chalan.cancelledAt ? ` on ${formatDate(chalan.cancelledAt)}` : ""}
             {chalan.cancelReason ? ` — ${chalan.cancelReason}` : ""}
           </div>
         </>
       )}
-      {/* firm header */}
-      <div className="border-b border-black pb-2 text-center">
-        <div className="text-xl font-bold uppercase">{firm?.name}</div>
-        <div className="text-xs">
-          {[firm?.address1, firm?.address2].filter(Boolean).join(", ")}
+      {/* firm header — logo (from Firm Settings) at the left, firm details centred */}
+      <div className="flex items-center gap-3 border-b border-black pb-2">
+        {logoUrl && (
+          <div className="flex w-[110px] shrink-0 items-center justify-center">
+            <img
+              src={logoUrl}
+              alt=""
+              className="max-h-[64px] max-w-[110px] object-contain"
+            />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 text-center">
+          <div className="text-xl font-bold uppercase">{firm?.name}</div>
+          <div className="text-xs">
+            {[firm?.address1, firm?.address2].filter(Boolean).join(", ")}
+          </div>
+          <div className="text-xs">
+            {[
+              firm?.mobile && `Mob: ${firm.mobile}`,
+              firm?.phone && `Ph: ${firm.phone}`,
+              firm?.gstin && `GSTIN: ${firm.gstin}`,
+              firm?.pan && `PAN: ${firm.pan}`,
+            ]
+              .filter(Boolean)
+              .join(" | ")}
+          </div>
+          <div className="mt-1 text-sm font-semibold">
+            FREIGHT CHALAN {copies > 1 ? `(Copy ${n})` : ""}
+          </div>
         </div>
-        <div className="text-xs">
-          {[
-            firm?.mobile && `Mob: ${firm.mobile}`,
-            firm?.phone && `Ph: ${firm.phone}`,
-            firm?.gstin && `GSTIN: ${firm.gstin}`,
-            firm?.pan && `PAN: ${firm.pan}`,
-          ]
-            .filter(Boolean)
-            .join(" | ")}
-        </div>
-        <div className="mt-1 text-sm font-semibold">
-          FREIGHT CHALAN {copies > 1 ? `(Copy ${n})` : ""}
-        </div>
+        {/* mirrors the logo column so the firm details sit dead centre */}
+        {logoUrl && <div className="w-[110px] shrink-0" />}
       </div>
 
       {/* chalan details */}
@@ -147,7 +196,8 @@ export default async function ChalanPrintPage({
           <b>Broker/Owner:</b> {broker?.name}
         </div>
         <div>
-          <b>Transport Name:</b> {chalan.transportName ?? broker?.transportName ?? ""}
+          <b>Transport Name:</b>{" "}
+          {chalan.transportName ?? broker?.transportName ?? ""}
         </div>
         <div>
           <b>Owner Name:</b> {chalan.ownerName ?? ""}
@@ -156,7 +206,8 @@ export default async function ChalanPrintPage({
           <b>Vehicle:</b> {vehicle?.number}
         </div>
         <div>
-          <b>Driver:</b> {[chalan.driverName, chalan.driverMobile].filter(Boolean).join(" / ")}
+          <b>Driver:</b>{" "}
+          {[chalan.driverName, chalan.driverMobile].filter(Boolean).join(" / ")}
         </div>
         <div>
           <b>License No:</b> {chalan.licenseNo ?? ""}
@@ -186,13 +237,21 @@ export default async function ChalanPrintPage({
       <table className="mt-3 w-full border-collapse text-xs">
         <thead>
           <tr>
-            {["S.No", "LR No", "Date", "From", "To", "Consignor", "Qty", "Actual Wt", "Charge Wt"].map(
-              (h) => (
-                <th key={h} className="border border-black px-1 py-0.5 text-left">
-                  {h}
-                </th>
-              )
-            )}
+            {[
+              "S.No",
+              "LR No",
+              "Date",
+              "From",
+              "To",
+              "Consignor",
+              "Qty",
+              "Actual Wt",
+              "Charge Wt",
+            ].map((h) => (
+              <th key={h} className="border border-black px-1 py-0.5 text-left">
+                {h}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -200,10 +259,18 @@ export default async function ChalanPrintPage({
             <tr key={lr.id}>
               <td className="border border-black px-1 py-0.5">{i + 1}</td>
               <td className="border border-black px-1 py-0.5">{lr.lrNo}</td>
-              <td className="border border-black px-1 py-0.5">{formatDate(lr.lrDate)}</td>
-              <td className="border border-black px-1 py-0.5">{cityName(lr.sourceCityId)}</td>
-              <td className="border border-black px-1 py-0.5">{cityName(lr.destCityId)}</td>
-              <td className="border border-black px-1 py-0.5">{partyName(lr.consignorId)}</td>
+              <td className="border border-black px-1 py-0.5">
+                {formatDate(lr.lrDate)}
+              </td>
+              <td className="border border-black px-1 py-0.5">
+                {cityName(lr.sourceCityId)}
+              </td>
+              <td className="border border-black px-1 py-0.5">
+                {cityName(lr.destCityId)}
+              </td>
+              <td className="border border-black px-1 py-0.5">
+                {partyName(lr.consignorId)}
+              </td>
               <td className="border border-black px-1 py-0.5 text-right">
                 {lr.items.reduce((s, it) => s + toNum(it.qty), 0)}
               </td>
@@ -223,13 +290,18 @@ export default async function ChalanPrintPage({
             </td>
             <td className="border border-black px-1 py-0.5 text-right">
               {chalan.lrs.reduce(
-                (s, { lr }) => s + lr.items.reduce((a, it) => a + toNum(it.qty), 0),
-                0
+                (s, { lr }) =>
+                  s + lr.items.reduce((a, it) => a + toNum(it.qty), 0),
+                0,
               )}
             </td>
             {/* totals come from the saved chalan so print always matches the record */}
-            <td className="border border-black px-1 py-0.5 text-right">{toNum(chalan.actualWt)}</td>
-            <td className="border border-black px-1 py-0.5 text-right">{toNum(chalan.chargeWt)}</td>
+            <td className="border border-black px-1 py-0.5 text-right">
+              {toNum(chalan.actualWt)}
+            </td>
+            <td className="border border-black px-1 py-0.5 text-right">
+              {toNum(chalan.chargeWt)}
+            </td>
           </tr>
         </tfoot>
       </table>
@@ -259,7 +331,9 @@ export default async function ChalanPrintPage({
               <tr key={label}>
                 <td className="border border-black px-1 py-0.5">{label}</td>
                 <td className="border border-black px-1 py-0.5 text-right">
-                  {formatMoney(Math.abs(v)) === "0.00" && !label.startsWith("Total") && !label.startsWith("Grand")
+                  {formatMoney(Math.abs(v)) === "0.00" &&
+                  !label.startsWith("Total") &&
+                  !label.startsWith("Grand")
                     ? "-"
                     : `${v < 0 ? "(-) " : ""}${formatMoney(Math.abs(v))}`}
                 </td>
@@ -274,7 +348,10 @@ export default async function ChalanPrintPage({
             <thead>
               <tr>
                 {["Advance", "Date", "Detail", "Amount"].map((h) => (
-                  <th key={h} className="border border-black px-1 py-0.5 text-left">
+                  <th
+                    key={h}
+                    className="border border-black px-1 py-0.5 text-left"
+                  >
                     {h}
                   </th>
                 ))}
@@ -283,7 +360,10 @@ export default async function ChalanPrintPage({
             <tbody>
               {chalan.advances.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="border border-black px-1 py-1 text-center">
+                  <td
+                    colSpan={4}
+                    className="border border-black px-1 py-1 text-center"
+                  >
                     No advances
                   </td>
                 </tr>
@@ -291,9 +371,13 @@ export default async function ChalanPrintPage({
               {chalan.advances.map((a) => (
                 <tr key={a.id}>
                   <td className="border border-black px-1 py-0.5">
-                    {a.type === "ADVANCE_ADJ" ? "ADV ADJUSTMENT" : a.type.replace("_", " ")}
+                    {a.type === "ADVANCE_ADJ"
+                      ? "ADV ADJUSTMENT"
+                      : a.type.replace("_", " ")}
                   </td>
-                  <td className="border border-black px-1 py-0.5">{formatDate(a.date)}</td>
+                  <td className="border border-black px-1 py-0.5">
+                    {formatDate(a.date)}
+                  </td>
                   <td className="border border-black px-1 py-0.5">
                     {[
                       a.advanceVoucherNo && `Voucher ${a.advanceVoucherNo}`,
@@ -357,9 +441,14 @@ export default async function ChalanPrintPage({
         <table className="mt-3 w-full border-collapse text-xs">
           <thead>
             <tr>
-              <th colSpan={8} className="border border-black bg-neutral-100 px-1 py-0.5 text-left">
+              <th
+                colSpan={8}
+                className="border border-black bg-neutral-100 px-1 py-0.5 text-left"
+              >
                 BALANCE SETTLEMENT —{" "}
-                {position.status === "PAID" ? "FULLY PAID / SETTLED" : position.status}
+                {position.status === "PAID"
+                  ? "FULLY PAID / SETTLED"
+                  : position.status}
               </th>
             </tr>
             <tr>
@@ -373,7 +462,10 @@ export default async function ChalanPrintPage({
                 "TDS / Other",
                 "Advance Adj",
               ].map((h) => (
-                <th key={h} className="border border-black px-1 py-0.5 text-left">
+                <th
+                  key={h}
+                  className="border border-black px-1 py-0.5 text-left"
+                >
                   {h}
                 </th>
               ))}
@@ -383,15 +475,21 @@ export default async function ChalanPrintPage({
             {position.ownSettled > 0.009 && (
               <tr>
                 <td className="border border-black px-1 py-0.5">
-                  {chalan.balPaymentDate ? formatDate(chalan.balPaymentDate) : ""}
+                  {chalan.balPaymentDate
+                    ? formatDate(chalan.balPaymentDate)
+                    : ""}
                 </td>
                 <td className="border border-black px-1 py-0.5">
                   Chalan payment
-                  {chalan.balPaymentMode ? ` (${chalan.balPaymentMode.replace("_", "/")})` : ""}
+                  {chalan.balPaymentMode
+                    ? ` (${chalan.balPaymentMode.replace("_", "/")})`
+                    : ""}
                   {chalan.balRemarks ? ` — ${chalan.balRemarks}` : ""}
                 </td>
                 <td className="border border-black px-1 py-0.5">
-                  {chalan.balPaymentHeadId ? partyName(chalan.balPaymentHeadId) : ""}
+                  {chalan.balPaymentHeadId
+                    ? partyName(chalan.balPaymentHeadId)
+                    : ""}
                 </td>
                 <td className="border border-black px-1 py-0.5 text-right">
                   {formatMoney(toNum(chalan.balPaidAmount))}
@@ -402,7 +500,9 @@ export default async function ChalanPrintPage({
                 <td className="border border-black px-1 py-0.5 text-right">
                   {formatMoney(toNum(chalan.balShortage))}
                 </td>
-                <td className="border border-black px-1 py-0.5 text-right">-</td>
+                <td className="border border-black px-1 py-0.5 text-right">
+                  -
+                </td>
                 <td className="border border-black px-1 py-0.5 text-right">
                   {formatMoney(toNum(chalan.balAdvanceAdjusted))}
                 </td>
@@ -418,7 +518,9 @@ export default async function ChalanPrintPage({
                   {a.voucher.voucherNo}
                 </td>
                 <td className="border border-black px-1 py-0.5">
-                  {a.voucher.bankPartyId ? partyName(a.voucher.bankPartyId) : ""}
+                  {a.voucher.bankPartyId
+                    ? partyName(a.voucher.bankPartyId)
+                    : ""}
                 </td>
                 <td className="border border-black px-1 py-0.5 text-right">
                   {formatMoney(toNum(a.amount))}
@@ -432,7 +534,9 @@ export default async function ChalanPrintPage({
                 <td className="border border-black px-1 py-0.5 text-right">
                   {formatMoney(toNum(a.tdsAmt) + toNum(a.otherAmt))}
                 </td>
-                <td className="border border-black px-1 py-0.5 text-right">-</td>
+                <td className="border border-black px-1 py-0.5 text-right">
+                  -
+                </td>
               </tr>
             ))}
             <tr className="font-semibold">
@@ -440,13 +544,19 @@ export default async function ChalanPrintPage({
                 Total
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
-                {formatMoney(toNum(chalan.balPaidAmount) + position.voucherPaid)}
+                {formatMoney(
+                  toNum(chalan.balPaidAmount) + position.voucherPaid,
+                )}
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
-                {formatMoney(toNum(chalan.balRoundOff) + position.voucherRoundOff)}
+                {formatMoney(
+                  toNum(chalan.balRoundOff) + position.voucherRoundOff,
+                )}
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
-                {formatMoney(toNum(chalan.balShortage) + position.voucherShortage)}
+                {formatMoney(
+                  toNum(chalan.balShortage) + position.voucherShortage,
+                )}
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
                 {formatMoney(position.voucherTds + position.voucherOther)}
@@ -457,8 +567,8 @@ export default async function ChalanPrintPage({
             </tr>
             <tr className="font-bold">
               <td colSpan={7} className="border border-black px-1 py-0.5">
-                Total Settled {formatMoney(position.settled)} of {formatMoney(position.balance)} —
-                Balance Due
+                Total Settled {formatMoney(position.settled)} of{" "}
+                {formatMoney(position.balance)} — Balance Due
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
                 {formatMoney(position.outstanding)}
@@ -469,7 +579,7 @@ export default async function ChalanPrintPage({
       )}
 
       <div className="mt-8 flex justify-between text-xs">
-        <div>Driver Signature</div>
+        <div>Driver / Owner Signature</div>
         <div>For {firm?.name}</div>
       </div>
     </div>
