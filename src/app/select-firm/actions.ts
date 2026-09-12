@@ -37,8 +37,13 @@ export async function selectFirm(formData: FormData) {
         where: { firmId },
         orderBy: { startDate: "desc" },
       });
-      if (!latest) return null;
-      const y = latest.startDate.getFullYear() + 1;
+      // a firm with no year yet starts at the April-based current year
+      const now = new Date();
+      const y = latest
+        ? latest.startDate.getFullYear() + 1
+        : now.getMonth() >= 3
+          ? now.getFullYear()
+          : now.getFullYear() - 1;
       const label = `${y}-${y + 1}`;
       let fy = await tx.financialYear.findFirst({ where: { firmId, label } });
       if (!fy) {

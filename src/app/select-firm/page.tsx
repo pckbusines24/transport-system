@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { selectFirm } from "./actions";
-import { FyButton } from "./fy-button";
+import { FirmPicker, type FyOption } from "./firm-picker";
 
 export const dynamic = "force-dynamic";
 
@@ -103,46 +103,38 @@ export default async function SelectFirmPage() {
                 </div>
 
                 <div className="px-5 py-4">
-                  {firm.financialYears.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No financial years configured.</p>
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {firm.financialYears.map((fy) => (
-                        <form key={fy.id} action={selectFirm}>
-                          <input type="hidden" name="firmId" value={firm.id} />
-                          <input type="hidden" name="fyId" value={fy.id} />
-                          <FyButton
-                            label={`FY ${fy.label}`}
-                            sub={`${formatDate(fy.startDate)} — ${formatDate(
-                              // a 23:59:59-stamped end date would read as the
-                              // NEXT IST day — pull late stamps back before
-                              // formatting so 31 March prints as 31 March
-                              fy.endDate.getUTCHours() >= 12
-                                ? new Date(fy.endDate.getTime() - 13 * 3600 * 1000)
-                                : fy.endDate
-                            )}`}
-                          />
-                        </form>
-                      ))}
-                      {/* FY continuity: the NEXT year is always offered — picking
-                          it creates the year and steps in, no setup screen */}
-                      {(() => {
-                        const latest = firm.financialYears[0];
-                        const y = latest.startDate.getFullYear() + 1;
-                        return (
-                          <form action={selectFirm}>
-                            <input type="hidden" name="firmId" value={firm.id} />
-                            <input type="hidden" name="fyId" value="__next__" />
-                            <FyButton
-                              label={`FY ${y}-${y + 1}`}
-                              sub="new year — created as soon as you select it"
-                              dashed
-                            />
-                          </form>
-                        );
-                      })()}
-                    </div>
-                  )}
+                  {(() => {
+                    const today = new Date();
+                    const years: FyOption[] = firm.financialYears.map((fy) => ({
+                      id: fy.id,
+                      label: fy.label,
+                      range: `${formatDate(fy.startDate)} — ${formatDate(
+                        // a 23:59:59-stamped end date would read as the
+                        // NEXT IST day — pull late stamps back before
+                        // formatting so 31 March prints as 31 March
+                        fy.endDate.getUTCHours() >= 12
+                          ? new Date(fy.endDate.getTime() - 13 * 3600 * 1000)
+                          : fy.endDate
+                      )}`,
+                      current: fy.startDate <= today && today <= fy.endDate,
+                    }));
+                    // FY continuity: the NEXT year is always offered, but it is
+                    // created only when the user asks for it and confirms
+                    const latest = firm.financialYears[0];
+                    const y = latest
+                      ? latest.startDate.getFullYear() + 1
+                      : today.getMonth() >= 3
+                        ? today.getFullYear()
+                        : today.getFullYear() - 1;
+                    return (
+                      <FirmPicker
+                        firmId={firm.id}
+                        years={years}
+                        nextLabel={`${y}-${y + 1}`}
+                        action={selectFirm}
+                      />
+                    );
+                  })()}
                 </div>
               </CardContent>
             </Card>
