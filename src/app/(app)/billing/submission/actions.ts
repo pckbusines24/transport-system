@@ -144,6 +144,8 @@ export async function findInvoiceForSubmission(
 // ---------------------------------------------------------------- save
 
 const saveSchema = z.object({
+  /** set when editing an existing submission — number is kept, header & invoices updated */
+  id: z.string().optional(),
   submissionDate: z.string().min(1, "Submission date is required"),
   partyId: z.string().min(1, "Customer is required"),
   remarks: z.string().optional(),
@@ -163,10 +165,11 @@ export async function saveInvoiceSubmission(
   const parsed = saveSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
-  await authorize(session, "billing", "create");
+  await authorize(session, "billing", data.id ? "edit" : "create");
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const submissionDate = new Date(data.submissionDate + "T00:00:00");
+      if (data.id) return updateSubmission(tx, session, { ...data, id: data.id }, submissionDate);
       // never trust the id list: every invoice must be a live bill of THIS
       // firm/FY belonging to the submission's party — a stale or foreign id
       // would otherwise attach someone else's bill and flip its lifecycle
@@ -235,6 +238,112 @@ export async function saveInvoiceSubmission(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Save failed" };
   }
+}
+
+/**
+ * Edit an existing submission: header (date / customer / remarks) and the
+ * invoice list. The submission number never changes. Invoices removed here
+ * hand their earlier copies back (RETURNED -> SUBMITTED) and invoices added
+ * here flip their earlier copies to RETURNED, exactly as a fresh save would.
+ */
+async function updateSubmission(
+  tx: Tx,
+  session: ReturnType<typeof requireSession>,
+  data: z.infer<typeof saveSchema> & { id: string },
+  submissionDate: Date
+): Promise<{ ok: true; id: string; submissionNo: string } | { ok: false; error: string }> {
+  const existing = await tx.invoiceSubmission.findFirst({
+    where: { id: data.id, firmId: session.firmId },
+    include: { items: true },
+  });
+  if (!existing) return { ok: false, error: "Submission not found." };
+
+  const owned = await tx.invoice.findMany({
+    where: {
+      id: { in: data.invoiceIds },
+      firmId: session.firmId,
+      fyId: session.fyId,
+      partyId: data.partyId,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (owned.length !== data.invoiceIds.length) {
+    return {
+      ok: false,
+      error: "One or more selected invoices do not belong to this customer — refresh and retry.",
+    };
+  }
+
+  const before = { ...existing, items: existing.items.map((it) => it.invoiceId) };
+  const prevIds = new Set(existing.items.map((it) => it.invoiceId));
+  const nextIds = new Set(data.invoiceIds);
+  const removed = Array.from(prevIds).filter((id) => !nextIds.has(id));
+  const added = Array.from(nextIds).filter((id) => !prevIds.has(id));
+
+  await tx.invoiceSubmission.update({
+    where: { id: existing.id },
+    data: { submissionDate, partyId: data.partyId, remarks: data.remarks || null },
+  });
+
+  if (removed.length) {
+    await tx.invoiceSubmissionItem.deleteMany({
+      where: { submissionId: existing.id, invoiceId: { in: removed } },
+    });
+    // the earlier copies this submission had marked RETURNED are live again
+    await tx.invoiceSubmissionItem.updateMany({
+      where: { resubmittedInId: existing.id, invoiceId: { in: removed } },
+      data: { status: "SUBMITTED", resubmittedInId: null, resubmittedInNo: null, resubmissionDate: null },
+    });
+  }
+
+  if (added.length) {
+    await tx.invoiceSubmissionItem.createMany({
+      data: added.map((invoiceId) => ({
+        tenantId: session.tenantId,
+        submissionId: existing.id,
+        invoiceId,
+      })),
+    });
+    await tx.invoiceSubmissionItem.updateMany({
+      where: {
+        invoiceId: { in: added },
+        submissionId: { not: existing.id },
+        submission: { firmId: session.firmId },
+        status: "SUBMITTED",
+      },
+      data: {
+        status: "RETURNED",
+        resubmittedInId: existing.id,
+        resubmittedInNo: existing.submissionNo,
+        resubmissionDate: submissionDate,
+      },
+    });
+  }
+
+  // a changed date must show on every earlier copy that points here
+  if (existing.submissionDate.getTime() !== submissionDate.getTime()) {
+    await tx.invoiceSubmissionItem.updateMany({
+      where: { resubmittedInId: existing.id },
+      data: { resubmissionDate: submissionDate },
+    });
+  }
+
+  await audit(tx, session, {
+    entity: "InvoiceSubmission",
+    entityId: existing.id,
+    action: "UPDATE",
+    before,
+    after: {
+      submissionNo: existing.submissionNo,
+      submissionDate,
+      partyId: data.partyId,
+      remarks: data.remarks || null,
+      invoiceIds: data.invoiceIds,
+    },
+  });
+  revalidatePath("/billing/submission");
+  return { ok: true, id: existing.id, submissionNo: existing.submissionNo };
 }
 
 // ---------------------------------------------------------------- acknowledgement

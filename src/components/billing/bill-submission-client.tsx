@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { formatDate, formatMoney, parseDdMmYyyy } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,6 +90,49 @@ export function BillSubmissionClient({
   const [fetching, setFetching] = React.useState(false);
   const [manualNo, setManualNo] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  // editing an existing submission: its id & number; the same form is reused
+  const [editing, setEditing] = React.useState<{ id: string; submissionNo: string } | null>(null);
+  const formRef = React.useRef<HTMLDivElement>(null);
+
+  const resetForm = () => {
+    setEditing(null);
+    setSubmissionDateText(formatDate(new Date()));
+    setPartyId(null);
+    setFromText("");
+    setToText("");
+    setFetched([]);
+    setSelected(new Set());
+    setRemarks("");
+  };
+
+  /** Load a saved submission into the entry form for editing. */
+  const startEdit = (d: SubmissionDetails) => {
+    setEditing({ id: d.id, submissionNo: d.submissionNo });
+    setSubmissionDateText(formatDate(d.submissionDate));
+    setPartyId(d.partyId);
+    setFromText("");
+    setToText("");
+    setRemarks(d.remarks);
+    setFetched(
+      d.items.map((it) => ({
+        id: it.invoiceId,
+        invoiceNo: it.invoiceNo,
+        invoiceDate: it.invoiceDate,
+        amount: it.amount,
+        partyName: d.partyName,
+        lastSubmissionNo: null,
+      }))
+    );
+    setSelected(new Set(d.items.map((it) => it.invoiceId)));
+    setDetails(null);
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const editById = async (id: string) => {
+    const res = await getSubmissionDetails(id);
+    if (res.ok) startEdit(res.data);
+    else toast({ variant: "destructive", title: res.error });
+  };
 
   const fetchInvoices = async () => {
     if (!partyId) {
@@ -165,6 +208,7 @@ export function BillSubmissionClient({
     setSaving(true);
     try {
       const res = await saveInvoiceSubmission({
+        id: editing?.id,
         submissionDate: iso,
         partyId,
         remarks,
@@ -172,13 +216,11 @@ export function BillSubmissionClient({
       });
       if (res.ok) {
         toast({
-          title: `Bill Submission ${res.submissionNo} created`,
+          title: `Bill Submission ${res.submissionNo} ${editing ? "updated" : "created"}`,
           description: `${selectedRows.length} invoice(s) — the covering letter is opening for print.`,
         });
         window.open(`/print/submission/${res.id}`, "_blank");
-        setFetched([]);
-        setSelected(new Set());
-        setRemarks("");
+        resetForm();
         router.refresh();
       } else {
         toast({ variant: "destructive", title: "Save failed", description: res.error });
@@ -370,15 +412,45 @@ export function BillSubmissionClient({
         ),
     },
     { accessorKey: "remarks", header: "Remarks" },
+    {
+      id: "edit",
+      header: "",
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          title="Edit submission"
+          onClick={(e) => {
+            e.stopPropagation();
+            void editById(row.original.id);
+          }}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </Button>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [openDetails]);
 
   return (
     <div className="space-y-4">
       {/* ------- entry ------- */}
-      <Card>
+      <Card ref={formRef}>
         <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-sm">
-            New Bill Submission — number is auto-generated on save
+          <CardTitle className="flex items-center justify-between text-sm">
+            <span>
+              {editing
+                ? `Editing Bill Submission ${editing.submissionNo}`
+                : "New Bill Submission — number is auto-generated on save"}
+            </span>
+            {editing && (
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={resetForm}>
+                Cancel edit
+              </Button>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-1">
@@ -525,7 +597,9 @@ export function BillSubmissionClient({
               <Input className="h-9" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </div>
             <Button type="button" onClick={save} disabled={saving || selectedRows.length === 0}>
-              {saving ? "Saving..." : `Save Submission (${selectedRows.length})`}
+              {saving
+                ? "Saving..."
+                : `${editing ? "Update" : "Save"} Submission (${selectedRows.length})`}
             </Button>
           </div>
         </CardContent>
@@ -597,6 +671,14 @@ export function BillSubmissionClient({
               {details?.remarks ? ` — ${details.remarks}` : ""}
             </DialogDescription>
           </DialogHeader>
+          {details && (
+            <div className="flex justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={() => startEdit(details)}>
+                <Pencil className="h-4 w-4" />
+                Edit Submission
+              </Button>
+            </div>
+          )}
           {details && (
             <div className="space-y-3 text-sm">
               {/* invoices */}

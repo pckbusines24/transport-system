@@ -275,6 +275,7 @@ export function VehicleTrackingClient({
                         toLocation: r.toLocation,
                         currentLocation: r.currentLocation,
                         status: r.status,
+                        remarks: r.remarks,
                         asOn: formatDate(r.date),
                       }))
                     : live.map((r) => ({
@@ -284,6 +285,7 @@ export function VehicleTrackingClient({
                         toLocation: r.toLocation,
                         currentLocation: r.currentLocation,
                         status: r.status,
+                        remarks: r.remarks,
                         asOn: r.lastUpdated ? formatDate(r.lastUpdated) : "",
                       }))
                 }
@@ -296,6 +298,7 @@ export function VehicleTrackingClient({
                   { header: "To", key: "toLocation" },
                   { header: "Current Location", key: "currentLocation" },
                   { header: "Status", key: "status" },
+                  { header: "Remarks", key: "remarks" },
                   { header: asOfRows ? "As On" : "Last Updated", key: "asOn" },
                 ]}
               />
