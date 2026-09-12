@@ -26,9 +26,20 @@ export default async function AdvanceRegisterPage({
     const hasDates = Boolean(searchParams.date_from || searchParams.date_to);
     const where: Prisma.PartyAdvanceWhereInput = {
       firmId: session.firmId,
-      // date filter beats FY (FY continuity): a range reaching into an old
-      // year shows that year's advances; no filter → current FY as before
-      ...(hasDates ? {} : { fyId: session.fyId }),
+      // FY continuity: an advance that is still OPEN (not fully consumed)
+      // carries forward and stays listed in EVERY later year until it is
+      // used up; fully-consumed ones stay scoped to the session FY so the
+      // register does not fill with closed history. A date filter beats
+      // FY and shows every row of that period, any year, consumed or not.
+      ...(hasDates
+        ? {}
+        : {
+            OR: [
+              { fyId: session.fyId },
+              // open = amount still exceeds what bills / chalans consumed
+              { consumedAmount: { lt: tx.partyAdvance.fields.amount } },
+            ],
+          }),
       deletedAt: null,
       // cancel-created advances have their own register (Chalan Cancel Advances)
       source: { not: "CHALAN_CANCEL" },
@@ -104,7 +115,8 @@ export default async function AdvanceRegisterPage({
           Created automatically by receipt / payment vouchers with no bill reference. Bills
           consume them automatically; chalans consume them manually, voucher by voucher, through
           Advance Adjustment — &ldquo;Used Against&rdquo; shows the document and amount for every
-          adjustment.
+          adjustment. An advance that is not fully consumed carries forward and keeps appearing
+          in the next financial year until it is used up.
         </InfoHint>
       </h1>
       <FilterBar filters={filters} />
