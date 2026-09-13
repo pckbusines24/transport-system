@@ -3,6 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { formatMoney } from "@/lib/utils";
+import { Download, Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { downloadXlsx } from "@/components/data/export-button";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
@@ -86,6 +89,8 @@ export function BrowserClient({
   const [running, setRunning] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [exporting, setExporting] = React.useState(false);
+  const { toast } = useToast();
 
   // one token per filter change: stale in-flight responses are dropped
   const requestToken = React.useRef(0);
@@ -155,6 +160,63 @@ export function BrowserClient({
     return () => io.disconnect();
   }, [nextCursor, loading, load, running]);
 
+  // Export = EVERY row of the current filters (all pages), not just the rows
+  // scrolled into view; the running balance is threaded page to page exactly
+  // as the list does it, so ledger exports continue where each page stopped
+  const exportAll = async () => {
+    if (requireParty && !partyId) return;
+    setExporting(true);
+    try {
+      const all: BrowseRow[] = [];
+      let cols: BrowseResult["columns"] = columns;
+      let tots: BrowseResult["totals"] = totals;
+      let cursor: number | null = 0;
+      let runningStart: number | null = null;
+      while (cursor !== null) {
+        const res: BrowseResult = await fetchBrowse({
+          src,
+          month,
+          q: q || null,
+          partyId,
+          vehicleId,
+          head,
+          obd: obd || null,
+          status: isChalan ? status : null,
+          pbal: isBroker ? pbal : null,
+          vbal: isBroker ? vbal : null,
+          cursor,
+          runningStart,
+          fyId,
+        });
+        all.push(...res.rows);
+        cols = res.columns;
+        tots = res.totals;
+        runningStart = res.runningEnd ?? null;
+        cursor = res.nextCursor;
+      }
+      const monthTag = month === "ALL" ? "all" : month;
+      await downloadXlsx<BrowseRow>({
+        rows: all,
+        columns: cols.map((c, i) => ({
+          header: c.label,
+          numeric: c.numeric,
+          accessor: (r) => r.cells[i] ?? "",
+        })),
+        fileName: `${src.toLowerCase()}-${monthTag}`,
+        sheetName: title.slice(0, 31),
+        summary: tots.map((t) => ({ label: t.label, value: t.value })),
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Export failed",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const cellText = (v: string | number | null, numeric?: boolean) =>
     v === null || v === "" ? "" : numeric && typeof v === "number" ? formatMoney(v) : String(v);
 
@@ -162,9 +224,21 @@ export function BrowserClient({
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="page-title">{title}</h1>
-        <span className="text-xs text-muted-foreground">
-          {rows.length} loaded{nextCursor !== null ? " — scroll for more" : rows.length ? " — end of list" : ""}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {rows.length} loaded{nextCursor !== null ? " — scroll for more" : rows.length ? " — end of list" : ""}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void exportAll()}
+            disabled={exporting || loading || (requireParty && !partyId)}
+            title="Export every row of the current filters to Excel"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {exporting ? "Exporting..." : "Export"}
+          </Button>
+        </div>
       </div>
 
       {/* FY dropdown + month chips: pick any year, chips follow */}

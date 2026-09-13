@@ -164,7 +164,14 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
       const [rows, count, sums, wtSums] = await Promise.all([
         tx.lr.findMany({
           where,
-          include: { items: { select: { chargeWt: true, actualWt: true, rate: true } } },
+          include: {
+            items: { select: { chargeWt: true, actualWt: true, rate: true } },
+            // the bill(s) this LR is billed on — live invoices only
+            invoiceLrs: {
+              where: { invoice: { deletedAt: null } },
+              select: { invoice: { select: { invoiceNo: true } } },
+            },
+          },
           orderBy: [{ lrDate: "desc" }, { lrNo: "desc" }],
           skip: cursor,
           take: PAGE,
@@ -182,6 +189,8 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
       return {
         columns: [
           { label: "LR No" },
+          { label: "Bill No" },
+          { label: "Status" },
           { label: "Date" },
           { label: "From" },
           { label: "To" },
@@ -199,6 +208,10 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
           href: `/lr?id=${r.id}`,
           cells: [
             r.lrNo,
+            // billed → its bill number(s); blank while unbilled
+            Array.from(new Set(r.invoiceLrs.map((il) => il.invoice.invoiceNo))).join(", "),
+            // lifecycle stage, as the LR Register shows it
+            r.status.replace("_", " "),
             fmtDate(r.lrDate),
             maps.city.get(r.sourceCityId) ?? "",
             maps.city.get(r.destCityId) ?? "",
