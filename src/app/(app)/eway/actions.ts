@@ -60,7 +60,9 @@ export async function setEwayChecked(
  *  renewed bill needs a fresh verification. */
 export async function extendEway(
   lrId: string,
-  newExpiry: string
+  newExpiry: string,
+  /** which e-way bill of the LR (an LR may carry several); blank = the first */
+  ewayNo?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = requireSession();
   await authorize(session, "lr", "edit");
@@ -79,17 +81,27 @@ export async function extendEway(
         where: { id: lrId, firmId: session.firmId, fyId: session.fyId, deletedAt: null },
       });
       if (!lr) throw new Error("LR not found");
-      const oldCal = lr.ewayExpiry ? calDate(lr.ewayExpiry) : null;
+      // the invoice line that carries this e-way bill (first line if unnamed)
+      const line = await tx.lrInvoice.findFirst({
+        where: { lrId, ...(ewayNo ? { ewayBillNo: ewayNo } : { ewayBillNo: { not: null } }) },
+        orderBy: { sortOrder: "asc" },
+      });
+      const oldExpiry = line?.ewayExpiry ?? lr.ewayExpiry;
+      const oldCal = oldExpiry ? calDate(oldExpiry) : null;
       const monitor = await tx.ewayMonitor.findUnique({ where: { lrId } });
       const prev: string[] = Array.isArray(monitor?.prevExpiries)
         ? (monitor?.prevExpiries as string[])
         : [];
       if (oldCal && oldCal !== newExpiry && !prev.includes(oldCal)) prev.push(oldCal);
 
-      await tx.lr.update({
-        where: { id: lrId },
-        data: { ewayExpiry: new Date(`${newExpiry}T00:00:00`) },
-      });
+      const expiry = new Date(`${newExpiry}T00:00:00`);
+      if (line) {
+        await tx.lrInvoice.update({ where: { id: line.id }, data: { ewayExpiry: expiry } });
+      }
+      // the LR's own column mirrors the FIRST line (or is the only record)
+      if (!line || line.sortOrder === 0 || !lr.ewayBillNo || lr.ewayBillNo === line.ewayBillNo) {
+        await tx.lr.update({ where: { id: lrId }, data: { ewayExpiry: expiry } });
+      }
       await tx.ewayMonitor.upsert({
         where: { lrId },
         create: {

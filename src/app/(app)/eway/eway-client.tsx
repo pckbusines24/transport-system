@@ -121,7 +121,7 @@ export function EwayClient({
     }
     setBusy(editFor.lrId);
     try {
-      const res = await extendEway(editFor.lrId, iso);
+      const res = await extendEway(editFor.lrId, iso, editFor.ewayNo);
       if (res.ok) {
         toast({
           title: `LR ${editFor.lrNo}: e-way extended to ${fmt(iso)}`,

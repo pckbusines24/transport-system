@@ -12,6 +12,12 @@ import { LrRegisterTable, type LrRegisterRow } from "@/components/lr/lr-register
 
 const PAGE_SIZE = 100;
 
+/** distinct non-empty values of the invoice lines, else the LR's own column */
+function joinLines(values: (string | null)[], fallback: string | null): string {
+  const set = Array.from(new Set(values.filter(Boolean) as string[]));
+  return set.length ? set.join(", ") : fallback ?? "";
+}
+
 export const dynamic = "force-dynamic";
 
 const LR_TYPES = ["TO_PAY", "TBB", "PAID", "FOC"] as const;
@@ -66,7 +72,11 @@ export default async function LrRegisterPage({
     ];
   }
   if (searchParams.vehicle) where.vehicleId = searchParams.vehicle;
-  if (searchParams.obd) where.obdNo = { contains: searchParams.obd, mode: "insensitive" };
+  if (searchParams.obd) {
+    // any invoice line of the LR may carry the OBD number
+    const obd = { contains: searchParams.obd, mode: "insensitive" as const };
+    where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), { OR: [{ obdNo: obd }, { invoices: { some: { obdNo: obd } } }] }];
+  }
   if (searchParams.status && (LR_STATUSES as readonly string[]).includes(searchParams.status)) {
     where.status = searchParams.status as (typeof LR_STATUSES)[number];
   }
@@ -76,7 +86,7 @@ export default async function LrRegisterPage({
     const [lrs, total, freightAgg, wtAgg, cities, parties, vehicles, partyMap] = await Promise.all([
       tx.lr.findMany({
         where,
-        include: { items: true },
+        include: { items: true, invoices: { orderBy: { sortOrder: "asc" } } },
         orderBy: [{ lrDate: "desc" }, { lrNo: "desc" }],
         take: PAGE_SIZE,
         skip: (page - 1) * PAGE_SIZE,
@@ -119,9 +129,10 @@ export default async function LrRegisterPage({
       grandTotal: Number(lr.grandTotal),
       lrType: lr.lrType,
       cargoType: lr.cargoType,
-      obdNo: lr.obdNo ?? "",
-      invoiceNo: lr.invoiceNo ?? "",
-      refNo: lr.refNo ?? "",
+      // every invoice line, comma-joined (the Lr columns hold only the first)
+      obdNo: joinLines(lr.invoices.map((r) => r.obdNo), lr.obdNo),
+      invoiceNo: joinLines(lr.invoices.map((r) => r.invoiceNo), lr.invoiceNo),
+      refNo: joinLines(lr.invoices.map((r) => r.refNo), lr.refNo),
       product: lr.items.map((i) => i.productName).filter(Boolean).join(", "),
       rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(i.rate))) : 0,
       status: lr.status,

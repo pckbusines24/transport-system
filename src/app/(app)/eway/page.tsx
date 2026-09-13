@@ -44,30 +44,66 @@ export default async function EwayPage() {
         vehicleText: true,
         ewayBillNo: true,
         ewayExpiry: true,
+        invoices: {
+          where: { ewayBillNo: { not: null }, ewayExpiry: { not: null } },
+          orderBy: { sortOrder: "asc" },
+          select: { ewayBillNo: true, ewayExpiry: true },
+        },
       },
       orderBy: { lrDate: "asc" },
     });
+    // an LR with several invoices carries several e-way bills — one monitor
+    // row each (the LR's own columns are its first line)
+    const extraLrs = await tx.lr.findMany({
+      where: {
+        firmId: session.firmId,
+        fyId: session.fyId,
+        deletedAt: null,
+        ewayBillNo: null,
+        invoices: { some: { ewayBillNo: { not: null }, ewayExpiry: { not: null } } },
+      },
+      select: {
+        id: true,
+        lrNo: true,
+        lrDate: true,
+        vehicleId: true,
+        vehicleText: true,
+        ewayBillNo: true,
+        ewayExpiry: true,
+        invoices: {
+          where: { ewayBillNo: { not: null }, ewayExpiry: { not: null } },
+          orderBy: { sortOrder: "asc" },
+          select: { ewayBillNo: true, ewayExpiry: true },
+        },
+      },
+    });
+    const allLrs = [...lrs, ...extraLrs];
     const [vehicles, monitors] = await Promise.all([
       tx.vehicle.findMany({ select: { id: true, number: true } }),
-      tx.ewayMonitor.findMany({ where: { lrId: { in: lrs.map((l) => l.id) } } }),
+      tx.ewayMonitor.findMany({ where: { lrId: { in: allLrs.map((l) => l.id) } } }),
     ]);
     const vname = new Map(vehicles.map((v) => [v.id, v.number]));
     const mon = new Map(monitors.map((m) => [m.lrId, m]));
 
-    const rows: EwayRow[] = lrs.map((l) => {
+    const rows: EwayRow[] = allLrs.flatMap((l) => {
       const m = mon.get(l.id);
-      return {
-        lrId: l.id,
-        lrNo: l.lrNo,
-        lrDate: l.lrDate.toISOString(),
-        vehicle: (l.vehicleId ? vname.get(l.vehicleId) : null) ?? l.vehicleText ?? "",
-        ewayNo: l.ewayBillNo ?? "",
-        expiry: calDate(l.ewayExpiry as Date),
-        prevExpiries: Array.isArray(m?.prevExpiries) ? (m?.prevExpiries as string[]) : [],
-        checked: !!m?.checkedAt,
-        checkedBy: m?.checkedBy ?? null,
-        checkedAt: m?.checkedAt ? m.checkedAt.toISOString() : null,
-      };
+      const lines = l.invoices.length
+        ? l.invoices
+        : [{ ewayBillNo: l.ewayBillNo, ewayExpiry: l.ewayExpiry }];
+      return lines
+        .filter((x) => x.ewayBillNo && x.ewayExpiry)
+        .map((x) => ({
+          lrId: l.id,
+          lrNo: l.lrNo,
+          lrDate: l.lrDate.toISOString(),
+          vehicle: (l.vehicleId ? vname.get(l.vehicleId) : null) ?? l.vehicleText ?? "",
+          ewayNo: x.ewayBillNo ?? "",
+          expiry: calDate(x.ewayExpiry as Date),
+          prevExpiries: Array.isArray(m?.prevExpiries) ? (m?.prevExpiries as string[]) : [],
+          checked: !!m?.checkedAt,
+          checkedBy: m?.checkedBy ?? null,
+          checkedAt: m?.checkedAt ? m.checkedAt.toISOString() : null,
+        }));
     });
     return { rows };
   });

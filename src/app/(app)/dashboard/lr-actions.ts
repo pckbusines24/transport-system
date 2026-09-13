@@ -239,7 +239,15 @@ export async function getLrDetail(input: {
           ...(f.consignorId ? { consignorId: f.consignorId } : {}),
           ...(f.consigneeId ? { consigneeId: f.consigneeId } : {}),
           ...(f.vehicleId ? { vehicleId: f.vehicleId } : {}),
-          ...(f.obd ? { obdNo: { contains: f.obd, mode: "insensitive" } } : {}),
+          // any invoice line of the LR may carry the OBD number
+          ...(f.obd
+            ? {
+                OR: [
+                  { obdNo: { contains: f.obd, mode: "insensitive" } },
+                  { invoices: { some: { obdNo: { contains: f.obd, mode: "insensitive" } } } },
+                ],
+              }
+            : {}),
           ...(f.lrNo ? { lrNo: { contains: f.lrNo, mode: "insensitive" } } : {}),
           ...(f.sourceCityId ? { sourceCityId: f.sourceCityId } : {}),
           ...(f.destCityId ? { destCityId: f.destCityId } : {}),

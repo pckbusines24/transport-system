@@ -147,7 +147,15 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         lrType: { notIn: ["CANCELLED" as const, "PAPER_CHANGE" as const] },
         ...dateFilter("lrDate", input.month),
         ...(q ? { lrNo: { contains: q, mode: "insensitive" as const } } : {}),
-        ...(obd ? { obdNo: { contains: obd, mode: "insensitive" as const } } : {}),
+        // any invoice line of the LR may carry the OBD number
+        ...(obd
+          ? {
+              OR: [
+                { obdNo: { contains: obd, mode: "insensitive" as const } },
+                { invoices: { some: { obdNo: { contains: obd, mode: "insensitive" as const } } } },
+              ],
+            }
+          : {}),
         ...(input.partyId
           ? { OR: [{ consignorId: input.partyId }, { consigneeId: input.partyId }, { billToId: input.partyId }] }
           : {}),

@@ -10,7 +10,7 @@ import { nextLrNumber } from "@/lib/sequences";
 import { formatDate } from "@/lib/utils";
 import type { MasterOption } from "@/components/data/master-combobox";
 import type { LrFormValues, PartyDetail } from "@/components/lr/lr-form";
-import { emptyLrItem } from "@/components/lr/lr-calc";
+import { emptyLrItem , emptyLrInvoice } from "@/components/lr/lr-calc";
 import type { RateBasis } from "@/lib/calc/rate";
 
 export interface LrFormData {
@@ -54,7 +54,7 @@ export async function loadLrFormData(editId?: string, copyId?: string): Promise<
               // firm-scoped only: an old-FY LR opens for editing from the new
               // year too (FY continuity) — saveLr keeps it in its own year
               where: { id: sourceId, firmId: session.firmId, deletedAt: null },
-              include: { items: true },
+              include: { items: true, invoices: { orderBy: { sortOrder: "asc" } } },
             })
           : Promise.resolve(null),
       ]);
@@ -102,13 +102,29 @@ export async function loadLrFormData(editId?: string, copyId?: string): Promise<
         billToId: existing.billToId ?? "",
         vehicleId: existing.vehicleId ?? "",
         vehicleText: existing.vehicleText ?? "",
-        invoiceNo: existing.invoiceNo ?? "",
-        obdNo: existing.obdNo ?? "",
-        refNo: existing.refNo ?? "",
-        invoiceDateText: existing.invoiceDate ? formatDate(existing.invoiceDate) : "",
-        goodsValue: existing.goodsValue ? Number(existing.goodsValue) : 0,
-        ewayBillNo: existing.ewayBillNo ?? "",
-        ewayExpiryText: existing.ewayExpiry ? formatDate(existing.ewayExpiry) : "",
+        // every invoice line; an LR saved before the list existed falls back
+        // to its own invoice columns as the single line
+        invoices: existing.invoices.length
+          ? existing.invoices.map((r) => ({
+              invoiceNo: r.invoiceNo ?? "",
+              obdNo: r.obdNo ?? "",
+              refNo: r.refNo ?? "",
+              invoiceDateText: r.invoiceDate ? formatDate(r.invoiceDate) : "",
+              goodsValue: r.goodsValue ? Number(r.goodsValue) : 0,
+              ewayBillNo: r.ewayBillNo ?? "",
+              ewayExpiryText: r.ewayExpiry ? formatDate(r.ewayExpiry) : "",
+            }))
+          : [
+              {
+                invoiceNo: existing.invoiceNo ?? "",
+                obdNo: existing.obdNo ?? "",
+                refNo: existing.refNo ?? "",
+                invoiceDateText: existing.invoiceDate ? formatDate(existing.invoiceDate) : "",
+                goodsValue: existing.goodsValue ? Number(existing.goodsValue) : 0,
+                ewayBillNo: existing.ewayBillNo ?? "",
+                ewayExpiryText: existing.ewayExpiry ? formatDate(existing.ewayExpiry) : "",
+              },
+            ],
         insCompany: existing.insCompany ?? "",
         insPolicyNo: existing.insPolicyNo ?? "",
         insAmount: existing.insAmount ? Number(existing.insAmount) : 0,
@@ -150,13 +166,7 @@ export async function loadLrFormData(editId?: string, copyId?: string): Promise<
         billToId: "",
         vehicleId: "",
         vehicleText: "",
-        invoiceNo: "",
-        obdNo: "",
-        refNo: "",
-        invoiceDateText: "",
-        goodsValue: 0,
-        ewayBillNo: "",
-        ewayExpiryText: "",
+        invoices: [emptyLrInvoice()],
         insCompany: "",
         insPolicyNo: "",
         insAmount: 0,
@@ -182,16 +192,10 @@ export async function loadLrFormData(editId?: string, copyId?: string): Promise<
     defaults.lrNo = nextNo ?? "1";
     defaults.lrDateText = formatDate(new Date());
     defaults.refLrNo = "";
-    defaults.invoiceNo = "";
-    defaults.obdNo = "";
-    defaults.refNo = "";
-    defaults.invoiceDateText = "";
-    defaults.ewayBillNo = "";
-    defaults.ewayExpiryText = "";
+    defaults.invoices = [emptyLrInvoice()];
     defaults.printFreight = false; // every new LR defaults to not printing freight
     // per-consignment cargo starts blank too — the rate comes back from
     // Rate Setup when a product is picked, and freight recomputes from it
-    defaults.goodsValue = 0;
     defaults.items = [emptyLrItem()];
     defaults.freight = 0;
   }

@@ -226,7 +226,14 @@ export function MultiLrBatch(props: Omit<LrFormProps, "mode" | "isDummy">) {
                       {label(props.cityOptions, e.sourceCityId)} →{" "}
                       {label(props.cityOptions, e.destCityId)}
                     </TableCell>
-                    <TableCell>{e.invoiceNo ? String(e.invoiceNo) : "-"}</TableCell>
+                    <TableCell>
+                      {Array.isArray(e.invoices) && e.invoices.length
+                        ? (e.invoices as { invoiceNo?: string | null }[])
+                            .map((r) => r.invoiceNo)
+                            .filter(Boolean)
+                            .join(", ") || "-"
+                        : "-"}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{fmtWt(actualWtOf(e))}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtWt(chargeWtOf(e))}</TableCell>
                     <TableCell className="text-right tabular-nums">

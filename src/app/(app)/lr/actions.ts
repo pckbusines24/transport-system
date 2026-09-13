@@ -31,6 +31,16 @@ const itemSchema = z.object({
   rateBasis: rateBasisSchema.default("CHARGE_WT"),
 });
 
+const lrInvoiceSchema = z.object({
+  invoiceNo: z.string().nullish(),
+  obdNo: z.string().nullish(),
+  refNo: z.string().nullish(),
+  invoiceDate: z.string().nullish(),
+  goodsValue: z.number().min(0).nullish(),
+  ewayBillNo: z.string().nullish(),
+  ewayExpiry: z.string().nullish(),
+});
+
 const lrSchema = z.object({
   id: z.string().nullish(),
   lrNo: z.string().trim().min(1, "LR number is required"),
@@ -57,6 +67,7 @@ const lrSchema = z.object({
   insPolicyNo: z.string().nullish(),
   insAmount: z.number().min(0).nullish(),
 
+  // legacy single-invoice fields — still accepted from older callers
   invoiceNo: z.string().nullish(),
   obdNo: z.string().nullish(),
   refNo: z.string().nullish(),
@@ -64,6 +75,9 @@ const lrSchema = z.object({
   goodsValue: z.number().min(0).nullish(),
   ewayBillNo: z.string().nullish(),
   ewayExpiry: z.string().nullish(),
+  /** every party invoice / e-way line of the LR (the first mirrors into the
+      Lr columns above) */
+  invoices: z.array(lrInvoiceSchema).default([]),
 
   freight: z.number().min(0).default(0),
   hamali: z.number().min(0).default(0),
@@ -101,6 +115,37 @@ function toDate(s: string): Date {
 
 type LrInput = z.infer<typeof lrSchema>;
 
+/**
+ * Invoice lines as saved: the `invoices` list when the form sent one, else the
+ * legacy single set of fields as one line. Blank lines are dropped.
+ */
+function lrInvoiceLines(data: LrInput) {
+  const lines =
+    data.invoices.length > 0
+      ? data.invoices
+      : [
+          {
+            invoiceNo: data.invoiceNo,
+            obdNo: data.obdNo,
+            refNo: data.refNo,
+            invoiceDate: data.invoiceDate,
+            goodsValue: data.goodsValue,
+            ewayBillNo: data.ewayBillNo,
+            ewayExpiry: data.ewayExpiry,
+          },
+        ];
+  return lines.filter(
+    (l) =>
+      l.invoiceNo ||
+      l.obdNo ||
+      l.refNo ||
+      l.invoiceDate ||
+      (l.goodsValue ?? 0) > 0 ||
+      l.ewayBillNo ||
+      l.ewayExpiry
+  );
+}
+
 /** Map a validated LR payload + computed totals to the Lr row shape. */
 function lrRowData(
   data: LrInput,
@@ -130,13 +175,20 @@ function lrRowData(
     insCompany: data.insCompany || null,
     insPolicyNo: data.insPolicyNo || null,
     insAmount: data.insAmount ?? null,
-    invoiceNo: data.invoiceNo || null,
-    obdNo: data.obdNo || null,
-    refNo: data.refNo || null,
-    invoiceDate: data.invoiceDate ? toDate(data.invoiceDate) : null,
-    goodsValue: data.goodsValue ?? null,
-    ewayBillNo: data.ewayBillNo || null,
-    ewayExpiry: data.ewayExpiry ? toDate(data.ewayExpiry) : null,
+    // the LR's own invoice columns mirror the FIRST invoice line so every
+    // register, print and monitor reading them keeps working
+    ...(() => {
+      const first = lrInvoiceLines(data)[0];
+      return {
+        invoiceNo: first?.invoiceNo || null,
+        obdNo: first?.obdNo || null,
+        refNo: first?.refNo || null,
+        invoiceDate: first?.invoiceDate ? toDate(first.invoiceDate) : null,
+        goodsValue: first?.goodsValue ?? null,
+        ewayBillNo: first?.ewayBillNo || null,
+        ewayExpiry: first?.ewayExpiry ? toDate(first.ewayExpiry) : null,
+      };
+    })(),
     freight: data.freight,
     hamali: data.hamali,
     preBhada: data.preBhada,
@@ -152,6 +204,20 @@ function lrRowData(
     advanceBank: data.advanceBank || null,
     grandTotal: totals.grandTotal,
   };
+}
+
+function lrInvoicesData(tenantId: string, data: LrInput) {
+  return lrInvoiceLines(data).map((l, i) => ({
+    tenantId,
+    sortOrder: i,
+    invoiceNo: l.invoiceNo || null,
+    obdNo: l.obdNo || null,
+    refNo: l.refNo || null,
+    invoiceDate: l.invoiceDate ? toDate(l.invoiceDate) : null,
+    goodsValue: l.goodsValue ?? null,
+    ewayBillNo: l.ewayBillNo || null,
+    ewayExpiry: l.ewayExpiry ? toDate(l.ewayExpiry) : null,
+  }));
 }
 
 function lrItemsData(tenantId: string, data: LrInput) {
@@ -247,6 +313,7 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
       data.cargoType = await deriveCargoType(tx, data.items);
       const lrData = lrRowData(data, totals, lrNo);
       const items = lrItemsData(session.tenantId, data);
+      const invoices = lrInvoicesData(session.tenantId, data);
       // wrong-FY guard: the date must belong to the LR's own FY (edit) or the
       // session FY (fresh)
       await assertDateInFy(tx, { fyId: docFyId }, lrData.lrDate, "LR entry");
@@ -254,9 +321,10 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
       let savedId: string;
       if (before) {
         await tx.lrItem.deleteMany({ where: { lrId: before.id } });
+        await tx.lrInvoice.deleteMany({ where: { lrId: before.id } });
         const updated = await tx.lr.update({
           where: { id: before.id },
-          data: { ...lrData, items: { create: items } },
+          data: { ...lrData, items: { create: items }, invoices: { create: invoices } },
           include: { items: true },
         });
         savedId = updated.id;
@@ -279,6 +347,7 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
             createdById: session.userId,
             ...lrData,
             items: { create: items },
+            invoices: { create: invoices },
           },
           include: { items: true },
         });

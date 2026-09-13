@@ -57,7 +57,7 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
     // firm/FY scoped: another firm's LR must never print under this letterhead
     const lr = await tx.lr.findFirst({
       where: { id: params.id, firmId: session.firmId, fyId: session.fyId, deletedAt: null },
-      include: { items: true },
+      include: { items: true, invoices: { orderBy: { sortOrder: "asc" } } },
     });
     if (!lr) return null;
     const [firm, sourceCity, destCity, consignor, consignee, vehicle] = await Promise.all([
@@ -77,6 +77,11 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
   if (!data) notFound();
   const { lr, firm, sourceCity, destCity, destState, consignor, consignee, vehicle } = data;
   const logoUrl = firmImageUrl(firm, "logo");
+  // invoice / e-way lines: the list when present, else the LR's own columns
+  const invLines =
+    lr.invoices.length > 0
+      ? lr.invoices
+      : [{ invoiceNo: lr.invoiceNo, invoiceDate: lr.invoiceDate, ewayBillNo: lr.ewayBillNo, ewayExpiry: lr.ewayExpiry }];
   const showAmounts = lr.printFreight;
 
   const addr = (p: { address1?: string | null; address2?: string | null } | null) =>
@@ -317,8 +322,14 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
                         ["From :", <span key="f" className="uppercase">{sourceCity?.name}</span>],
                         ["To :", <span key="t" className="uppercase">{destCity?.name}</span>],
                         ["Truck No. :", <span key="v" className="text-[12.5px]">{vehicle?.number ?? lr.vehicleText}</span>],
-                        ["Invoice No. :", lr.invoiceNo],
-                        ["Invoice Date :", lr.invoiceDate ? formatDate(lr.invoiceDate) : ""],
+                        // every invoice line of the LR, comma-joined
+                        ["Invoice No. :", invLines.map((r) => r.invoiceNo).filter(Boolean).join(", ")],
+                        [
+                          "Invoice Date :",
+                          Array.from(
+                            new Set(invLines.map((r) => (r.invoiceDate ? formatDate(r.invoiceDate) : "")).filter(Boolean))
+                          ).join(", "),
+                        ],
                       ] as [string, React.ReactNode][]
                     ).map(([label, value]) => (
                       <div key={label} className="flex items-end gap-1 py-[3px]">
@@ -350,8 +361,13 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
                 <div className="border border-black">
                   <BoxTitle>E-Way Bill</BoxTitle>
                   <div className="p-1.5 text-[10.5px]">
-                    <Rule label="No. :" value={lr.ewayBillNo} />
-                    <Rule label="Date :" value={lr.ewayExpiry ? formatDate(lr.ewayExpiry) : ""} />
+                    <Rule label="No. :" value={invLines.map((r) => r.ewayBillNo).filter(Boolean).join(", ")} />
+                    <Rule
+                      label="Date :"
+                      value={Array.from(
+                        new Set(invLines.map((r) => (r.ewayExpiry ? formatDate(r.ewayExpiry) : "")).filter(Boolean))
+                      ).join(", ")}
+                    />
                   </div>
                 </div>
                 <div className="flex-1 border border-black p-1.5 text-[10px]">

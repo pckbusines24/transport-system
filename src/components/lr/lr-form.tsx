@@ -9,7 +9,15 @@ import { cn, formatMoney, parseDdMmYyyy, toNum } from "@/lib/utils";
 import { lookupRate } from "@/lib/lookups";
 import { stateCodeFromGstin } from "@/lib/calc/gst";
 import type { RateBasis } from "@/lib/calc/rate";
-import { computeLrTotals, itemAmount, itemsFreight, RATE_BASIS_LABELS, emptyLrItem } from "./lr-calc";
+import {
+  computeLrTotals,
+  itemAmount,
+  itemsFreight,
+  RATE_BASIS_LABELS,
+  emptyLrItem,
+  emptyLrInvoice,
+  isBlankLrInvoice,
+} from "./lr-calc";
 import { saveLr } from "@/app/(app)/lr/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +60,17 @@ export interface LrFormItem {
   rateBasis: RateBasis;
 }
 
+/** one party invoice / e-way line — an LR may carry several */
+export interface LrFormInvoice {
+  invoiceNo: string;
+  obdNo: string;
+  refNo: string;
+  invoiceDateText: string;
+  goodsValue: number;
+  ewayBillNo: string;
+  ewayExpiryText: string;
+}
+
 export interface LrFormValues {
   lrNo: string;
   lrDateText: string;
@@ -64,13 +83,7 @@ export interface LrFormValues {
   billToId: string;
   vehicleId: string;
   vehicleText: string;
-  invoiceNo: string;
-  obdNo: string;
-  refNo: string;
-  invoiceDateText: string;
-  goodsValue: number;
-  ewayBillNo: string;
-  ewayExpiryText: string;
+  invoices: LrFormInvoice[];
   insCompany: string;
   insPolicyNo: string;
   insAmount: number;
@@ -204,6 +217,7 @@ export function LrForm(props: LrFormProps) {
   const form = useForm<LrFormValues>({ defaultValues: props.defaults });
   const { register, setValue, watch, control, handleSubmit, reset, getValues } = form;
   const items = useFieldArray({ control, name: "items" });
+  const invoices = useFieldArray({ control, name: "invoices" });
 
   // batch mode: let the parent load a tray row into the form / restore values
   const { exposeFormApi } = props;
@@ -330,13 +344,19 @@ export function LrForm(props: LrFormProps) {
       insCompany: values.insCompany || null,
       insPolicyNo: values.insPolicyNo || null,
       insAmount: toNum(values.insAmount) || null,
-      invoiceNo: values.invoiceNo || null,
-      obdNo: values.obdNo || null,
-      refNo: values.refNo || null,
-      invoiceDate: values.invoiceDateText ? toIso(values.invoiceDateText) : null,
-      goodsValue: toNum(values.goodsValue) || null,
-      ewayBillNo: values.ewayBillNo || null,
-      ewayExpiry: values.ewayExpiryText ? toIso(values.ewayExpiryText) : null,
+      // every invoice line; the server mirrors the first into the LR's own
+      // invoice columns for the registers / prints / monitors that read them
+      invoices: (values.invoices ?? [])
+        .filter((r) => !isBlankLrInvoice(r))
+        .map((r) => ({
+          invoiceNo: r.invoiceNo || null,
+          obdNo: r.obdNo || null,
+          refNo: r.refNo || null,
+          invoiceDate: r.invoiceDateText ? toIso(r.invoiceDateText) : null,
+          goodsValue: toNum(r.goodsValue) || null,
+          ewayBillNo: r.ewayBillNo || null,
+          ewayExpiry: r.ewayExpiryText ? toIso(r.ewayExpiryText) : null,
+        })),
       freight: toNum(values.freight),
       hamali: toNum(values.hamali),
       preBhada: toNum(values.preBhada),
@@ -372,9 +392,7 @@ export function LrForm(props: LrFormProps) {
         // and blank the per-consignment fields (goods value, e-way, items)
         const n = parseInt(values.lrNo, 10);
         if (!isNaN(n)) setValue("lrNo", String(n + 1));
-        setValue("goodsValue", 0);
-        setValue("ewayBillNo", "");
-        setValue("ewayExpiryText", "");
+        invoices.replace([emptyLrInvoice()]);
         items.replace([emptyLrItem()]);
         // fresh items: freight re-computes from the rate picked via Rate Setup,
         // and Charge Wt mirrors Actual Wt again
@@ -623,46 +641,89 @@ export function LrForm(props: LrFormProps) {
 
       {/* ---------- Party Invoice Details (collapsible) ---------- */}
       <Card>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 p-4 text-sm font-semibold"
-          onClick={() => setShowInvoice((s) => !s)}
-        >
-          {showInvoice ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          Party Invoice Details
-          <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-        </button>
+        <div className="flex items-center justify-between p-4">
+          <button
+            type="button"
+            className="flex items-center gap-2 text-sm font-semibold"
+            onClick={() => setShowInvoice((s) => !s)}
+          >
+            {showInvoice ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            Party Invoice Details
+            <span className="text-xs font-normal text-muted-foreground">
+              (optional{invoices.fields.length > 1 ? ` · ${invoices.fields.length} invoices` : ""})
+            </span>
+          </button>
+          {showInvoice && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => invoices.append(emptyLrInvoice())}
+            >
+              <Plus className="h-4 w-4" /> Add Row
+            </Button>
+          )}
+        </div>
         {showInvoice && (
-          <CardContent className="grid gap-3 p-4 pt-0 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Invoice No">
-              <Input {...register("invoiceNo")} className={inputCls} />
-            </Field>
-            <Field label="OBD No">
-              <Input {...register("obdNo")} className={inputCls} />
-            </Field>
-            <Field label="Ref No">
-              <Input {...register("refNo")} className={inputCls} />
-            </Field>
-            <Field label="Invoice Date">
-              <DateInput
-                value={v.invoiceDateText}
-                onChange={(text) => setValue("invoiceDateText", text)}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Goods Value">
-              <Input type="number" step="any" {...register("goodsValue", { valueAsNumber: true })} className={numCls} />
-            </Field>
-            <Field label="E-way Bill No">
-              <Input {...register("ewayBillNo")} className={inputCls} />
-            </Field>
-            <Field label="E-way Expiry">
-              <DateInput
-                value={v.ewayExpiryText}
-                onChange={(text) => setValue("ewayExpiryText", text)}
-                className={inputCls}
-              />
-            </Field>
+          <CardContent className="space-y-3 p-4 pt-0">
+            {/* one line per party invoice — the same Add Row pattern as products */}
+            {invoices.fields.map((f, index) => (
+              <div
+                key={f.id}
+                className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_36px]"
+              >
+                <Field label={index === 0 ? "Invoice No" : `Invoice No (${index + 1})`}>
+                  <Input {...register(`invoices.${index}.invoiceNo`)} className={inputCls} />
+                </Field>
+                <Field label="OBD No">
+                  <Input {...register(`invoices.${index}.obdNo`)} className={inputCls} />
+                </Field>
+                <Field label="Ref No">
+                  <Input {...register(`invoices.${index}.refNo`)} className={inputCls} />
+                </Field>
+                <Field label="Invoice Date">
+                  <DateInput
+                    value={v.invoices?.[index]?.invoiceDateText ?? ""}
+                    onChange={(text) => setValue(`invoices.${index}.invoiceDateText`, text)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Goods Value">
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register(`invoices.${index}.goodsValue`, { valueAsNumber: true })}
+                    className={numCls}
+                  />
+                </Field>
+                <Field label="E-way Bill No">
+                  <Input {...register(`invoices.${index}.ewayBillNo`)} className={inputCls} />
+                </Field>
+                <Field label="E-way Expiry">
+                  <DateInput
+                    value={v.invoices?.[index]?.ewayExpiryText ?? ""}
+                    onChange={(text) => setValue(`invoices.${index}.ewayExpiryText`, text)}
+                    className={inputCls}
+                  />
+                </Field>
+                <div className="flex items-end justify-center pb-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive"
+                    title="Remove this invoice"
+                    onClick={() =>
+                      invoices.fields.length > 1
+                        ? invoices.remove(index)
+                        : invoices.replace([emptyLrInvoice()])
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
           </CardContent>
         )}
       </Card>

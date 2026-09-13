@@ -659,6 +659,7 @@ model Lr {
   gateEntryNo String?
 
   items          LrItem[]
+  invoices       LrInvoice[]
   chalanLrs      ChalanLr[]
   invoiceLrs     InvoiceLr[]
   pods           Pod[]
@@ -676,6 +677,30 @@ model Lr {
   @@index([firmId, fyId, lrNo])
   @@index([tenantId, firmId, fyId, status])
   @@index([tenantId, vehicleId, status])
+}
+
+/// Party invoice / e-way rows of an LR (one consignment may carry several
+/// invoices). The Lr row's own invoiceNo / obdNo / ... columns always mirror
+/// the FIRST row here, so every register, print and monitor that reads the
+/// scalar columns keeps working; this table is the full list.
+model LrInvoice {
+  id          String    @id @default(cuid())
+  tenantId    String
+  lrId        String
+  lr          Lr        @relation(fields: [lrId], references: [id], onDelete: Cascade)
+  sortOrder   Int       @default(0)
+  invoiceNo   String?
+  obdNo       String?
+  refNo       String?
+  invoiceDate DateTime?
+  goodsValue  Decimal?  @db.Decimal(14, 2)
+  ewayBillNo  String?
+  ewayExpiry  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([lrId, sortOrder])
+  @@index([tenantId, obdNo])
+  @@index([tenantId, ewayBillNo])
 }
 
 model LrItem {
