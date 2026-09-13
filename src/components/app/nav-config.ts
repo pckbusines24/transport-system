@@ -155,6 +155,8 @@ export const NAV: NavGroup[] = [
       { label: "Driver Management", href: "/vehicle/driver-management" },
       { label: "Extra Work Information", href: "/vehicle/work" },
       { label: "Tyre Management", href: "/vehicle/tyres" },
+      // operational tracking only — no accounting / Tally link
+      { label: "Spare Parts & Warranty", href: "/vehicle/spare-parts" },
       { label: "AdBlue (Urea) Stock", href: "/vehicle/adblue" },
     ],
   },

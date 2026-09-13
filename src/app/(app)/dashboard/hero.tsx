@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, FileWarning, Route, Wallet } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileWarning, Route, ShieldAlert, Wallet } from "lucide-react";
 import { Stat, SegmentedMeter } from "@/components/ui/stat";
 import type { OpsMetrics } from "./ops-metrics";
 
@@ -68,6 +68,13 @@ export function DashboardHero({
           />
           <Stat label="Doc issues" value={metrics.docProblem} icon={<FileWarning />} size="sm" />
           <Stat label="EMIs due" value={metrics.emiDue} icon={<Wallet />} size="sm" />
+          <Stat
+            label="Warranty due"
+            value={metrics.warrantyDue}
+            icon={<ShieldAlert />}
+            size="sm"
+            hint={metrics.warrantyDue > 0 ? "spare parts, next 30 days" : undefined}
+          />
         </div>
       </div>
 

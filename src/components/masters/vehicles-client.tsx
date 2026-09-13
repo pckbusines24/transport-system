@@ -1,6 +1,8 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import Link from "next/link";
+import { Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { MasterOption } from "@/components/data/master-combobox";
 import { SimpleMaster } from "@/components/masters/simple-master";
@@ -54,6 +56,21 @@ const columns: ColumnDef<Row, unknown>[] = [
     cell: ({ row }) => row.original.ownerName ?? row.original.ownerNames ?? "-",
   },
   { accessorKey: "vehicleType", header: "Type" },
+  {
+    id: "spareParts",
+    header: "Spare Parts",
+    cell: ({ row }) => (
+      // the vehicle's spare-parts history (operational module) — stop the
+      // click reaching the row, which opens the edit dialog
+      <Link
+        href={`/vehicle/spare-parts?tab=vehicle&vehicleId=${row.original.id}`}
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        <Wrench className="h-3.5 w-3.5" /> Spare Parts History
+      </Link>
+    ),
+  },
 ];
 
 export function VehiclesClient({

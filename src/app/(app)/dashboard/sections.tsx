@@ -1,4 +1,4 @@
-import { ClipboardCheck, FileCheck2, IndianRupee, Map as MapIcon, Percent } from "lucide-react";
+import { ClipboardCheck, FileCheck2, IndianRupee, Map as MapIcon, Percent, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -194,6 +194,47 @@ export async function EmiCard({ metrics }: { metrics: Promise<OpsMetrics> }) {
               {emiDue > 0 && (
                 <span className="rounded bg-red-500/10 px-2 py-0.5 text-red-600">
                   Due now: {emiDue}
+                </span>
+              )}
+            </span>
+          </span>
+        </CardContent>
+      </Card>
+    </a>
+  );
+}
+
+/** Spare-part warranties expiring within 30 days — operational alert, no accounting link. */
+export async function WarrantyCard({ metrics }: { metrics: Promise<OpsMetrics> }) {
+  const { warrantyDue, warrantyExpired } = await metrics;
+  return (
+    <a href="/vehicle/spare-parts?tab=dashboard" target="_blank" rel="noreferrer" className="group">
+      <Card className="h-full transition-all hover:border-primary/40 hover:shadow-card">
+        <CardContent className="flex items-start gap-3 p-5">
+          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ShieldAlert className="h-6 w-6" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-lg font-semibold group-hover:text-primary">
+              Spare Part Warranty
+              <InfoHint>
+                Spare parts whose warranty expires within 30 days — inspect and claim before expiry. Tracking
+                only; nothing here posts to accounts.
+              </InfoHint>
+            </span>
+            <span className="mt-2 flex flex-wrap gap-2 text-xs font-medium">
+              {warrantyDue > 0 ? (
+                <span className="rounded bg-orange-500/10 px-2 py-0.5 text-orange-600">
+                  ⚠ Expiring within 30 days: {warrantyDue}
+                </span>
+              ) : (
+                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-emerald-600">
+                  No warranty expiring in 30 days
+                </span>
+              )}
+              {warrantyExpired > 0 && (
+                <span className="rounded bg-red-500/10 px-2 py-0.5 text-red-600">
+                  Expired: {warrantyExpired}
                 </span>
               )}
             </span>

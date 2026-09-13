@@ -12,6 +12,7 @@ import {
   OutstandingSection,
   RoutesCard,
   TdsCard,
+  WarrantyCard,
 } from "./sections";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,9 @@ export default function DashboardPage() {
         </Suspense>
         <Suspense fallback={<CardFallback />}>
           <TdsCard />
+        </Suspense>
+        <Suspense fallback={<CardFallback />}>
+          <WarrantyCard metrics={metrics} />
         </Suspense>
         <Suspense fallback={<CardFallback />}>
           <RoutesCard metrics={metrics} />

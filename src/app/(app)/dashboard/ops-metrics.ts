@@ -21,6 +21,10 @@ export interface OpsMetrics {
   laneAlive: number;
   laneCooling: number;
   laneSleeping: number;
+  /** spare parts whose warranty expires within 30 days, not yet reviewed */
+  warrantyDue: number;
+  /** spare parts whose warranty has expired */
+  warrantyExpired: number;
 }
 
 const H12 = 12 * 3600 * 1000;
@@ -204,9 +208,31 @@ export async function getOpsMetrics(todayCal: string): Promise<OpsMetrics> {
       else laneSleeping++;
     }
 
+    // spare-part warranty alerts (operational module — no accounting link):
+    // due = expiring within the next 30 days and not marked reviewed
+    const [warrantyDue, warrantyExpired] = await Promise.all([
+      tx.sparePart.count({
+        where: {
+          firmId: session.firmId,
+          deletedAt: null,
+          warrantyApplicable: true,
+          warrantyReviewedAt: null,
+          warrantyExpiryDate: { gte: new Date(t - H12), lt: new Date(t + 30 * DAY + H12) },
+        },
+      }),
+      tx.sparePart.count({
+        where: {
+          firmId: session.firmId,
+          deletedAt: null,
+          warrantyApplicable: true,
+          warrantyExpiryDate: { lt: new Date(t - H12) },
+        },
+      }),
+    ]);
+
     return {
       expiredCount, todayCount, upcomingCount, docTypeCounts, docProblem, docExpired,
-      emiActive, emiDue, laneAlive, laneCooling, laneSleeping,
+      emiActive, emiDue, laneAlive, laneCooling, laneSleeping, warrantyDue, warrantyExpired,
     };
   });
 }

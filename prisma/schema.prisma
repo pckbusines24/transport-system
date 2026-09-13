@@ -2337,6 +2337,73 @@ model CourierDispatchItem {
 // one cycle and open the next; total life = sum of all cycle KMs / days.
 // Tyre names are module-local free text (no product/master linkage).
 
+// ============ SPARE PARTS & WARRANTY (operational tracking only) ============
+// A part is a permanent identity (unique serial number); its life is a chain
+// of events. NOTHING here links to the ledger, vouchers, purchase register,
+// stock value, P&L or Tally — purchaseRate is information only.
+
+model SparePart {
+  id       String @id @default(cuid())
+  tenantId String
+  firmId   String
+
+  name         String
+  partNumber   String?
+  serialNo     String // unique ID / serial number — permanent identity
+  brand        String?
+  model        String?
+  supplierName String?
+  purchaseDate DateTime?
+  invoiceNo    String?
+  purchaseRate Decimal? @db.Decimal(14, 2) // INFORMATION ONLY — never posted
+
+  warrantyApplicable Boolean   @default(false)
+  warrantyMonths     Int?
+  warrantyStartDate  DateTime?
+  warrantyExpiryDate DateTime? // start + months, computed on save
+  warrantyReviewedAt DateTime? // 30-day dashboard alert marked reviewed
+
+  status           String    @default("AVAILABLE") // AVAILABLE | INSTALLED | REMOVED
+  currentVehicleId String?
+  installedOn      DateTime?
+  installKm        Decimal?  @db.Decimal(12, 1)
+  remarks          String?
+
+  events SparePartEvent[]
+
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([tenantId, firmId, serialNo])
+  @@index([tenantId, firmId, status])
+  @@index([tenantId, firmId, warrantyExpiryDate])
+  @@index([tenantId, firmId, currentVehicleId])
+}
+
+model SparePartEvent {
+  id       String    @id @default(cuid())
+  tenantId String
+  partId   String
+  part     SparePart @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  type          String // PURCHASE | INSTALL | REMOVE | WARRANTY_CLAIM | WARRANTY_REPLACEMENT | REVIEWED
+  date          DateTime
+  vehicleId     String?
+  kmReading     Decimal? @db.Decimal(12, 1)
+  workshop      String?
+  remarks       String?
+  claimStatus   String? // OPEN | APPROVED | REJECTED | REPLACED
+  relatedPartId String? // the other part of a replacement
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([partId, date])
+  @@index([tenantId, vehicleId])
+}
+
 model Tyre {
   id       String @id @default(cuid())
   tenantId String
