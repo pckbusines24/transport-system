@@ -6,6 +6,13 @@ import { formatMoney } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { fetchBrowse, type BrowseResult, type BrowseRow, type BrowseSrc } from "./actions";
 
 /**
@@ -65,6 +72,12 @@ export function BrowserClient({
   const [vehicleId, setVehicleId] = React.useState<string | null>(null);
   const [head, setHead] = React.useState<string | null>(null);
   const [obd, setObd] = React.useState("");
+  // CHALAN: live balance status; BROKER: party-side and owner-side balance
+  const [status, setStatus] = React.useState<string | null>(null);
+  const [pbal, setPbal] = React.useState<string | null>(null);
+  const [vbal, setVbal] = React.useState<string | null>(null);
+  const isChalan = src === "CHALAN_MARKET" || src === "CHALAN_OWNREL";
+  const isBroker = src === "BROKER";
 
   const [columns, setColumns] = React.useState<BrowseResult["columns"]>([]);
   const [rows, setRows] = React.useState<BrowseRow[]>([]);
@@ -97,6 +110,9 @@ export function BrowserClient({
           vehicleId,
           head,
           obd: obd || null,
+          status: isChalan ? status : null,
+          pbal: isBroker ? pbal : null,
+          vbal: isBroker ? vbal : null,
           cursor,
           runningStart,
           fyId,
@@ -113,7 +129,7 @@ export function BrowserClient({
         if (token === requestToken.current) setLoading(false);
       }
     },
-    [src, month, q, partyId, vehicleId, head, obd, requireParty, fyId]
+    [src, month, q, partyId, vehicleId, head, obd, status, pbal, vbal, isChalan, isBroker, requireParty, fyId]
   );
 
   // reload from the top whenever a filter changes (debounced for typing)
@@ -233,7 +249,49 @@ export function BrowserClient({
             />
           </div>
         )}
-        {(q || partyId || vehicleId || head || obd) && (
+        {isChalan && (
+          <div className="w-40">
+            <Select value={status ?? "ALL"} onValueChange={(v) => setStatus(v === "ALL" ? null : v)}>
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="PAID">Paid</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {isBroker && (
+          <>
+            <div className="w-48">
+              <Select value={pbal ?? "ALL"} onValueChange={(v) => setPbal(v === "ALL" ? null : v)}>
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Party balance" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Party balance: all</SelectItem>
+                  <SelectItem value="PENDING">Pending party balance</SelectItem>
+                  <SelectItem value="RECEIVED">Party balance received</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-48">
+              <Select value={vbal ?? "ALL"} onValueChange={(v) => setVbal(v === "ALL" ? null : v)}>
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Owner balance" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Owner balance: all</SelectItem>
+                  <SelectItem value="PENDING">Pending owner balance</SelectItem>
+                  <SelectItem value="PAID">Owner balance paid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+        {(q || partyId || vehicleId || head || obd || status || pbal || vbal) && (
           <Button
             variant="ghost"
             size="sm"
@@ -244,6 +302,9 @@ export function BrowserClient({
               setVehicleId(null);
               setHead(null);
               setObd("");
+              setStatus(null);
+              setPbal(null);
+              setVbal(null);
             }}
           >
             Clear

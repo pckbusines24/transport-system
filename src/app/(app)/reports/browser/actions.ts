@@ -5,7 +5,7 @@ import { withTenant, type Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
-import { invoiceSettlement, payableSettlement } from "@/lib/settlement";
+import { brokerPartySettlement, invoiceSettlement, payableSettlement } from "@/lib/settlement";
 import { COMMON_HEADS } from "@/lib/account-heads";
 
 /**
@@ -45,6 +45,12 @@ export interface BrowseInput {
   head?: string | null;
   /** LR: OBD number filter */
   obd?: string | null;
+  /** CHALAN: live balance status — PENDING | PAID */
+  status?: string | null;
+  /** BROKER: party-side balance — PENDING | RECEIVED */
+  pbal?: string | null;
+  /** BROKER: owner-side balance — PENDING | PAID */
+  vbal?: string | null;
   cursor?: number;
   /** running balance carried across pages (books / ledger) */
   runningStart?: number | null;
@@ -70,7 +76,9 @@ const PAGE = 100;
 
 function monthRange(month: string): { gte: Date; lt: Date } | null {
   if (!/^\d{4}-\d{2}$/.test(month)) return null;
-  const gte = new Date(`${month}-01T00:00:00`);
+  // anchored to IST like every date on screen: a chalan dated the 1st is
+  // stored at IST midnight (18:30Z the day before) and must land in ITS month
+  const gte = new Date(`${month}-01T00:00:00+05:30`);
   const lt = new Date(gte);
   lt.setMonth(lt.getMonth() + 1);
   return { gte, lt };
@@ -226,23 +234,55 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
           ? { in: vehicleIds.includes(input.vehicleId) ? [input.vehicleId] : [] }
           : { in: vehicleIds },
       };
-      const [rows, count, sums] = await Promise.all([
-        tx.chalan.findMany({ where, orderBy: [{ chalanDate: "desc" }, { id: "desc" }], skip: cursor, take: PAGE }),
-        tx.chalan.count({ where }),
-        tx.chalan.aggregate({ where, _sum: { freight: true, advanceTotal: true } }),
-      ]);
-      const payable = await payableSettlement(tx, {
-        ...scope,
-        refType: "FREIGHT_CHALLAN",
-        docs: rows.map((c) => ({
-          id: c.id,
-          balance: toNum(c.balance),
-          ownPaid: toNum(c.balPaidAmount),
-          ownShortage: toNum(c.balShortage),
-          ownRoundOff: toNum(c.balRoundOff),
-          ownAdvanceAdjusted: toNum(c.balAdvanceAdjusted),
-        })),
-      });
+      const orderBy = [{ chalanDate: "desc" as const }, { id: "desc" as const }];
+      const settle = (
+        docs: { id: string; balance: unknown; balPaidAmount: unknown; balShortage: unknown; balRoundOff: unknown; balAdvanceAdjusted: unknown }[]
+      ) =>
+        payableSettlement(tx, {
+          ...scope,
+          refType: "FREIGHT_CHALLAN",
+          docs: docs.map((c) => ({
+            id: c.id,
+            balance: toNum(c.balance),
+            ownPaid: toNum(c.balPaidAmount),
+            ownShortage: toNum(c.balShortage),
+            ownRoundOff: toNum(c.balRoundOff),
+            ownAdvanceAdjusted: toNum(c.balAdvanceAdjusted),
+          })),
+        });
+      // Status is LIVE (vouchers settle chalans without touching the stored
+      // column), so a status filter runs on the settled position: fetch the
+      // month's chalans, settle, keep the wanted ones, then page in memory.
+      const statusFilter =
+        input.status === "PAID" || input.status === "PENDING" ? input.status : null;
+      let rows: Awaited<ReturnType<typeof tx.chalan.findMany>>;
+      let count: number;
+      let sumFreight: number;
+      let sumAdvance: number;
+      let payable: Awaited<ReturnType<typeof settle>>;
+      if (statusFilter) {
+        const all = await tx.chalan.findMany({ where, orderBy });
+        payable = await settle(all);
+        const kept = all.filter((c) => {
+          const out = payable.get(c.id)?.outstanding ?? toNum(c.balance);
+          return statusFilter === "PAID" ? out <= 0.009 : out > 0.009;
+        });
+        count = kept.length;
+        sumFreight = round2(kept.reduce((s, c) => s + toNum(c.freight), 0));
+        sumAdvance = round2(kept.reduce((s, c) => s + toNum(c.advanceTotal), 0));
+        rows = kept.slice(cursor, cursor + PAGE);
+      } else {
+        const [page, total, sums] = await Promise.all([
+          tx.chalan.findMany({ where, orderBy, skip: cursor, take: PAGE }),
+          tx.chalan.count({ where }),
+          tx.chalan.aggregate({ where, _sum: { freight: true, advanceTotal: true } }),
+        ]);
+        rows = page;
+        count = total;
+        sumFreight = toNum(sums._sum.freight ?? 0);
+        sumAdvance = toNum(sums._sum.advanceTotal ?? 0);
+        payable = await settle(rows);
+      }
       const maps = await nameMaps(tx, { partyIds: rows.map((r) => r.brokerId) });
       const vname = new Map(vehicles.map((v) => [v.id, v.number]));
       return {
@@ -276,8 +316,8 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         nextCursor: cursor + rows.length < count ? cursor + rows.length : null,
         totals: [
           { label: "Chalans", value: count },
-          { label: "Freight", value: toNum(sums._sum.freight ?? 0) },
-          { label: "Advance", value: toNum(sums._sum.advanceTotal ?? 0) },
+          { label: "Freight", value: sumFreight },
+          { label: "Advance", value: sumAdvance },
         ],
       };
     }
@@ -340,11 +380,70 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         ...(input.partyId ? { OR: [{ partyId: input.partyId }, { ownerId: input.partyId }] } : {}),
         ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}),
       };
-      const [rows, count, sums] = await Promise.all([
-        tx.brokerSlip.findMany({ where, orderBy: [{ slipDate: "desc" }, { id: "desc" }], skip: cursor, take: PAGE }),
-        tx.brokerSlip.count({ where }),
-        tx.brokerSlip.aggregate({ where, _sum: { pChalanAmt: true, pBalance: true, vChalanAmt: true, vBalance: true } }),
-      ]);
+      const orderBy = [{ slipDate: "desc" as const }, { id: "desc" as const }];
+      type Slip = Awaited<ReturnType<typeof tx.brokerSlip.findMany>>[number];
+      // LIVE positions on both sides — the stored pBalance / vBalance never
+      // move when a receipt or payment voucher settles the slip
+      const settle = async (slips: Slip[]) => {
+        const vPos = await payableSettlement(tx, {
+          ...scope,
+          refType: "BROKER_ENTRY",
+          docs: slips.map((s) => ({
+            id: s.id,
+            balance: round2(toNum(s.vNetAmt) - toNum(s.vAdvance)),
+            ownPaid: toNum(s.vPaidAmount),
+            ownShortage: toNum(s.vShortage),
+            ownRoundOff: toNum(s.vRoundOff),
+          })),
+        });
+        const pPos = await brokerPartySettlement(tx, {
+          firmId: scope.firmId,
+          docs: slips.map((s) => ({
+            id: s.id,
+            pNetAmt: toNum(s.pNetAmt),
+            pAdvance: toNum(s.pAdvance),
+            pPaidAmount: toNum(s.pPaidAmount),
+            pShortage: toNum(s.pShortage),
+            pRoundOff: toNum(s.pRoundOff),
+          })),
+        });
+        const pOut = (s: Slip) => pPos.get(s.id)?.outstanding ?? toNum(s.pBalance);
+        const vOut = (s: Slip) => vPos.get(s.id)?.outstanding ?? toNum(s.vBalance);
+        return { pOut, vOut };
+      };
+      const pFilter = input.pbal === "PENDING" || input.pbal === "RECEIVED" ? input.pbal : null;
+      const vFilter = input.vbal === "PENDING" || input.vbal === "PAID" ? input.vbal : null;
+      let rows: Slip[];
+      let count: number;
+      let sumParty: number;
+      let sumOwner: number;
+      let live: Awaited<ReturnType<typeof settle>>;
+      if (pFilter || vFilter) {
+        // balance filters run on the live position: settle the month, keep
+        // the wanted slips, then page in memory
+        const all = await tx.brokerSlip.findMany({ where, orderBy });
+        live = await settle(all);
+        const kept = all.filter((s) => {
+          if (pFilter && (pFilter === "RECEIVED" ? live.pOut(s) > 0.009 : live.pOut(s) <= 0.009)) return false;
+          if (vFilter && (vFilter === "PAID" ? live.vOut(s) > 0.009 : live.vOut(s) <= 0.009)) return false;
+          return true;
+        });
+        count = kept.length;
+        sumParty = round2(kept.reduce((t, s) => t + toNum(s.pChalanAmt), 0));
+        sumOwner = round2(kept.reduce((t, s) => t + toNum(s.vChalanAmt), 0));
+        rows = kept.slice(cursor, cursor + PAGE);
+      } else {
+        const [page, total, sums] = await Promise.all([
+          tx.brokerSlip.findMany({ where, orderBy, skip: cursor, take: PAGE }),
+          tx.brokerSlip.count({ where }),
+          tx.brokerSlip.aggregate({ where, _sum: { pChalanAmt: true, vChalanAmt: true } }),
+        ]);
+        rows = page;
+        count = total;
+        sumParty = toNum(sums._sum.pChalanAmt ?? 0);
+        sumOwner = toNum(sums._sum.vChalanAmt ?? 0);
+        live = await settle(rows);
+      }
       const maps = await nameMaps(tx, {
         partyIds: rows.flatMap((r) => [r.partyId ?? "", r.ownerId ?? ""]),
         vehicleIds: rows.map((r) => r.vehicleId ?? ""),
@@ -358,8 +457,10 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
           { label: "Vehicle" },
           { label: "Party Amt", numeric: true },
           { label: "Party Bal", numeric: true },
+          { label: "Party Status" },
           { label: "Owner Amt", numeric: true },
           { label: "Owner Bal", numeric: true },
+          { label: "Owner Status" },
         ],
         rows: rows.map((s) => ({
           id: s.id,
@@ -371,16 +472,18 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
             s.ownerId ? maps.party.get(s.ownerId) ?? "" : s.ownerName ?? "",
             s.vehicleId ? maps.vehicle.get(s.vehicleId) ?? "" : "",
             toNum(s.pChalanAmt),
-            toNum(s.pBalance),
+            round2(live.pOut(s)),
+            live.pOut(s) <= 0.009 ? "RECEIVED" : "PENDING",
             toNum(s.vChalanAmt),
-            toNum(s.vBalance),
+            round2(live.vOut(s)),
+            live.vOut(s) <= 0.009 ? "PAID" : "PENDING",
           ],
         })),
         nextCursor: cursor + rows.length < count ? cursor + rows.length : null,
         totals: [
           { label: "Slips", value: count },
-          { label: "Party Amt", value: toNum(sums._sum.pChalanAmt ?? 0) },
-          { label: "Owner Amt", value: toNum(sums._sum.vChalanAmt ?? 0) },
+          { label: "Party Amt", value: sumParty },
+          { label: "Owner Amt", value: sumOwner },
         ],
       };
     }
