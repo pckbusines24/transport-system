@@ -40,6 +40,7 @@ export async function VehicleTrackingTab() {
   const snapshots: TrackingSnapshot[] = rows.map((r) => ({
     vehicleId: r.vehicleId,
     date: r.date.toISOString(),
+    loadingDate: r.loadingDate ? r.loadingDate.toISOString() : null,
     transporterName: r.transporterName ?? "",
     fromLocation: r.fromLocation ?? "",
     toLocation: r.toLocation ?? "",

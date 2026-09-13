@@ -1,8 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Printer } from "lucide-react";
 import { formatDate, parseDdMmYyyy } from "@/lib/utils";
+
+/** local calendar day -> yyyy-mm-dd for the server */
+function toIsoDay(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +29,7 @@ import { updateVehicleTracking } from "@/app/(app)/vehicle/tracking/actions";
 export interface TrackingSnapshot {
   vehicleId: string;
   date: string; // ISO day
+  loadingDate: string | null; // ISO
   transporterName: string;
   fromLocation: string;
   toLocation: string;
@@ -52,6 +61,10 @@ const isIdle = (status: string) => IDLE_STATUSES.includes(status.toUpperCase().t
 
 type LiveRow = {
   vehicleId: string;
+  loadingDateText: string; // dd/mm/yyyy as typed (not saved until Save is pressed)
+  loadingDateSaved: string; // dd/mm/yyyy as last saved — Save shows while they differ
+  /** yyyy-mm-dd sent to the server; "" clears; undefined = not touched yet */
+  loadingDate?: string;
   transporterName: string;
   fromLocation: string;
   toLocation: string;
@@ -74,6 +87,9 @@ export function VehicleTrackingClient({
   const [tab, setTab] = React.useState<"LIVE" | "AVAILABLE">("LIVE");
   const [dateText, setDateText] = React.useState(""); // history date filter
   const [saving, setSaving] = React.useState<Record<string, "saving" | "saved">>({});
+  // mirror for effects that must not re-run on every save-state change
+  const savingRef = React.useRef(saving);
+  savingRef.current = saving;
   const timers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // snapshots grouped per vehicle, ascending by date
@@ -87,13 +103,17 @@ export function VehicleTrackingClient({
     return m;
   }, [snapshots]);
 
+  const router = useRouter();
+
   // live editable state seeded from each vehicle's latest snapshot
-  const [live, setLive] = React.useState<LiveRow[]>(() =>
+  const seedRows = React.useCallback((): LiveRow[] =>
     vehicles.map((v) => {
       const hist = byVehicle.get(v.id);
       const latest = hist?.[hist.length - 1];
       return {
         vehicleId: v.id,
+        loadingDateText: latest?.loadingDate ? formatDate(latest.loadingDate) : "",
+        loadingDateSaved: latest?.loadingDate ? formatDate(latest.loadingDate) : "",
         transporterName: latest?.transporterName ?? "",
         fromLocation: latest?.fromLocation ?? "",
         toLocation: latest?.toLocation ?? "",
@@ -102,8 +122,25 @@ export function VehicleTrackingClient({
         remarks: latest?.remarks ?? "",
         lastUpdated: latest?.updatedAt ?? null,
       };
-    })
-  );
+    }), [vehicles, byVehicle]);
+  const [live, setLive] = React.useState<LiveRow[]>(seedRows);
+
+  // fresh server data (after a save's refresh, or navigating back) must
+  // replace the seeded rows — an unsaved loading-date edit is kept
+  React.useEffect(() => {
+    setLive((prev) => {
+      const prevById = new Map(prev.map((r) => [r.vehicleId, r]));
+      return seedRows().map((row) => {
+        const p = prevById.get(row.vehicleId);
+        if (!p) return row;
+        // a row still being typed/saved keeps its local values — the server
+        // payload may predate the latest keystrokes
+        if (savingRef.current[row.vehicleId] === "saving") return p;
+        const dirty = p.loadingDateText.trim() !== p.loadingDateSaved.trim();
+        return dirty ? { ...row, loadingDateText: p.loadingDateText } : row;
+      });
+    });
+  }, [seedRows]);
 
   const vehicleNo = React.useMemo(
     () => new Map(vehicles.map((v) => [v.id, v.number])),
@@ -122,16 +159,23 @@ export function VehicleTrackingClient({
   }, [snapshots, customStatuses, live.map((r) => r.status).join("|")]);
 
   /** auto-save: debounce per vehicle+field, no save button anywhere */
-  const autoSave = (vehicleId: string, patch: Partial<LiveRow>) => {
+  const autoSave = (vehicleId: string, patch: Partial<LiveRow>, delay = 700) => {
     setLive((prev) => prev.map((r) => (r.vehicleId === vehicleId ? { ...r, ...patch } : r)));
     const key = vehicleId;
     if (timers.current[key]) clearTimeout(timers.current[key]);
     setSaving((s) => ({ ...s, [key]: "saving" }));
     timers.current[key] = setTimeout(async () => {
       const row = (prevRowRef.current.get(vehicleId) ?? {}) as Partial<LiveRow>;
-      const res = await updateVehicleTracking({ vehicleId, ...row, ...patch });
+      const full = { ...row, ...patch };
+      const res = await updateVehicleTracking({
+        vehicleId,
+        ...full,
+        loadingDate: full.loadingDate,
+      });
       if (res.ok) {
         setSaving((s) => ({ ...s, [key]: "saved" }));
+        // pull the saved row back from the server so a later visit shows it
+        router.refresh();
         setLive((prev) =>
           prev.map((r) =>
             r.vehicleId === vehicleId ? { ...r, lastUpdated: new Date().toISOString() } : r
@@ -145,7 +189,24 @@ export function VehicleTrackingClient({
           return rest;
         });
       }
-    }, 700);
+    }, delay);
+  };
+
+  // Loading Date is deliberate: typing only edits the cell; Save writes it
+  const saveLoadingDate = (vehicleId: string) => {
+    const row = prevRowRef.current.get(vehicleId);
+    if (!row) return;
+    const text = row.loadingDateText.trim();
+    const d = text ? parseDdMmYyyy(text) : null;
+    if (text && !d) {
+      toast({ variant: "destructive", title: "Enter a valid loading date (dd/mm/yyyy)" });
+      return;
+    }
+    autoSave(
+      vehicleId,
+      { loadingDate: d ? toIsoDay(d) : "", loadingDateSaved: d ? formatDate(d) : "" },
+      0
+    );
   };
 
   // keep latest full row values available for the debounced save
@@ -270,6 +331,7 @@ export function VehicleTrackingClient({
                   asOfRows
                     ? asOfRows.map((r) => ({
                         vehicle: r.vehicle,
+                        loadingDate: r.loadingDate ? formatDate(r.loadingDate) : "",
                         transporterName: r.transporterName,
                         fromLocation: r.fromLocation,
                         toLocation: r.toLocation,
@@ -280,6 +342,7 @@ export function VehicleTrackingClient({
                       }))
                     : live.map((r) => ({
                         vehicle: vehicleNo.get(r.vehicleId) ?? "",
+                        loadingDate: r.loadingDateText,
                         transporterName: r.transporterName,
                         fromLocation: r.fromLocation,
                         toLocation: r.toLocation,
@@ -293,6 +356,7 @@ export function VehicleTrackingClient({
                 sheetName="Vehicle Tracking"
                 columns={[
                   { header: "Vehicle No", key: "vehicle" },
+                  { header: "Loading Date", key: "loadingDate" },
                   { header: "Transporter Name", key: "transporterName" },
                   { header: "From", key: "fromLocation" },
                   { header: "To", key: "toLocation" },
@@ -311,7 +375,7 @@ export function VehicleTrackingClient({
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr>
-                    {["Vehicle No", "Transporter", "From", "To", "Current Location", "Status", "As On"].map(
+                    {["Vehicle No", "Loading Date", "Transporter", "From", "To", "Current Location", "Status", "Remarks", "As On"].map(
                       (h) => (
                         <th key={h} className={`${cell} bg-muted text-left font-semibold`}>
                           {h}
@@ -324,17 +388,19 @@ export function VehicleTrackingClient({
                   {asOfRows.map((r) => (
                     <tr key={r.vehicleId}>
                       <td className={cell}>{r.vehicle}</td>
+                      <td className={cell}>{r.loadingDate ? formatDate(r.loadingDate) : ""}</td>
                       <td className={cell}>{r.transporterName}</td>
                       <td className={cell}>{r.fromLocation}</td>
                       <td className={cell}>{r.toLocation}</td>
                       <td className={cell}>{r.currentLocation}</td>
                       <td className={cell}>{r.status}</td>
+                      <td className={cell}>{r.remarks}</td>
                       <td className={cell}>{formatDate(r.date)}</td>
                     </tr>
                   ))}
                   {!asOfRows.length && (
                     <tr>
-                      <td colSpan={7} className={`${cell} text-center text-muted-foreground`}>
+                      <td colSpan={9} className={`${cell} text-center text-muted-foreground`}>
                         No tracking records existed on {dateText}.
                       </td>
                     </tr>
@@ -350,6 +416,7 @@ export function VehicleTrackingClient({
                   <tr>
                     {[
                       "Vehicle No",
+                      "Loading Date",
                       "Transporter Name",
                       "From",
                       "To",
@@ -374,6 +441,39 @@ export function VehicleTrackingClient({
                             IDLE
                           </Badge>
                         )}
+                      </td>
+                      <td className="border p-0.5">
+                        <div className="flex items-center gap-1">
+                          <DateInput
+                            className="h-7 w-32 border-0 text-xs shadow-none focus-visible:ring-1"
+                            value={r.loadingDateText}
+                            // no autosave here: the date is written only by the Save button
+                            onChange={(t) =>
+                              setLive((prev) =>
+                                prev.map((x) =>
+                                  x.vehicleId === r.vehicleId ? { ...x, loadingDateText: t } : x
+                                )
+                              )
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                saveLoadingDate(r.vehicleId);
+                              }
+                            }}
+                          />
+                          {r.loadingDateText.trim() !== r.loadingDateSaved.trim() && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => saveLoadingDate(r.vehicleId)}
+                              disabled={saving[r.vehicleId] === "saving"}
+                            >
+                              Save
+                            </Button>
+                          )}
+                        </div>
                       </td>
                       {(
                         [

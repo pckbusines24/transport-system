@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
@@ -16,6 +17,8 @@ const TRACKING_RETENTION_DAYS = 120;
 
 const patchSchema = z.object({
   vehicleId: z.string().min(1),
+  /** ISO yyyy-mm-dd, "" to clear */
+  loadingDate: z.string().nullish(),
   transporterName: z.string().nullish(),
   fromLocation: z.string().nullish(),
   toLocation: z.string().nullish(),
@@ -47,6 +50,12 @@ export async function updateVehicleTracking(
         orderBy: { date: "desc" },
       });
       const merged = {
+        loadingDate:
+          d.loadingDate !== undefined
+            ? d.loadingDate
+              ? new Date(d.loadingDate + "T00:00:00")
+              : null
+            : latest?.loadingDate ?? null,
         transporterName:
           d.transporterName !== undefined ? d.transporterName || null : latest?.transporterName ?? null,
         fromLocation:
@@ -84,6 +93,9 @@ export async function updateVehicleTracking(
         where: { firmId: session.firmId, date: { lt: cutoff } },
       });
 
+      // the tab is server-rendered: without this, navigating back within the
+      // router-cache window showed the pre-save values
+      revalidatePath("/vehicle/management");
       return { ok: true as const, date: day.toISOString() };
     });
   } catch (e) {

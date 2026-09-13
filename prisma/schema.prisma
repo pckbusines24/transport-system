@@ -2760,6 +2760,7 @@ model VehicleTracking {
   firmId          String
   vehicleId       String
   date            DateTime // normalized to the day of the update
+  loadingDate     DateTime? // when the vehicle was loaded for its current run
   transporterName String?
   fromLocation    String?
   toLocation      String?

@@ -61,6 +61,7 @@ export default async function VehicleTrackingPrintPage({
     return {
       vehicleId: v.id,
       vehicle: v.number,
+      loadingDate: snap?.loadingDate ?? null,
       transporterName: snap?.transporterName ?? "",
       fromLocation: snap?.fromLocation ?? "",
       toLocation: snap?.toLocation ?? "",
@@ -180,6 +181,7 @@ export default async function VehicleTrackingPrintPage({
                 {[
                   "S.No.",
                   "Vehicle No",
+                  "Loading Date",
                   "Transporter Name",
                   "From",
                   "To",
@@ -199,6 +201,7 @@ export default async function VehicleTrackingPrintPage({
                 <tr key={r.vehicleId}>
                   <td className={td}>{i + 1}</td>
                   <td className={`${td} font-semibold`}>{r.vehicle}</td>
+                  <td className={td}>{r.loadingDate ? formatDate(r.loadingDate) : ""}</td>
                   <td className={td}>{r.transporterName}</td>
                   <td className={td}>{r.fromLocation}</td>
                   <td className={td}>{r.toLocation}</td>
@@ -211,7 +214,7 @@ export default async function VehicleTrackingPrintPage({
             </tbody>
             <tfoot>
               <tr className="font-semibold">
-                <td colSpan={9} className={td}>
+                <td colSpan={10} className={td}>
                   Total Vehicles: {liveRows.length}
                 </td>
               </tr>
