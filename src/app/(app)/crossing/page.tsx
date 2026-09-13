@@ -6,6 +6,7 @@ import { formatDate, toNum } from "@/lib/utils";
 import { DocModule } from "@/components/data/doc-module";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { saveCrossing, deleteCrossing } from "./actions";
+import { partyMeta } from "@/lib/party-option";
 
 const PAGE_SIZE = 100;
 
@@ -49,8 +50,8 @@ export default async function CrossingPage({
           where,
           _sum: { freight: true, crossingAmt: true, dcAmt: true, balance: true },
         }),
-        tx.party.findMany({ where: { isActive: true, ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-        tx.party.findMany({ where: { isActive: true, ledgerGroup: "CONSIGNEE_CONSIGNOR" }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+        tx.party.findMany({ where: { isActive: true, ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] } }, orderBy: { name: "asc" }, select: { id: true, name: true, transportName: true, alias: true } }),
+        tx.party.findMany({ where: { isActive: true, ledgerGroup: "CONSIGNEE_CONSIGNOR" }, orderBy: { name: "asc" }, select: { id: true, name: true, transportName: true, alias: true } }),
         tx.vehicle.findMany({ where: { isActive: true }, orderBy: { number: "asc" }, select: { id: true, number: true } }),
         tx.city.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       ]);
@@ -120,7 +121,7 @@ export default async function CrossingPage({
           type: "combobox",
           key: "transporter",
           label: "Transporter",
-          options: transporters.map((p) => ({ value: p.id, label: p.name })),
+          options: transporters.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
         },
       ]}
       fields={[
@@ -130,13 +131,13 @@ export default async function CrossingPage({
           name: "transporterId",
           label: "Transporter",
           type: "combobox",
-          options: transporters.map((p) => ({ value: p.id, label: p.name })),
+          options: transporters.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
         },
         {
           name: "consigneeId",
           label: "Consignee",
           type: "combobox",
-          options: consignees.map((p) => ({ value: p.id, label: p.name })),
+          options: consignees.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
         },
         {
           name: "vehicleId",

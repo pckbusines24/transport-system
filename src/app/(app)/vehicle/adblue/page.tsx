@@ -6,6 +6,7 @@ import { toNum } from "@/lib/utils";
 import { AdblueClient, type AdblueRow } from "@/components/vehicle/adblue-client";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { settledByRef } from "@/lib/settlement";
+import { partyMeta } from "@/lib/party-option";
 
 const PAGE_SIZE = 100;
 
@@ -78,7 +79,7 @@ export default async function AdbluePage({
       tx.party.findMany({
         where: { isActive: true, ledgerGroup: { notIn: ["BANK", "CASH", "CARD"] } },
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, transportName: true, alias: true },
       }),
     ]);
     // what payment vouchers have already settled against these bills
@@ -160,7 +161,7 @@ export default async function AdbluePage({
         }}
         vehicleOptions={vehicles.filter((v) => v.isActive).map((v) => ({ value: v.id, label: v.number }))}
         bankOptions={banks.map((b) => ({ value: b.id, label: b.name, meta: b.ledgerGroup }))}
-        partyOptions={suppliers.map((p) => ({ value: p.id, label: p.name }))}
+        partyOptions={suppliers.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }))}
         canDelete={session.role === "ADMIN" || session.role === "OWNER"}
       />
       <PaginationBar

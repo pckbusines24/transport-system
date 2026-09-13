@@ -7,6 +7,7 @@ import { formatDate, formatMoney, toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 import { settledByRef } from "@/lib/settlement";
 import { brokerBalanceStatus } from "@/lib/broker-status";
+import { firmImageUrl } from "@/lib/branding";
 import type { BrokerAdvance } from "@/components/broker/broker-calc";
 import { PrintToolbar } from "@/app/print/chalan/[id]/print-toolbar";
 
@@ -21,7 +22,10 @@ export default async function BrokerSlipPrintPage({
 }) {
   const session = requireSession();
   await authorize(session, "broker", "print");
-  const copies = Math.min(3, Math.max(1, parseInt(searchParams.copies ?? "1", 10) || 1));
+  const copies = Math.min(
+    3,
+    Math.max(1, parseInt(searchParams.copies ?? "1", 10) || 1),
+  );
 
   const data = await withTenant(session.tenantId, async (tx) => {
     // firm scoped: another firm's slip must never print under this session
@@ -29,27 +33,29 @@ export default async function BrokerSlipPrintPage({
       where: { id: params.id, firmId: session.firmId, deletedAt: null },
     });
     if (!slip) return null;
-    const [firm, parties, cities, vehicles, vAlloc, pAlloc] = await Promise.all([
-      tx.firm.findUnique({ where: { id: slip.firmId } }),
-      tx.party.findMany(),
-      tx.city.findMany(),
-      tx.vehicle.findMany(),
-      // owner-side settlements made through Payment Vouchers — the stored
-      // vPaidAmount/vPaymentStatus never see them, but the printed slip must
-      settledByRef(tx, {
-        firmId: slip.firmId,
-        fyId: slip.fyId,
-        refTypes: ["BROKER_ENTRY"],
-        refIds: [slip.id],
-      }),
-      // party-side settlements made through Receipt Vouchers
-      settledByRef(tx, {
-        firmId: slip.firmId,
-        fyId: slip.fyId,
-        refTypes: ["BROKER_SLIP_PARTY"],
-        refIds: [slip.id],
-      }),
-    ]);
+    const [firm, parties, cities, vehicles, vAlloc, pAlloc] = await Promise.all(
+      [
+        tx.firm.findUnique({ where: { id: slip.firmId } }),
+        tx.party.findMany(),
+        tx.city.findMany(),
+        tx.vehicle.findMany(),
+        // owner-side settlements made through Payment Vouchers — the stored
+        // vPaidAmount/vPaymentStatus never see them, but the printed slip must
+        settledByRef(tx, {
+          firmId: slip.firmId,
+          fyId: slip.fyId,
+          refTypes: ["BROKER_ENTRY"],
+          refIds: [slip.id],
+        }),
+        // party-side settlements made through Receipt Vouchers
+        settledByRef(tx, {
+          firmId: slip.firmId,
+          fyId: slip.fyId,
+          refTypes: ["BROKER_SLIP_PARTY"],
+          refIds: [slip.id],
+        }),
+      ],
+    );
     return {
       slip,
       firm,
@@ -63,12 +69,18 @@ export default async function BrokerSlipPrintPage({
 
   if (!data) notFound();
   const { slip, firm, parties, cities, vehicles, vSettled, pSettled } = data;
-  const partyName = (id: string | null) => (id ? parties.find((p) => p.id === id)?.name ?? "" : "");
-  const cityName = (id: string | null) => (id ? cities.find((c) => c.id === id)?.name ?? "" : "");
+  // the logo uploaded in Firm Settings, top-left of the header like the chalan print
+  const logoUrl = firmImageUrl(firm, "logo");
+  const partyName = (id: string | null) =>
+    id ? (parties.find((p) => p.id === id)?.name ?? "") : "";
+  const cityName = (id: string | null) =>
+    id ? (cities.find((c) => c.id === id)?.name ?? "") : "";
   const vehicleNo = (id: string | null) =>
-    id ? vehicles.find((v) => v.id === id)?.number ?? "" : "";
+    id ? (vehicles.find((v) => v.id === id)?.number ?? "") : "";
 
-  const advances = ((slip.advances as unknown as BrokerAdvance[] | null) ?? []).map((a) => ({
+  const advances = (
+    (slip.advances as unknown as BrokerAdvance[] | null) ?? []
+  ).map((a) => ({
     ...a,
     amount: Number(a.amount ?? 0),
   }));
@@ -83,7 +95,9 @@ export default async function BrokerSlipPrintPage({
   const pStatus = brokerBalanceStatus({
     side: "P",
     paymentStatus:
-      slip.pPaymentStatus === "RECEIVED" || pSettled > 0.009 ? "RECEIVED" : slip.pPaymentStatus,
+      slip.pPaymentStatus === "RECEIVED" || pSettled > 0.009
+        ? "RECEIVED"
+        : slip.pPaymentStatus,
     paidAmount: pLivePaid,
     roundOff: toNum(slip.pRoundOff),
     shortage: toNum(slip.pShortage),
@@ -105,8 +119,12 @@ export default async function BrokerSlipPrintPage({
     balance: vLiveBalance,
   });
 
-  const brokerParty = parties.find((p) => p.id === (slip.transporterId ?? slip.partyId));
-  const ownerParty = slip.ownerId ? parties.find((p) => p.id === slip.ownerId) : undefined;
+  const brokerParty = parties.find(
+    (p) => p.id === (slip.transporterId ?? slip.partyId),
+  );
+  const ownerParty = slip.ownerId
+    ? parties.find((p) => p.id === slip.ownerId)
+    : undefined;
   const unit = slip.unit ?? "";
   /** the basis the rate is quoted against decides which quantity multiplies it */
   const basisLabel: Record<string, string> = {
@@ -143,7 +161,8 @@ export default async function BrokerSlipPrintPage({
           <b>Vehicle:</b> {vehicleNo(slip.vehicleId)}
         </div>
         <div>
-          <b>Route:</b> {cityName(slip.loadStationId)} → {cityName(slip.destCityId)}
+          <b>Route:</b> {cityName(slip.loadStationId)} →{" "}
+          {cityName(slip.destCityId)}
         </div>
         <div>
           <b>LR No:</b> {slip.lrNo ?? ""}
@@ -156,15 +175,19 @@ export default async function BrokerSlipPrintPage({
           <b>Qty:</b> {toNum(slip.qty)} {unit}
         </div>
         <div>
-          <b>Actual / Charge Wt:</b> {toNum(slip.actualWt)} / {toNum(slip.chargeWt)}
+          <b>Actual / Charge Wt:</b> {toNum(slip.actualWt)} /{" "}
+          {toNum(slip.chargeWt)}
         </div>
         <div>
           <b>{isP ? "Broker Rate" : "Owner Rate"}:</b>{" "}
-          {rate > 0 ? `${formatMoney(rate)} / ${unit || basisLabel[basis] || ""}` : "—"}
+          {rate > 0
+            ? `${formatMoney(rate)} / ${unit || basisLabel[basis] || ""}`
+            : "—"}
           {basis === "FIXED" ? " (fixed)" : ""}
         </div>
         <div>
-          <b>{isP ? "Broker Freight" : "Owner Freight"}:</b> {formatMoney(freight)}
+          <b>{isP ? "Broker Freight" : "Owner Freight"}:</b>{" "}
+          {formatMoney(freight)}
           {rate > 0 && baseQty > 0 && (
             <span className="ml-1 text-[10px]">
               ({baseQty} {unit} × {formatMoney(rate)})
@@ -221,24 +244,37 @@ export default async function BrokerSlipPrintPage({
 
     return (
       <div className="mx-auto max-w-[190mm] break-after-page border border-black p-4 text-sm last:break-after-auto">
-        <div className="border-b border-black pb-2 text-center">
-          <div className="text-xl font-bold uppercase">{firm?.name}</div>
-          <div className="text-xs">
-            {[firm?.address1, firm?.address2].filter(Boolean).join(", ")}
+        <div className="flex items-center gap-3 border-b border-black pb-2">
+          {logoUrl && (
+            <div className="flex w-[110px] shrink-0 items-center justify-center">
+              <img
+                src={logoUrl}
+                alt=""
+                className="max-h-[64px] max-w-[110px] object-contain"
+              />
+            </div>
+          )}
+          <div className="min-w-0 flex-1 text-center">
+            <div className="text-xl font-bold uppercase">{firm?.name}</div>
+            <div className="text-xs">
+              {[firm?.address1, firm?.address2].filter(Boolean).join(", ")}
+            </div>
+            <div className="text-xs">
+              {[
+                firm?.mobile && `Mob: ${firm.mobile}`,
+                firm?.gstin && `GSTIN: ${firm.gstin}`,
+                firm?.pan && `PAN: ${firm.pan}`,
+              ]
+                .filter(Boolean)
+                .join(" | ")}
+            </div>
+            <div className="mt-1 text-sm font-semibold">
+              BROKER SLIP — {isP ? "BROKER (RECEIVABLE)" : "OWNER (PAYABLE)"}
+              {copies > 1 ? ` (Copy ${copyNo})` : ""}
+            </div>
           </div>
-          <div className="text-xs">
-            {[
-              firm?.mobile && `Mob: ${firm.mobile}`,
-              firm?.gstin && `GSTIN: ${firm.gstin}`,
-              firm?.pan && `PAN: ${firm.pan}`,
-            ]
-              .filter(Boolean)
-              .join(" | ")}
-          </div>
-          <div className="mt-1 text-sm font-semibold">
-            BROKER SLIP — {isP ? "BROKER (RECEIVABLE)" : "OWNER (PAYABLE)"}
-            {copies > 1 ? ` (Copy ${copyNo})` : ""}
-          </div>
+          {/* mirrors the logo column so the firm details sit dead centre */}
+          {logoUrl && <div className="w-[110px] shrink-0" />}
         </div>
 
         <SlipDetails side={side} />
@@ -247,10 +283,12 @@ export default async function BrokerSlipPrintPage({
           {/* both sides carry the same three lines: who, their transport
               name, their PAN — the owner side used to print the name alone */}
           <div>
-            <b>{isP ? "Broker Name" : "Owner Name"}:</b> {isP ? brokerName : ownerName}
+            <b>{isP ? "Broker Name" : "Owner Name"}:</b>{" "}
+            {isP ? brokerName : ownerName}
           </div>
           <div>
-            <b>Transporter:</b> {(isP ? brokerParty : ownerParty)?.transportName ?? ""}
+            <b>Transporter:</b>{" "}
+            {(isP ? brokerParty : ownerParty)?.transportName ?? ""}
           </div>
           <div>
             <b>PAN:</b> {(isP ? brokerParty : ownerParty)?.pan ?? ""}
@@ -263,7 +301,11 @@ export default async function BrokerSlipPrintPage({
               {rows.map(([label, v]) => (
                 <tr
                   key={label}
-                  className={label.startsWith("Net") || label.startsWith("Chalan") ? "font-semibold" : undefined}
+                  className={
+                    label.startsWith("Net") || label.startsWith("Chalan")
+                      ? "font-semibold"
+                      : undefined
+                  }
                 >
                   <td className="border border-black px-1 py-0.5">{label}</td>
                   <td className="border border-black px-1 py-0.5 text-right">
@@ -279,7 +321,10 @@ export default async function BrokerSlipPrintPage({
               <thead>
                 <tr>
                   {["Advance", "Date", "Amount"].map((h) => (
-                    <th key={h} className="border border-black px-1 py-0.5 text-left">
+                    <th
+                      key={h}
+                      className="border border-black px-1 py-0.5 text-left"
+                    >
                       {h}
                     </th>
                   ))}
@@ -288,7 +333,10 @@ export default async function BrokerSlipPrintPage({
               <tbody>
                 {sideAdvances.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="border border-black px-1 py-1 text-center">
+                    <td
+                      colSpan={3}
+                      className="border border-black px-1 py-1 text-center"
+                    >
                       No advances
                     </td>
                   </tr>
@@ -296,7 +344,8 @@ export default async function BrokerSlipPrintPage({
                 {sideAdvances.map((a, i) => (
                   <tr key={i}>
                     <td className="border border-black px-1 py-0.5">
-                      {[a.bankName, a.remarks].filter(Boolean).join(" — ") || a.type}
+                      {[a.bankName, a.remarks].filter(Boolean).join(" — ") ||
+                        a.type}
                     </td>
                     <td className="border border-black px-1 py-0.5">
                       {a.date ? formatDate(a.date) : ""}
@@ -351,7 +400,9 @@ export default async function BrokerSlipPrintPage({
                       {isP ? "Net Receivable" : "Net Payable"}
                     </td>
                     <td className="border border-black px-1 py-0.5 text-right">
-                      {formatMoney(Math.round((balance - shortage - roundOff) * 100) / 100)}
+                      {formatMoney(
+                        Math.round((balance - shortage - roundOff) * 100) / 100,
+                      )}
                     </td>
                   </tr>
                 )}
@@ -378,7 +429,7 @@ export default async function BrokerSlipPrintPage({
         </div>
 
         <div className="mt-8 flex justify-between text-xs">
-          <div>{isP ? "Broker Signature" : "Owner Signature"}</div>
+          <div>Driver / Owner Signature</div>
           <div>For {firm?.name}</div>
         </div>
       </div>

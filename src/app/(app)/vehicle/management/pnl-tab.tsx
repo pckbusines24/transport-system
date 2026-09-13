@@ -3,6 +3,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { tripGrandTotals } from "@/lib/trip-docs";
+import { partyMeta } from "@/lib/party-option";
 import {
   VehiclePnlClient,
   type VehiclePnlRow,
@@ -137,7 +138,7 @@ export async function VehiclePnlTab({
     const docTotals = await tripGrandTotals(tx, allTrips.map((t) => t.id));
     // party names for the EMI drill-down, withdrawal list & entry form
     const parties = await tx.party.findMany({
-      select: { id: true, name: true, ledgerGroup: true, isActive: true },
+      select: { id: true, name: true, ledgerGroup: true, isActive: true, transportName: true, alias: true },
     });
     return {
       parties,
@@ -559,10 +560,10 @@ export async function VehiclePnlTab({
         driverOptions={drivers.map((d) => ({ value: d.id, label: d.name }))}
         malikOptions={parties
           .filter((p) => p.isActive && !moneyGroups.includes(p.ledgerGroup))
-          .map((p) => ({ value: p.id, label: p.name }))}
+          .map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }))}
         payOptions={parties
           .filter((p) => p.isActive && moneyGroups.includes(p.ledgerGroup))
-          .map((p) => ({ value: p.id, label: p.name }))}
+          .map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }))}
       />
     </div>
   );

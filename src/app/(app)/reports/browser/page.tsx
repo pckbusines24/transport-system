@@ -4,6 +4,7 @@ import { withTenant } from "@/lib/db";
 import { COMMON_HEADS } from "@/lib/account-heads";
 import { BrowserClient, type FyChips, type MonthChip } from "./browser-client";
 import type { BrowseSrc } from "./actions";
+import { partyMeta } from "@/lib/party-option";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,7 @@ export default async function ReportsBrowserPage({
         tx.party.findMany({
           where: { isActive: true, ledgerGroup: { notIn: ["BANK", "CASH", "CARD"] } },
           orderBy: { name: "asc" },
-          select: { id: true, name: true },
+          select: { id: true, name: true, transportName: true, alias: true },
         });
       const activeVehicles = () =>
         tx.vehicle.findMany({ where: { isActive: true }, orderBy: { number: "asc" }, select: { id: true, number: true } });
@@ -81,7 +82,7 @@ export default async function ReportsBrowserPage({
         partyLabel = "Account (for running balance)...";
       } else if (src === "LEDGER") {
         const parties = await activeParties();
-        partyOptions = parties.map((p) => ({ value: p.id, label: p.name }));
+        partyOptions = parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }));
         partyLabel = "Select ledger *";
       } else if (src === "COMMON") {
         headOptions = COMMON_HEADS.filter((h) => h.name !== "TDS Payable" && h.name !== "TDS Receivable").map((h) => h.name);
@@ -89,7 +90,7 @@ export default async function ReportsBrowserPage({
         // no pickers — the head IS the report
       } else {
         const [parties, vehicles] = await Promise.all([activeParties(), activeVehicles()]);
-        partyOptions = parties.map((p) => ({ value: p.id, label: p.name }));
+        partyOptions = parties.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) }));
         vehicleOptions = vehicles.map((v) => ({ value: v.id, label: v.number }));
         if (src === "CHALAN_MARKET") partyLabel = "Broker...";
         if (src === "BILLING" || src === "OUT_RECV") partyLabel = "Bill party...";

@@ -6,6 +6,7 @@ import { formatDate, toNum } from "@/lib/utils";
 import { DocModule } from "@/components/data/doc-module";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { saveOutwardCrossing, deleteOutwardCrossing } from "./actions";
+import { partyMeta } from "@/lib/party-option";
 
 const PAGE_SIZE = 100;
 
@@ -47,7 +48,7 @@ export default async function OutwardCrossingPage({
         where,
         _sum: { totFreight: true, crossingFreight: true, grandTotal: true },
       }),
-      tx.party.findMany({ where: { isActive: true, ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      tx.party.findMany({ where: { isActive: true, ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] } }, orderBy: { name: "asc" }, select: { id: true, name: true, transportName: true, alias: true } }),
       tx.vehicle.findMany({ where: { isActive: true }, orderBy: { number: "asc" }, select: { id: true, number: true } }),
       tx.city.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     ]);
@@ -110,7 +111,7 @@ export default async function OutwardCrossingPage({
           type: "combobox",
           key: "transporter",
           label: "Transporter",
-          options: transporters.map((p) => ({ value: p.id, label: p.name })),
+          options: transporters.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
         },
       ]}
       fields={[
@@ -122,7 +123,7 @@ export default async function OutwardCrossingPage({
           name: "transporterId",
           label: "Transporter",
           type: "combobox",
-          options: transporters.map((p) => ({ value: p.id, label: p.name })),
+          options: transporters.map((p) => ({ value: p.id, label: p.name, meta: partyMeta(p) })),
         },
         {
           name: "vehicleId",
