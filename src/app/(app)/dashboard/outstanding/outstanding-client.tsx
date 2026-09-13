@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { IsoDateInput } from "@/components/data/date-input";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ExportButton } from "@/components/data/export-button";
+import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import type { OutSide, OutstandingData } from "../outstanding-actions";
 
 export function OutstandingClient({
@@ -29,7 +30,9 @@ export function OutstandingClient({
   /** custom "as on" date (yyyy-mm-dd) — beats the FY pick */
   asOf?: string | null;
 }) {
-  const [q, setQ] = React.useState("");
+  // party filter: one combobox that finds a party by its own name OR its
+  // transport name (owner ↔ transport link, like the chalan entry pickers)
+  const [partyKey, setPartyKey] = React.useState<string | null>(null);
   const [minAmt, setMinAmt] = React.useState("");
   const [only90, setOnly90] = React.useState(false);
   const [open, setOpen] = React.useState<Set<string>>(new Set());
@@ -37,8 +40,21 @@ export function OutstandingClient({
   const recv = side === "RECV";
   const title = recv ? "Receivables — Party-wise Ageing" : "Payables — Party-wise Ageing";
 
+  const rowKey = (r: OutstandingData["rows"][number]) => r.partyId ?? `name:${r.party}`;
+  const partyOptions: MasterOption[] = React.useMemo(
+    () =>
+      data.rows.map((r) => ({
+        value: rowKey(r),
+        label: r.party,
+        // meta is searched too, so typing the transport name finds the owner
+        meta: r.transportName ?? undefined,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.rows]
+  );
+
   const rows = data.rows.filter((r) => {
-    if (q && !r.party.toLowerCase().includes(q.toLowerCase())) return false;
+    if (partyKey && rowKey(r) !== partyKey) return false;
     if (minAmt && r.total < Number(minAmt)) return false;
     if (only90 && r.b90 <= 0.009) return false;
     return true;
@@ -163,11 +179,12 @@ export function OutstandingClient({
 
       {/* filters */}
       <div className="flex flex-wrap items-center gap-2 rounded-md border p-2">
-        <Input
-          className="h-8 w-[200px] text-xs"
-          placeholder="Search party..."
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+        <MasterCombobox
+          className="w-[260px]"
+          options={partyOptions}
+          value={partyKey}
+          onChange={setPartyKey}
+          placeholder="Search party / transport name..."
         />
         <Input
           className="h-8 w-[140px] text-xs"
@@ -215,6 +232,9 @@ export function OutstandingClient({
                         )}
                         {r.party}
                         <span className="text-muted-foreground">({r.docs.length})</span>
+                        {r.transportName && r.transportName !== r.party && (
+                          <span className="ml-1 font-normal text-muted-foreground">· {r.transportName}</span>
+                        )}
                       </span>
                     </td>
                     <td className={num}>{r.b0 > 0 ? formatMoney(r.b0) : "—"}</td>

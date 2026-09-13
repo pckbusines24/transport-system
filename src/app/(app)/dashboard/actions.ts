@@ -2,7 +2,7 @@
 
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayRange } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 
 /**
@@ -32,8 +32,9 @@ export async function getFinanceCards(input: {
     return { ok: false, error: "From date is after To date" };
   }
   try {
-    const gte = new Date(`${input.from}T00:00:00`);
-    const lt = new Date(new Date(`${input.to}T00:00:00`).getTime() + 24 * 3600 * 1000);
+    // IST-anchored: a chalan dated 1 August is stored at IST midnight and
+    // must count in August, not in July (see istDayRange)
+    const { gte, lt } = istDayRange(input.from, input.to);
     // date-scoped, not FY-scoped: an old-year date range must pull that
     // year's figures (FY continuity — the date filter is the boss here)
     const scope = { firmId: session.firmId };

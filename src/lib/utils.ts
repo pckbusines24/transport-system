@@ -20,6 +20,18 @@ export function formatDate(d: Date | string | null | undefined): string {
   return `${dd}/${mm}/${t.getUTCFullYear()}`;
 }
 
+/**
+ * Half-open [gte, lt) range for a yyyy-mm-dd day span, anchored to IST like
+ * formatDate. Documents are dated at IST midnight (18:30Z the day before),
+ * so a server-local (UTC in production) midnight boundary pushed a 1 August
+ * chalan into July. Works for 00:00Z-stored rows too — both fall inside.
+ */
+export function istDayRange(fromIso: string, toIso: string): { gte: Date; lt: Date } {
+  const gte = new Date(`${fromIso}T00:00:00+05:30`);
+  const lt = new Date(new Date(`${toIso}T00:00:00+05:30`).getTime() + 24 * 3600 * 1000);
+  return { gte, lt };
+}
+
 export function parseDdMmYyyy(s: string): Date | null {
   const m = s.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (!m) return null;

@@ -161,13 +161,30 @@ export default async function BrokerRegisterPage({
     qty: Number(s.qty),
     actualWt: Number(s.actualWt),
     pFreight: Number(s.pFreight),
-    // recomputed, never the stored column
+    // gross balance (net − advance), recomputed, never the stored column
     pBalance: round2(Number(s.pNetAmt) - Number(s.pAdvance)),
+    // LIVE broker-side outstanding: what is still to be received once the
+    // slip's own receipt, receipt vouchers, shortage and round-off are in —
+    // reads 0.00 once fully received, like the chalan register's balance
+    pOutstanding:
+      pPos.get(s.id)?.outstanding ??
+      Math.max(
+        0,
+        round2(
+          Number(s.pNetAmt) -
+            Number(s.pAdvance) -
+            Number(s.pPaidAmount) -
+            Number(s.pShortage) -
+            Number(s.pRoundOff)
+        )
+      ),
     vFreight: Number(s.vFreight),
     vNetAmt: Number(s.vNetAmt),
     vAdvance: Number(s.vAdvance),
+    // gross balance (net − advance); the live figure is vOutstanding
+    vBalance: round2(Number(s.vNetAmt) - Number(s.vAdvance)),
     // live outstanding (own payments + voucher allocations), never stored
-    vBalance: vPos.get(s.id)?.outstanding ?? Number(s.vBalance),
+    vOutstanding: vPos.get(s.id)?.outstanding ?? Number(s.vBalance),
     pAdvance: Number(s.pAdvance),
     pNetAmt: Number(s.pNetAmt),
     podAttached: s.podAttached,
@@ -200,7 +217,7 @@ export default async function BrokerRegisterPage({
   // balance filters run on the LIVE positions computed above
   const filtered = allRows.filter((r) => {
     if (searchParams.vstatus) {
-      const paid = r.vBalance <= 0.009;
+      const paid = r.vOutstanding <= 0.009;
       if (searchParams.vstatus === "paid" ? !paid : paid) return false;
     }
     if (searchParams.pstatus) {

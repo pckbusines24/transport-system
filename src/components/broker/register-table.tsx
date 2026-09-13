@@ -40,10 +40,14 @@ export interface BrokerRegisterRow {
   actualWt: number;
   pFreight: number;
   pBalance: number;
+  /** live: still to be received on the broker side (0 once fully received) */
+  pOutstanding: number;
   vFreight: number;
   vNetAmt: number;
   vAdvance: number;
   vBalance: number;
+  /** live: still to be paid on the owner side (0 once fully paid) */
+  vOutstanding: number;
   pAdvance: number;
   pNetAmt: number;
   /** informational only — POD handed over / shared */
@@ -75,10 +79,6 @@ function StatusLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Balance still open once cash, shortage and round-off are accounted for. */
-const openBalance = (balance: number, paid: number, shortage: number, roundOff: number) =>
-  Math.max(0, Math.round((balance - paid - shortage - roundOff) * 100) / 100);
-
 const statusOf = (r: BrokerRegisterRow, side: "P" | "V") =>
   brokerBalanceStatus({
     side,
@@ -92,7 +92,14 @@ const statusOf = (r: BrokerRegisterRow, side: "P" | "V") =>
 const money = (
   key: keyof Pick<
     BrokerRegisterRow,
-    "pFreight" | "pAdvance" | "pBalance" | "vFreight" | "vAdvance" | "vBalance"
+    | "pFreight"
+    | "pAdvance"
+    | "pBalance"
+    | "pOutstanding"
+    | "vFreight"
+    | "vAdvance"
+    | "vBalance"
+    | "vOutstanding"
   >,
   header: string
 ): ColumnDef<BrokerRegisterRow> => ({
@@ -215,7 +222,8 @@ export function BrokerRegisterTable({
     },
     money("pFreight", "Broker Freight"),
     money("pAdvance", "Broker Advance"),
-    money("pBalance", "Broker Balance"),
+    // the LIVE figure, like the chalan register: 0.00 once fully received
+    money("pOutstanding", "Broker Balance"),
     {
       accessorKey: "pPaymentStatus",
       header: "Broker Balance Status",
@@ -245,7 +253,7 @@ export function BrokerRegisterTable({
     },
     money("vFreight", "Owner Freight"),
     money("vAdvance", "Owner Advance"),
-    money("vBalance", "Owner Balance"),
+    money("vOutstanding", "Owner Balance"),
     {
       accessorKey: "vPaymentStatus",
       header: "Owner Balance Status",
@@ -407,11 +415,11 @@ export function BrokerRegisterTable({
             { header: "Qty", key: "qty", numeric: true },
             { header: "Broker Freight", key: "pFreight", numeric: true },
             { header: "Broker Advance", key: "pAdvance", numeric: true },
-            { header: "Broker Balance", key: "pBalance", numeric: true },
+            { header: "Broker Balance", key: "pOutstanding", numeric: true },
             { header: "Broker Balance Status", accessor: (r) => statusOf(r, "P") },
             { header: "Owner Freight", key: "vFreight", numeric: true },
             { header: "Owner Advance", key: "vAdvance", numeric: true },
-            { header: "Owner Balance", key: "vBalance", numeric: true },
+            { header: "Owner Balance", key: "vOutstanding", numeric: true },
             { header: "Owner Balance Status", accessor: (r) => statusOf(r, "V") },
             { header: "POD Uploaded", accessor: (r) => (r.podFilePath ? "YES" : "NO") },
             { header: "POD Attached", accessor: (r) => (r.podAttached ? "YES" : "NO") },
@@ -555,25 +563,11 @@ export function BrokerRegisterTable({
                       a part payment. */}
                   <StatusLine
                     label="Outstanding (Receivable)"
-                    value={formatMoney(
-                      openBalance(
-                        statusRow.pBalance,
-                        statusRow.pPaidAmount,
-                        statusRow.pShortage,
-                        statusRow.pRoundOff
-                      )
-                    )}
+                    value={formatMoney(statusRow.pOutstanding)}
                   />
                   <StatusLine
                     label="Outstanding (Payable)"
-                    value={formatMoney(
-                      openBalance(
-                        statusRow.vBalance,
-                        statusRow.vPaidAmount,
-                        statusRow.vShortage,
-                        statusRow.vRoundOff
-                      )
-                    )}
+                    value={formatMoney(statusRow.vOutstanding)}
                   />
                   <StatusLine
                     label="Settlement Status"

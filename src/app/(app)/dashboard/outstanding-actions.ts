@@ -35,6 +35,8 @@ export interface AgeingDoc {
 export interface AgeingRow {
   partyId: string | null;
   party: string;
+  /** owner/broker trade name — the party can be found by either name */
+  transportName: string | null;
   mobile: string | null;
   b0: number; // 0-30 days
   b31: number; // 31-60
@@ -683,7 +685,7 @@ async function computeOutstanding(
     const parties = namedPartyIds.length
       ? await tx.party.findMany({
           where: { id: { in: namedPartyIds } },
-          select: { id: true, name: true, mobile: true },
+          select: { id: true, name: true, mobile: true, transportName: true },
         })
       : [];
     const partyById = new Map(parties.map((p) => [p.id, p]));
@@ -700,6 +702,7 @@ async function computeOutstanding(
         row = {
           partyId: d.partyId,
           party: p?.name ?? d.partyName ?? "(unknown)",
+          transportName: p?.transportName ?? null,
           mobile: p?.mobile ?? null,
           b0: 0,
           b31: 0,
