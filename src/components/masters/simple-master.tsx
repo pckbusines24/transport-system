@@ -34,6 +34,7 @@ import { MultiCombobox } from "@/components/data/multi-combobox";
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton, type ExportColumn } from "@/components/data/export-button";
 import { ImportButton, type ImportConfig } from "@/components/data/import-button";
+import { FileUploadField } from "@/components/data/file-upload-field";
 
 export type ActionResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -48,7 +49,7 @@ export interface CreateDialogProps {
 export interface FieldDef {
   name: string;
   label: string;
-  type: "text" | "number" | "textarea" | "switch" | "select" | "combobox" | "multicombobox" | "date" | "radio";
+  type: "text" | "number" | "textarea" | "switch" | "select" | "combobox" | "multicombobox" | "date" | "radio" | "file";
   options?: MasterOption[];
   /** options that depend on the form or on which record is being edited
    *  (e.g. mark choices owned by ANOTHER record as disabled) */
@@ -60,6 +61,16 @@ export interface FieldDef {
   createDialog?: (props: CreateDialogProps) => React.ReactNode;
   /** Label of the "+ Create" row in the combobox list. */
   createLabel?: string;
+  /** file fields: upload endpoint (POST multipart "file" → { ok, path, name }) */
+  endpoint?: string;
+  /** file fields: accepted extensions, e.g. ".pdf" */
+  accept?: string;
+  /** file fields: client-side size guard in MB */
+  maxSizeMb?: number;
+  /** file fields: helper line under the buttons */
+  hint?: string;
+  /** file fields: form key that stores the original file name */
+  nameField?: string;
   /** Span both columns of the dialog grid. */
   span2?: boolean;
   uppercase?: boolean;
@@ -261,6 +272,24 @@ export function MasterFormDialog({
         );
         break;
       }
+      case "file":
+        // the upload field renders its own label and spans both columns
+        return (
+          <FileUploadField
+            key={f.name}
+            label={f.label}
+            endpoint={f.endpoint ?? "/api/uploads/docreg"}
+            accept={f.accept}
+            maxSizeMb={f.maxSizeMb}
+            hint={f.hint}
+            filePath={(value as string) ?? null}
+            fileName={f.nameField ? ((form[f.nameField] as string) ?? null) : null}
+            onChange={(fp, fn) => {
+              set(f.name, fp);
+              if (f.nameField) set(f.nameField, fn);
+            }}
+          />
+        );
       case "multicombobox":
         control = (
           <MultiCombobox

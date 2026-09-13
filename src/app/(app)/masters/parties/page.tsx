@@ -80,6 +80,8 @@ export default async function PartiesPage({
         bankName: r.bankName,
         bankAccount: r.bankAccount,
         bankIfsc: r.bankIfsc,
+        panDocPath: r.panDocPath,
+        declarationDocPath: r.declarationDocPath,
         isActive: r.isActive,
       }))}
       stateOptions={states.map((s) => ({ value: s.id, label: s.name, meta: s.gstCode }))}

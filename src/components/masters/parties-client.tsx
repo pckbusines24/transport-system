@@ -41,6 +41,8 @@ export interface PartyRow {
   bankName: string | null;
   bankAccount: string | null;
   bankIfsc: string | null;
+  panDocPath: string | null;
+  declarationDocPath: string | null;
   isActive: boolean;
 }
 

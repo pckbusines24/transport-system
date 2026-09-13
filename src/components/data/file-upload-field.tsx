@@ -17,6 +17,8 @@ export function FileUploadField({
   filePath,
   fileName,
   accept = ".pdf,.jpg,.jpeg,.png",
+  maxSizeMb = 10,
+  hint,
   onChange,
 }: {
   label: string;
@@ -24,6 +26,10 @@ export function FileUploadField({
   filePath: string | null;
   fileName: string | null;
   accept?: string;
+  /** client-side size guard; the endpoint enforces its own limit too */
+  maxSizeMb?: number;
+  /** replaces the default "PDF, JPG or PNG — max 10 MB." line */
+  hint?: string;
   onChange: (filePath: string | null, fileName: string | null) => void;
 }) {
   const { toast } = useToast();
@@ -31,6 +37,15 @@ export function FileUploadField({
   const [busy, setBusy] = React.useState(false);
 
   const upload = async (file: File) => {
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      toast({
+        variant: "destructive",
+        title: `File too large — max ${maxSizeMb} MB`,
+        description: `${file.name} is ${(file.size / 1048576).toFixed(2)} MB`,
+      });
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -104,7 +119,7 @@ export function FileUploadField({
           </>
         )}
       </div>
-      <p className="text-[11px] text-muted-foreground">PDF, JPG or PNG — max 10 MB.</p>
+      <p className="text-[11px] text-muted-foreground">{hint ?? "PDF, JPG or PNG — max 10 MB."}</p>
     </div>
   );
 }

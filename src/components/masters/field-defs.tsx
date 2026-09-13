@@ -75,6 +75,16 @@ export function partyFields(o: {
     },
     { name: "gstin", label: "GSTIN", type: "text", uppercase: true },
     { name: "pan", label: "PAN", type: "text", uppercase: true },
+    // KYC copy next to the PAN — every ledger group
+    {
+      name: "panDocPath",
+      label: "PAN Card Copy",
+      type: "file",
+      endpoint: "/api/uploads/party",
+      accept: ".pdf",
+      maxSizeMb: 1,
+      hint: "PDF only — max 1 MB.",
+    },
     // vendor code pairs with mobile so no column is left blank
     { name: "vendorCode", label: "Vendor Code", type: "text" },
     { name: "mobile", label: "Mobile", type: "text" },
@@ -101,6 +111,17 @@ export function partyFields(o: {
       ],
       visibleIf: (f: FormState) => f.ledgerGroup === "OWNER_BROKER",
       span2: true,
+    },
+    // the signed no-TDS declaration, only when the owner / broker is under it
+    {
+      name: "declarationDocPath",
+      label: "TDS Declaration Copy",
+      type: "file",
+      endpoint: "/api/uploads/party",
+      accept: ".pdf",
+      maxSizeMb: 1,
+      hint: "PDF only — max 1 MB. The signed declaration for no TDS deduction.",
+      visibleIf: (f: FormState) => f.ledgerGroup === "OWNER_BROKER" && f.tdsMode === "DECLARATION",
     },
     { name: "bankName", label: "Bank Name", type: "text" },
     { name: "bankAccount", label: "Bank A/c No", type: "text" },

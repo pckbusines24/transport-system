@@ -38,6 +38,8 @@ const schema = z.object({
   bankName: optStr,
   bankAccount: optStr,
   bankIfsc: optStr,
+  panDocPath: optStr,
+  declarationDocPath: optStr,
   isActive: z.boolean().default(true),
 });
 
@@ -88,6 +90,12 @@ export async function saveParty(input: unknown): Promise<ActionResult> {
         bankName: data.bankName,
         bankAccount: data.bankAccount,
         bankIfsc: data.bankIfsc ? data.bankIfsc.toUpperCase() : null,
+        panDocPath: data.panDocPath,
+        // the declaration copy only makes sense under DECLARATION handling
+        declarationDocPath:
+          data.ledgerGroup === "OWNER_BROKER" && data.tdsMode === "DECLARATION"
+            ? data.declarationDocPath
+            : null,
         isActive: data.isActive,
       };
       if (data.id) {
