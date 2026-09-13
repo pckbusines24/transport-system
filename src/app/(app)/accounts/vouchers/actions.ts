@@ -476,17 +476,31 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
             );
           } else if (refType === "DRIVER_SETTLEMENT") {
             const sets = await tx.driverSettlement.findMany({ where: docScope });
-            // settling from the driver-settlement screen creates its own voucher
-            // and marks the row SETTLED — it must not be payable twice. The
-            // SIGN carries the direction: a positive row (company owes the
-            // driver) is settleable only by a PAYMENT, a negative row (the
-            // driver owes) only by a RECEIPT — a payment must never "pay out"
-            // a recovery.
+            // A driver's open rows are ONE running balance (the settlement
+            // screen nets them: an earlier row is "adjusted" into the row after
+            // it). The voucher settles that net, carried by the driver's latest
+            // open row; earlier rows carry nothing on their own. The SIGN of the
+            // net is the direction: positive (company owes the driver) only by
+            // a PAYMENT, negative (driver owes) only by a RECEIPT.
+            const nets = await driverNetPositions(
+              tx,
+              session.firmId,
+              Array.from(new Set(sets.map((x) => x.driverId))),
+              data.id
+            );
             sets.forEach((s) => {
-              const amt = Number(s.amount);
+              const n = nets.get(s.driverId);
+              const net = n?.net ?? 0;
               const directionOk =
-                (data.type === "PAYMENT" && amt > 0) || (data.type === "RECEIPT" && amt < 0);
-              gross.set(s.id, s.status === "SETTLED" || !directionOk ? 0 : Math.abs(amt));
+                (data.type === "PAYMENT" && net > 0) || (data.type === "RECEIPT" && net < 0);
+              // `already` (other vouchers on this row) is inside `net`, and the
+              // check below subtracts it again — add it back so pending = |net|
+              gross.set(
+                s.id,
+                s.status === "SETTLED" || !directionOk || n?.latestRowId !== s.id
+                  ? 0
+                  : round2(Math.abs(net) + (already.get(s.id) ?? 0))
+              );
             });
           }
           // a handled refType whose document did not survive the scoped lookup
@@ -1073,11 +1087,53 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
         }
       }
 
+      // ---- driver settlements: close the chain once the net is squared ----
+      // The allocation settles the driver's NET running balance (see
+      // driverNetPositions). Once nothing remains, every open row of that
+      // driver is SETTLED under this voucher — the same way the settlement
+      // screen's Pay / Receive closes the whole chain — so the rows never
+      // linger as PENDING / ADJUSTED with a zero running balance.
+      {
+        // an edit may re-open rows this voucher closed last time
+        await tx.driverSettlement.updateMany({
+          where: { voucherId: savedId, status: "SETTLED", deletedAt: null },
+          data: { status: "PENDING", settledDate: null, voucherId: null, voucherNo: null },
+        });
+        const dsRefIds = data.allocations
+          .filter((a) => (a.refType ?? data.moduleLink) === "DRIVER_SETTLEMENT")
+          .map((a) => a.refId);
+        if (dsRefIds.length) {
+          const touched = await tx.driverSettlement.findMany({
+            where: { id: { in: dsRefIds }, firmId: session.firmId, deletedAt: null },
+            select: { driverId: true },
+          });
+          const nets = await driverNetPositions(
+            tx,
+            session.firmId,
+            Array.from(new Set(touched.map((t) => t.driverId))),
+            null
+          );
+          for (const [, n] of Array.from(nets.entries())) {
+            if (Math.abs(n.net) > 0.009) continue;
+            await tx.driverSettlement.updateMany({
+              where: { id: { in: n.rowIds } },
+              data: {
+                status: "SETTLED",
+                settledDate: voucherDate,
+                voucherId: savedId,
+                voucherNo: data.voucherNo,
+              },
+            });
+          }
+        }
+      }
+
       return savedId;
     });
 
     revalidatePath("/accounts/vouchers");
     revalidatePath("/accounts/vouchers/register");
+    revalidatePath("/vehicle/driver-management");
     revalidateOutstanding(session.tenantId);
     return { ok: true, id };
   } catch (err) {
@@ -1263,6 +1319,49 @@ export interface AllocationCandidate {
   tdsPct: number;
   /** source module (needed when the grid runs in "All modules" mode) */
   module: ModuleLink;
+}
+
+/**
+ * A driver's open (PENDING) settlement rows net into ONE running balance —
+ * the figure the Driver Settlement screen shows and its Pay / Receive settles.
+ * Returns, per driver, that net (+ company pays the driver, − driver pays the
+ * company) after voucher allocations already made against any of the rows,
+ * the id of the latest open row (the one that carries the balance on a
+ * voucher) and every open row id (closed together once the net is squared).
+ */
+async function driverNetPositions(
+  tx: Tx,
+  firmId: string,
+  driverIds: string[],
+  excludeVoucherId?: string | null
+): Promise<Map<string, { net: number; latestRowId: string; rowIds: string[] }>> {
+  const out = new Map<string, { net: number; latestRowId: string; rowIds: string[] }>();
+  if (!driverIds.length) return out;
+  const rows = await tx.driverSettlement.findMany({
+    where: { firmId, driverId: { in: driverIds }, status: "PENDING", deletedAt: null },
+    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+  });
+  const allocated = await allocatedByRef(
+    tx,
+    { firmId },
+    "DRIVER_SETTLEMENT",
+    rows.map((r) => r.id),
+    excludeVoucherId
+  );
+  for (const r of rows) {
+    const amt = Number(r.amount);
+    const paid = allocated.get(r.id) ?? 0;
+    // signed remainder: a plus row shrinks toward 0 as it is paid, a minus row
+    // rises toward 0 as it is recovered
+    const live =
+      amt >= 0 ? Math.max(0, round2(amt - paid)) : Math.min(0, round2(amt + paid));
+    const cur = out.get(r.driverId) ?? { net: 0, latestRowId: r.id, rowIds: [] };
+    cur.net = round2(cur.net + live);
+    cur.latestRowId = r.id; // rows are date-ascending: the last one wins
+    cur.rowIds.push(r.id);
+    out.set(r.driverId, cur);
+  }
+  return out;
 }
 
 /**
@@ -1713,35 +1812,44 @@ export async function getAllocationCandidates(input: {
           })
         : [];
       const driverById = new Map(drivers.map((d) => [d.id, d]));
-      const mine = settlements.filter((s) => {
-        if (partyId && driverById.get(s.driverId)?.partyId !== partyId) return false;
-        // the sign IS the direction: positive (company owes the driver) only on
-        // a PAYMENT, negative (driver owes the company) only on a RECEIPT — a
-        // payment voucher must never "pay out" a recovery
-        const amt = Number(s.amount);
-        if (input.voucherType === "PAYMENT") return amt > 0;
-        if (input.voucherType === "RECEIPT") return amt < 0;
-        return true;
-      });
-      const pos = await refPositions(tx, {
-        firmId: session.firmId,
-        fyId: session.fyId,
-        refType: moduleLink,
-        excludeVoucherId: voucherId,
-        docs: mine.map((s) => ({ id: s.id, original: Math.abs(Number(s.amount)) })),
-      });
-      for (const s of mine) {
-        const outstanding = pos.get(s.id)?.outstanding ?? 0;
-        if (outstanding > 0)
-          out.push({
-            refId: s.id,
-            refNo: s.voucherNo || s.tripRef || `SETT-${driverById.get(s.driverId)?.driverCode ?? ""}`,
-            date: s.date.toISOString(),
-            billAmt: Math.abs(Number(s.amount)),
-            outstanding,
-            tdsPct: 0,
-            module: moduleLink,
-          });
+      const mine = settlements.filter(
+        (s) => !partyId || driverById.get(s.driverId)?.partyId === partyId
+      );
+      // ONE reference per driver: the open rows net into a running balance
+      // (exactly what the Driver Settlement screen shows), carried by the
+      // latest open row. The sign of the NET is the direction: positive
+      // (company owes the driver) only on a PAYMENT, negative (driver owes the
+      // company) only on a RECEIPT — a payment must never "pay out" a recovery.
+      const nets = await driverNetPositions(
+        tx,
+        session.firmId,
+        Array.from(new Set(mine.map((s) => s.driverId))),
+        voucherId
+      );
+      const byId = new Map(mine.map((s) => [s.id, s]));
+      for (const [driverId, n] of Array.from(nets.entries())) {
+        const net = n.net;
+        if (input.voucherType === "PAYMENT" && net <= 0.009) continue;
+        if (input.voucherType === "RECEIPT" && net >= -0.009) continue;
+        if (Math.abs(net) <= 0.009) continue;
+        const latest = byId.get(n.latestRowId);
+        if (!latest) continue;
+        // reference-number-based: every trip inside the running balance is named
+        const tripRefs = n.rowIds
+          .map((id) => byId.get(id)?.tripRef)
+          .filter(Boolean) as string[];
+        out.push({
+          refId: latest.id,
+          refNo:
+            tripRefs.length
+              ? Array.from(new Set(tripRefs)).join(", ")
+              : latest.voucherNo || `SETT-${driverById.get(driverId)?.driverCode ?? ""}`,
+          date: latest.date.toISOString(),
+          billAmt: Math.abs(net),
+          outstanding: Math.abs(net),
+          tdsPct: 0,
+          module: moduleLink,
+        });
       }
     }
     }
