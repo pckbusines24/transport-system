@@ -8,13 +8,35 @@ import { Input } from "@/components/ui/input";
 import { IsoDateInput } from "@/components/data/date-input";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ExportButton } from "@/components/data/export-button";
+import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import { LR_VIEW_META, type LrView } from "../lr-views";
 import { getLrDetail, type LrDetailFilters, type LrDetailRow } from "../lr-actions";
 
 interface Option {
   id: string;
   name: string;
+  /** extra searchable text (owner / transport name) shown beside the name */
+  meta?: string;
 }
+
+const toOptions = (opts: Option[]): MasterOption[] =>
+  opts.map((o) => ({ value: o.id, label: o.name, meta: o.meta }));
+
+const POD_OPTIONS: MasterOption[] = [
+  { value: "RECEIVED", label: "Received" },
+  { value: "PENDING", label: "Pending" },
+];
+const BILL_OPTIONS: MasterOption[] = [
+  { value: "BILLED", label: "Billed" },
+  { value: "PENDING", label: "Pending" },
+];
+const STATUS_OPTIONS: MasterOption[] = [
+  { value: "PENDING", label: "PENDING" },
+  { value: "ON_CHALAN", label: "ON_CHALAN" },
+  { value: "ARRIVED", label: "ARRIVED" },
+  { value: "DELIVERED", label: "DELIVERED" },
+  { value: "BILLED", label: "BILLED" },
+];
 
 const EMPTY: LrDetailFilters = {};
 
@@ -74,8 +96,9 @@ export function LrDetailClient({
   const set = (patch: Partial<LrDetailFilters>) => setFilters((f) => ({ ...f, ...patch }));
   const sel = (v: string | undefined) => (v ? v : undefined);
 
-  const selectCls =
-    "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
+  const partyOptions = React.useMemo(() => toOptions(parties), [parties]);
+  const cityOptions = React.useMemo(() => toOptions(cities), [cities]);
+  const vehicleOptions = React.useMemo(() => toOptions(vehicles), [vehicles]);
   const cell = "border px-2 py-1 text-xs";
 
   const chips = [
@@ -150,31 +173,29 @@ export function LrDetailClient({
         </label>
         {(
           [
-            ["Party", "partyId", parties],
-            ["Consignor", "consignorId", parties],
-            ["Consignee", "consigneeId", parties],
-            ["Vehicle No", "vehicleId", vehicles],
-            ["Booking Station", "sourceCityId", cities],
-            ["Delivery Station", "destCityId", cities],
-          ] as [string, keyof LrDetailFilters, Option[]][]
+            ["Party", "partyId", partyOptions],
+            ["Consignor", "consignorId", partyOptions],
+            ["Consignee", "consigneeId", partyOptions],
+            ["Vehicle No", "vehicleId", vehicleOptions],
+            ["Booking Station", "sourceCityId", cityOptions],
+            ["Delivery Station", "destCityId", cityOptions],
+            ["POD Status", "podStatus", POD_OPTIONS],
+            ["Bill Status", "billStatus", BILL_OPTIONS],
+            ["Final Status", "status", STATUS_OPTIONS],
+          ] as [string, keyof LrDetailFilters, MasterOption[]][]
         ).map(([label, key, opts]) => (
           <label
             key={key}
             className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground"
           >
             {label}
-            <select
-              className={`${selectCls} max-w-[160px]`}
-              value={(filters[key] as string) ?? ""}
-              onChange={(e) => set({ [key]: sel(e.target.value) } as Partial<LrDetailFilters>)}
-            >
-              <option value="">All</option>
-              {opts.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
+            <MasterCombobox
+              className="w-[170px] [&_input]:h-8 [&_input]:text-xs"
+              options={opts}
+              value={(filters[key] as string) ?? null}
+              onChange={(v) => set({ [key]: sel(v ?? undefined) } as Partial<LrDetailFilters>)}
+              placeholder="All"
+            />
           </label>
         ))}
         <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
@@ -192,6 +213,15 @@ export function LrDetailClient({
             className="h-8 w-[110px] text-xs"
             value={filters.obd ?? ""}
             onChange={(e) => set({ obd: sel(e.target.value) })}
+            placeholder="search"
+          />
+        </label>
+        <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+          Bill No
+          <Input
+            className="h-8 w-[110px] text-xs"
+            value={filters.billNo ?? ""}
+            onChange={(e) => set({ billNo: sel(e.target.value) })}
             placeholder="search"
           />
         </label>

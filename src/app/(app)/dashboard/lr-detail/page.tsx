@@ -21,7 +21,10 @@ export default async function LrDetailPage({
 
   const { parties, cities, vehicles } = await withTenant(session.tenantId, async (tx) => {
     const [parties, cities, vehicles] = await Promise.all([
-      tx.party.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      tx.party.findMany({
+        select: { id: true, name: true, ownerName: true, transportName: true, alias: true },
+        orderBy: { name: "asc" },
+      }),
       tx.city.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
       tx.vehicle.findMany({ select: { id: true, number: true }, orderBy: { number: "asc" } }),
     ]);
@@ -31,7 +34,12 @@ export default async function LrDetailPage({
   return (
     <LrDetailClient
       view={view}
-      parties={parties}
+      parties={parties.map((p) => ({
+        id: p.id,
+        name: p.name,
+        // searchable like chalan entry: typing the owner or transport name finds the party
+        meta: [p.ownerName, p.transportName, p.alias].filter(Boolean).join(" · ") || undefined,
+      }))}
       cities={cities}
       vehicles={vehicles.map((v) => ({ id: v.id, name: v.number }))}
     />

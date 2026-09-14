@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/session";
 import { withTenant, type Tx } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
+import type { LrStatus } from "@prisma/client";
 
 /**
  * LR Summary drill-down: each dashboard card opens /dashboard/lr-detail with a
@@ -33,6 +34,11 @@ export interface LrDetailFilters {
   lrNo?: string;
   sourceCityId?: string;
   destCityId?: string;
+  billNo?: string;
+  podStatus?: "RECEIVED" | "PENDING";
+  billStatus?: "BILLED" | "PENDING";
+  /** LR lifecycle status (PENDING | ON_CHALAN | ARRIVED | DELIVERED | BILLED) */
+  status?: string;
 }
 
 export interface LrDetailRow {
@@ -55,6 +61,7 @@ export interface LrDetailRow {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const LR_STATUSES = new Set<string>(["PENDING", "ON_CHALAN", "ARRIVED", "DELIVERED", "BILLED"]);
 const GRID_LIMIT = 500;
 
 /** Pending-work views span every FY; the rest stay scoped to the session FY. */
@@ -251,6 +258,19 @@ export async function getLrDetail(input: {
           ...(f.lrNo ? { lrNo: { contains: f.lrNo, mode: "insensitive" } } : {}),
           ...(f.sourceCityId ? { sourceCityId: f.sourceCityId } : {}),
           ...(f.destCityId ? { destCityId: f.destCityId } : {}),
+          ...(f.billNo
+            ? {
+                invoiceLrs: {
+                  some: {
+                    invoice: {
+                      deletedAt: null,
+                      invoiceNo: { contains: f.billNo, mode: "insensitive" as const },
+                    },
+                  },
+                },
+              }
+            : {}),
+          ...(f.status && LR_STATUSES.has(f.status) ? { status: f.status as LrStatus } : {}),
         },
         orderBy: [{ lrDate: "desc" }, { id: "desc" }],
         select: {
@@ -269,7 +289,12 @@ export async function getLrDetail(input: {
           status: true,
         },
       });
-      const matched = lrs.filter((l) => inView(view, l.id, sets));
+      const matched = lrs.filter(
+        (l) =>
+          inView(view, l.id, sets) &&
+          (!f.podStatus || (f.podStatus === "RECEIVED") === sets.pod.has(l.id)) &&
+          (!f.billStatus || (f.billStatus === "BILLED") === sets.billed.has(l.id))
+      );
       const filteredCount = matched.length;
       const filteredAmount = round2(matched.reduce((s, l) => s + toNum(String(l.freight)), 0));
       const page = matched.slice(0, GRID_LIMIT);
