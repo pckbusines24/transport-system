@@ -32,7 +32,6 @@ import {
   ADVANCE_HEAD_KIND_LABELS,
   advanceAmount,
   computeBrokerSide,
-  computeTripKm,
   sideAdvanceTotal,
   type AdvanceHeadKind,
   type BrokerAdvance,
@@ -275,9 +274,7 @@ export function BrokerSlipForm({
   );
   const [lrDateText, setLrDateText] = React.useState(initial ? isoToText(initial.lrDate) : "");
   const [ewbDateText, setEwbDateText] = React.useState(initial ? isoToText(initial.ewbDate) : "");
-  const [unloadDateText, setUnloadDateText] = React.useState(
-    initial ? isoToText(initial.unloadDate) : ""
-  );
+  const [unloadDateText] = React.useState(initial ? isoToText(initial.unloadDate) : "");
 
   const set = <K extends keyof BrokerSlipFormData>(key: K, value: BrokerSlipFormData[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -315,13 +312,6 @@ export function BrokerSlipForm({
   const pTotals = sideTotals(form.p, pAdvance, form.pRateBasis);
   const vTotals = sideTotals(form.v, vAdvance, form.vRateBasis);
   const margin = pTotals.netAmt - vTotals.netAmt;
-
-  const km = computeTripKm({
-    startKm: form.startKm ?? null,
-    unloadKm: form.unloadKm ?? null,
-    slipDate: parseDdMmYyyy(slipDateText),
-    unloadDate: parseDdMmYyyy(unloadDateText),
-  });
 
   // freight auto from rate x that side's basis (still editable)
   const recomputeFreight = (side: "p" | "v", rate: number, basisOverride?: RateBasis) => {
@@ -1281,44 +1271,8 @@ export function BrokerSlipForm({
         </div>
       )}
 
-      {/* trip km + payment summary */}
+      {/* payment summary */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Trip KM</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-3 gap-2">
-            <Num
-              label="Start KM"
-              value={form.startKm ?? 0}
-              onChange={(n) => set("startKm", n)}
-            />
-            <div className="space-y-1">
-              <Label className="text-xs">Unload Date</Label>
-              <DateInput
-                className="h-8"
-                value={unloadDateText}
-                onChange={(t) => setUnloadDateText(t)}
-              />
-            </div>
-            <Num
-              label="Unload KM"
-              value={form.unloadKm ?? 0}
-              onChange={(n) => set("unloadKm", n)}
-            />
-            <Num label="Running KM" value={km.runningKm ?? 0} disabled />
-            <Num label="Trip Days" value={km.tripDays ?? 0} disabled />
-            <div className="space-y-1">
-              <Label className="text-xs">Unload Remarks</Label>
-              <Input
-                className="h-8"
-                value={form.unloadRemarks}
-                onChange={(e) => set("unloadRemarks", e.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Payment Summary (Owner Side)</CardTitle>

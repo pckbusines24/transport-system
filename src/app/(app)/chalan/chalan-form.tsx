@@ -205,13 +205,13 @@ export function ChalanForm({
   const [tdsPct, setTdsPct] = React.useState(record?.tdsPct ?? 0);
   const [tdsOverridden, setTdsOverridden] = React.useState(!!record);
 
-  // ------- trip km -------
-  const [startKm, setStartKm] = React.useState(record?.startKm ?? 0);
-  const [unloadDateText, setUnloadDateText] = React.useState(
+  // ------- trip km (no longer editable here; preserved on save) -------
+  const [startKm] = React.useState(record?.startKm ?? 0);
+  const [unloadDateText] = React.useState(
     record?.unloadDate ? formatDate(new Date(record.unloadDate)) : ""
   );
-  const [unloadKm, setUnloadKm] = React.useState(record?.unloadKm ?? 0);
-  const [unloadRemarks, setUnloadRemarks] = React.useState(record?.unloadRemarks ?? "");
+  const [unloadKm] = React.useState(record?.unloadKm ?? 0);
+  const [unloadRemarks] = React.useState(record?.unloadRemarks ?? "");
 
   // ------- advances -------
   // ADVANCE_ADJ rows are persisted one-per-voucher but edited as a single grid
@@ -444,13 +444,8 @@ export function ChalanForm({
         ? "1% — individual PAN"
         : "2% — company PAN";
 
-  const runningKm = startKm && unloadKm ? unloadKm - startKm : 0;
   const chalanDate = parseDdMmYyyy(dateText);
   const unloadDate = parseDdMmYyyy(unloadDateText);
-  const tripDays =
-    chalanDate && unloadDate
-      ? Math.max(0, Math.round((unloadDate.getTime() - chalanDate.getTime()) / 86400000))
-      : 0;
 
   const buildPayload = () => ({
     id,
@@ -1037,33 +1032,6 @@ export function ChalanForm({
               </Button>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* trip km */}
-      <Card>
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-sm">Trip KM</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-4 pt-0 sm:grid-cols-3 lg:grid-cols-6">
-          <Field label="Start KM">
-            <NumInput value={startKm} onChange={setStartKm} />
-          </Field>
-          <Field label="Unload Date">
-            <DateInput value={unloadDateText} onChange={(t) => setUnloadDateText(t)} />
-          </Field>
-          <Field label="Unload KM">
-            <NumInput value={unloadKm} onChange={setUnloadKm} />
-          </Field>
-          <Field label="Running KM">
-            <NumInput value={runningKm} readOnly />
-          </Field>
-          <Field label="Trip Days">
-            <NumInput value={tripDays} readOnly />
-          </Field>
-          <Field label="Unload Remarks">
-            <Input value={unloadRemarks} onChange={(e) => setUnloadRemarks(e.target.value)} />
-          </Field>
         </CardContent>
       </Card>
 
