@@ -1,4 +1,4 @@
-import { ClipboardCheck, FileCheck2, IndianRupee, Map as MapIcon, Percent, ShieldAlert } from "lucide-react";
+import { ClipboardCheck, FileCheck2, IndianRupee, Map as MapIcon, Percent, Route, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -322,6 +322,33 @@ export async function RoutesCard({ metrics }: { metrics: Promise<OpsMetrics> }) 
               <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-emerald-600">
                 🟢 Active: {laneAlive}
               </span>
+            </span>
+          </span>
+        </CardContent>
+      </Card>
+    </a>
+  );
+}
+
+/** Dashboard → Status: one-search transaction tracking & drill-down. */
+export function StatusCard() {
+  return (
+    <a href="/dashboard/status" target="_blank" rel="noreferrer" className="group">
+      <Card className="h-full transition-all hover:border-primary/40 hover:shadow-card">
+        <CardContent className="flex items-start gap-3 p-5">
+          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Route className="h-6 w-6" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-lg font-semibold group-hover:text-primary">
+              Status — Transaction Tracking
+              <InfoHint>
+                Search by LR, chalan, bill, vehicle or broker and see LR → Chalan → owner settlement →
+                POD / shortage → Bill → receipts → pending on one screen, with drill-down at every level
+              </InfoHint>
+            </span>
+            <span className="mt-2 flex flex-wrap gap-2 text-xs font-medium">
+              <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground">LR → Chalan → POD → Bill → Payment</span>
             </span>
           </span>
         </CardContent>

@@ -11,6 +11,7 @@ import {
   LrSummarySection,
   OutstandingSection,
   RoutesCard,
+  StatusCard,
   TdsCard,
   WarrantyCard,
 } from "./sections";
@@ -111,6 +112,7 @@ export default function DashboardPage() {
         <Suspense fallback={<CardFallback />}>
           <RoutesCard metrics={metrics} />
         </Suspense>
+        <StatusCard />
       </div>
     </div>
   );
