@@ -14,6 +14,7 @@ import {
 } from "@/lib/ledger";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { settledByRef } from "@/lib/settlement";
+import { tripCoveringDate, tripFetchLockMessage } from "@/lib/trip-lock";
 import { toNum } from "@/lib/utils";
 
 /**
@@ -241,6 +242,11 @@ export async function deleteAdblueTxn(
         throw new Error(
           "This AdBlue bill is already settled through a voucher — delete/reverse that voucher first."
         );
+      }
+      // an ISSUE a trip sheet has fetched as urea must not vanish under it
+      if (before.type === "ISSUE" && before.vehicleId) {
+        const tripNo = await tripCoveringDate(tx, session.firmId, before.vehicleId, before.date);
+        if (tripNo) throw new Error(tripFetchLockMessage("AdBlue issue", tripNo));
       }
       await tx.adblueTxn.update({ where: { id }, data: { deletedAt: new Date() } });
       await reverseLedger(tx, "ADBLUE", id);

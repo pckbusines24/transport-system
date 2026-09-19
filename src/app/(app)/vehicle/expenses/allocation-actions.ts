@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
 import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
+import { tripCoveringDate, tripFetchLockMessage } from "@/lib/trip-lock";
 
 /**
  * Vehicle Expense Allocation.
@@ -180,7 +181,19 @@ export async function deleteVehicleExpenseAllocation(
   await authorize(session, "vehicle", "delete");
   try {
     await withTenant(session.tenantId, async (tx) => {
-      const before = await tx.vehicleExpenseItem.findFirstOrThrow({ where: { id: itemId } });
+      const before = await tx.vehicleExpenseItem.findFirstOrThrow({
+        where: { id: itemId },
+        include: { voucher: { select: { headId: true, txnType: true } } },
+      });
+      // a diesel / toll allocation a trip sheet has fetched must not vanish under it
+      if (before.voucher.txnType === "EXPENSE") {
+        const head = await tx.accountHead.findUnique({ where: { id: before.voucher.headId }, select: { name: true } });
+        const lower = (head?.name ?? "").toLowerCase();
+        if (lower.includes("diesel") || lower.includes("toll")) {
+          const tripNo = await tripCoveringDate(tx, session.firmId, before.vehicleId, before.allocDate);
+          if (tripNo) throw new Error(tripFetchLockMessage("allocation", tripNo));
+        }
+      }
       await tx.vehicleExpenseItem.delete({ where: { id: itemId } });
       // undo the relative-owner transfer this line may have posted
       await reverseLedger(tx, "VEH_EXP_ALLOC", itemId);

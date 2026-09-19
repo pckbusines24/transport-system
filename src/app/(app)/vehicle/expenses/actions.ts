@@ -12,6 +12,7 @@ import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
 import { settledByRef } from "@/lib/settlement";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
+import { tripCoveringDate, tripFetchLockMessage } from "@/lib/trip-lock";
 
 /**
  * Vehicle Expenses — office-I&E-style accounting voucher with vehicle-wise
@@ -510,6 +511,17 @@ export async function deleteVehicleExpenseTxn(
         throw new Error(
           "A payment voucher already settles this bill — delete that voucher first."
         );
+      }
+      // a diesel / toll line a trip sheet has fetched must not vanish under it
+      if (before.txnType === "EXPENSE" && before.items.length) {
+        const head = await tx.accountHead.findUnique({ where: { id: before.headId }, select: { name: true } });
+        const lower = (head?.name ?? "").toLowerCase();
+        if (lower.includes("diesel") || lower.includes("toll")) {
+          for (const item of before.items) {
+            const tripNo = await tripCoveringDate(tx, session.firmId, item.vehicleId, item.allocDate);
+            if (tripNo) throw new Error(tripFetchLockMessage("expense", tripNo));
+          }
+        }
       }
       await tx.vehicleExpenseVoucher.update({ where: { id }, data: { deletedAt: new Date() } });
       await reverseLedger(tx, "VEHICLE_EXPENSE", id);
