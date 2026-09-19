@@ -676,6 +676,106 @@ export async function payDriverSalaryRunning(
   }
 }
 
+/**
+ * Reverse every salary payment run of a driver: the DRIVER_SALARY_PAY ledger
+ * postings (cash/bank credit, driver debit) are removed, every salary goes
+ * back to PENDING with paidAmount 0, and shortage adjustments made AT PAYMENT
+ * TIME are released. Shortage amounts deducted when the salary was processed
+ * (shortageDeduction on the row) stay adjusted — those belong to the salary,
+ * not the payment. Payments settle FIFO across months, so a single run may
+ * touch several salaries; undoing all runs at once is the only way to leave
+ * the register consistent.
+ */
+async function undoDriverPaymentsTx(
+  tx: Parameters<Parameters<typeof withTenant>[1]>[0],
+  session: ReturnType<typeof requireSession>,
+  driverId: string
+): Promise<{ reversed: number }> {
+  const driver = await tx.driver.findFirst({ where: { id: driverId, deletedAt: null } });
+  if (!driver?.partyId) throw new Error("Driver (ledger party) not found");
+  const salaries = await tx.driverSalary.findMany({
+    where: { firmId: session.firmId, driverId, deletedAt: null },
+    select: { id: true, shortageDeduction: true },
+  });
+  const salaryIds = salaries.map((s) => s.id);
+  if (!salaryIds.length) return { reversed: 0 };
+
+  // payment runs are keyed "<salaryId>:<timestamp>"
+  const payEntries = await tx.ledgerEntry.findMany({
+    where: {
+      refType: "DRIVER_SALARY_PAY",
+      OR: salaryIds.map((id) => ({ refId: { startsWith: `${id}:` } })),
+    },
+    select: { refId: true, partyId: true, side: true, amount: true },
+  });
+  const reversed = round2(
+    payEntries
+      .filter((e) => e.partyId === driver.partyId && e.side === "DEBIT")
+      .reduce((s, e) => s + toNum(String(e.amount)), 0)
+  );
+  const refIds = Array.from(new Set(payEntries.map((e) => e.refId)));
+  if (refIds.length) {
+    await tx.ledgerEntry.deleteMany({ where: { refType: "DRIVER_SALARY_PAY", refId: { in: refIds } } });
+  }
+
+  await tx.driverSalary.updateMany({
+    where: { id: { in: salaryIds } },
+    data: { paidAmount: 0, paymentStatus: "PENDING", paymentDate: null, paymentHeadId: null },
+  });
+
+  // release payment-time shortage adjustments: per salary the linked shortage
+  // adjustments may only add up to what the salary itself deducted
+  for (const sal of salaries) {
+    const linked = await tx.driverShortage.findMany({
+      where: { salaryId: sal.id, deletedAt: null },
+      orderBy: { date: "desc" },
+    });
+    let excess = round2(
+      linked.reduce((s, r) => s + toNum(String(r.adjustedAmount)), 0) -
+        toNum(String(sal.shortageDeduction))
+    );
+    for (const sh of linked) {
+      if (excess <= 0) break;
+      const adj = toNum(String(sh.adjustedAmount));
+      const give = Math.min(adj, excess);
+      excess = round2(excess - give);
+      const left = round2(adj - give);
+      await tx.driverShortage.update({
+        where: { id: sh.id },
+        data: {
+          adjustedAmount: left,
+          status: "PENDING",
+          ...(left <= 0 ? { salaryId: null } : {}),
+        },
+      });
+    }
+  }
+  await audit(tx, session, {
+    entity: "DriverSalary",
+    entityId: driverId,
+    action: "UPDATE",
+    after: { undoPayments: { driverId, reversed, runs: refIds.length } },
+  });
+  return { reversed };
+}
+
+export async function undoDriverSalaryPayments(
+  driverId: string
+): Promise<{ ok: true; reversed: number } | { ok: false; error: string }> {
+  const session = requireSession();
+  if (session.role !== "ADMIN" && session.role !== "OWNER") {
+    return { ok: false, error: "Only Admin/Owner may reverse salary payments" };
+  }
+  await authorize(session, "vouchers", "delete");
+  try {
+    const r = await withTenant(session.tenantId, (tx) => undoDriverPaymentsTx(tx, session, driverId));
+    revalidatePath(REVALIDATE);
+    return { ok: true, reversed: r.reversed };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Reversal failed" };
+  }
+}
+
 export async function deleteDriverSalary(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -690,7 +790,9 @@ export async function deleteDriverSalary(
         where: { id, firmId: session.firmId, deletedAt: null },
       });
       if (before.paymentStatus === "PAID" || toNum(String(before.paidAmount)) > 0) {
-        throw new Error("Salary with payments cannot be deleted.");
+        // a paid salary: reverse the driver's payment runs first so the
+        // vouchers, ledger and shortage register no longer carry them
+        await undoDriverPaymentsTx(tx, session, before.driverId);
       }
       await tx.driverShortage.updateMany({
         where: { salaryId: id },

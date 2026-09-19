@@ -42,7 +42,7 @@ const driverSchema = z.object({
   address: z.string().nullish(),
   joinDate: z.string().nullish(),
   remarks: z.string().nullish(),
-  vehicleId: z.string().nullish(), // initial assignment (create only)
+  vehicleId: z.string().nullish(), // current assignment; a change on edit closes the open one
   licence: docSlot.nullish(),
   aadhaar: docSlot.nullish(),
   pan: docSlot.nullish(),
@@ -132,6 +132,33 @@ export async function saveDriver(
         }
         id = updated.id;
         driverCode = updated.driverCode;
+        // vehicle picked on the edit form: same rules as a transfer — the open
+        // assignment is closed today and a new one opened; clearing the field
+        // leaves the current assignment untouched (use Exit to end it)
+        if (d.vehicleId) {
+          const open = await tx.driverAssignment.findFirst({
+            where: { driverId: id, toDate: null },
+            orderBy: { fromDate: "desc" },
+          });
+          if (!open || open.vehicleId !== d.vehicleId) {
+            const now = new Date();
+            if (open) {
+              await tx.driverAssignment.update({
+                where: { id: open.id },
+                data: { toDate: now, reason: "Changed from driver edit" },
+              });
+            }
+            await tx.driverAssignment.create({
+              data: {
+                tenantId: session.tenantId,
+                driverId: id,
+                vehicleId: d.vehicleId,
+                fromDate: open ? now : values.joinDate ?? now,
+                remarks: open ? "Reassigned from driver edit" : "Initial assignment",
+              },
+            });
+          }
+        }
         await audit(tx, session, { entity: "Driver", entityId: id, action: "UPDATE", before, after: updated });
       } else {
         driverCode = await nextDriverCode(tx, session.firmId);

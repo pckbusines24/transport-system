@@ -61,6 +61,7 @@ export interface DriverRow {
   status: string;
   remarks: string;
   currentVehicle: string;
+  currentVehicleId: string | null;
   licence: DocSlot;
   aadhaar: DocSlot;
   pan: DocSlot;
@@ -179,7 +180,7 @@ export function DriverClient({
       address: r.address,
       joinDateText: r.joinDate ? formatDate(r.joinDate) : "",
       remarks: r.remarks,
-      vehicleId: null,
+      vehicleId: r.currentVehicleId,
       licence: r.licence,
       aadhaar: r.aadhaar,
       pan: r.pan,
@@ -493,17 +494,15 @@ export function DriverClient({
               <Label className="text-xs">Date of Joining</Label>
               <DateInput className="h-8" value={form.joinDateText} onChange={(t) => set({ joinDateText: t })} />
             </div>
-            {!form.id && (
-              <div className="space-y-1">
-                <Label className="text-xs">Assign Vehicle (optional)</Label>
-                <MasterCombobox
-                  options={vehicleOptions}
-                  value={form.vehicleId}
-                  onChange={(v) => set({ vehicleId: v })}
-                  placeholder="Select vehicle..."
-                />
-              </div>
-            )}
+            <div className="space-y-1">
+              <Label className="text-xs">Assign Vehicle (optional)</Label>
+              <MasterCombobox
+                options={vehicleOptions}
+                value={form.vehicleId}
+                onChange={(v) => set({ vehicleId: v })}
+                placeholder="Select vehicle..."
+              />
+            </div>
             <div className="space-y-1 sm:col-span-2">
               <Label className="text-xs">Remarks</Label>
               <Input className="h-8" value={form.remarks} onChange={(e) => set({ remarks: e.target.value })} />

@@ -113,6 +113,7 @@ export async function DriverInfoTab({
       status: d.status,
       remarks: d.remarks ?? "",
       currentVehicle: open ? vehicleNo.get(open.vehicleId) ?? "" : "",
+      currentVehicleId: open ? open.vehicleId : null,
       licence: { path: d.licencePath, name: d.licenceName },
       aadhaar: { path: d.aadhaarPath, name: d.aadhaarName },
       pan: { path: d.panPath, name: d.panName },

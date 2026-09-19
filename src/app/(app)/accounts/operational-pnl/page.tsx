@@ -381,7 +381,7 @@ export default async function OperationalPnlPage({
 
       {/* ---- KPI ---- */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard label="Total Operational Revenue" value={money(totalRevenue)} />
+        <StatCard label="Total Operational Revenue" value={money(r2(totalRevenue + ledgerIncome))} />
         <StatCard
           label="Total Operational Expenses"
           value={money(r2(lorryHire + ledgerExpense))}

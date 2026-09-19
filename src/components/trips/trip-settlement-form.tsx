@@ -366,16 +366,10 @@ export function TripSettlementForm({
   // register-booked "other" heads deliberately NOT counted: those bills are
   // already the company's recorded cost in the vehicle expense register —
   // pulling them in here counted the same rupee twice
+  // manual sheet heads (road bill / fooding / RTO / road / other) are not
+  // part of the ACTUAL method — only register-fetched costs count here
   const actualOperatingTotal = r2(
-    exp.dieselTotal +
-      advances.total +
-      exp.tollTotal +
-      ureaAmount +
-      roadBill +
-      fooding +
-      rtoExp +
-      roadExp +
-      otherOpExp
+    exp.dieselTotal + advances.total + exp.tollTotal + ureaAmount
   );
   const actualProfit = r2(docGrandTotal - actualOperatingTotal);
 
@@ -446,11 +440,6 @@ export function TripSettlementForm({
         // company urea is regenerated server-side; only the driver-borne case
         // needs booking here, or the two would stack
         if (ureaType === "DRIVER") push("UREA", ureaAmount, "Actual urea (auto)");
-        push("MISC", roadBill, "Road bills");
-        push("DRIVER_BATA", fooding, "Fooding");
-        push("POLICE_RTO", rtoExp, "RTO expenses");
-        push("MISC", roadExp, "Road expenses");
-        push("MISC", otherOpExp, "Other operating expense");
       } else if (calcMethod === "DIESEL_AVG") {
         push("DIESEL", totalDieselCost, "Approved fuel cost (auto)");
         push("DRIVER_BATA", fooding, "Fooding (auto)");
@@ -750,36 +739,6 @@ export function TripSettlementForm({
                   <NumInput value={ureaRate} onChange={setUreaRate} className="h-7 w-20 text-xs" />
                   <b className="tabular-nums">{formatMoney(ureaAmount)}</b>
                 </div>
-              </div>
-              <p className="border-t pt-2 text-[11px] text-muted-foreground">
-                Above: fetched from the vehicle expense, driver advance and AdBlue
-                registers. Below: operating expenses entered on this sheet. Toll and urea
-                count in full here whatever their Driver / Company setting — that toggle
-                decides who bears the cost in a driver settlement, which this method does
-                not run.
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Road Bills">
-                  <NumInput value={roadBill} onChange={setRoadBill} className="h-8" />
-                </Field>
-                <Field label="RTO Expenses">
-                  <NumInput value={rtoExp} onChange={setRtoExp} className="h-8" />
-                </Field>
-                <Field label="Fooding Days">
-                  <NumInput value={foodingDays} onChange={setFoodingDays} className="h-8" />
-                </Field>
-                <Field label="Fooding Rate / Day">
-                  <NumInput value={foodingRate} onChange={setFoodingRate} className="h-8" />
-                </Field>
-                <Field label="Fooding Total">
-                  <Input value={formatMoney(fooding)} readOnly className="h-8 bg-muted text-right" />
-                </Field>
-                <Field label="Road Expenses">
-                  <NumInput value={roadExp} onChange={setRoadExp} className="h-8" />
-                </Field>
-                <Field label="Any Other Operating Expense">
-                  <NumInput value={otherOpExp} onChange={setOtherOpExp} className="h-8" />
-                </Field>
               </div>
               <div className="flex justify-between border-t pt-2 text-base font-semibold">
                 <span>Total Actual Operating Expenses</span>

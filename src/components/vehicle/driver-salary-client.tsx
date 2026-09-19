@@ -36,6 +36,7 @@ import {
   payDriverSalaryRunning,
   processDriverSalary,
   saveDriverShortage,
+  undoDriverSalaryPayments,
 } from "@/app/(app)/vehicle/driver-salary/actions";
 
 export interface DriverSalaryRow {
@@ -244,15 +245,33 @@ export function DriverSalaryClient({
     {
       id: "actions",
       header: "",
-      cell: ({ row }) =>
-        row.original.paymentStatus !== "PAID" ? (
+      cell: ({ row }) => {
+        const paid = row.original.paymentStatus === "PAID" || row.original.paidAmount > 0;
+        const undoFirst = async () => {
+          if (!paid) return true;
+          if (
+            !confirm(
+              `This salary has been paid. Continuing reverses ALL salary payments of ${row.original.driver} (vouchers and ledger entries are removed, every month goes back to Pending). Re-enter the payment afterwards. Continue?`
+            )
+          )
+            return false;
+          const res = await undoDriverSalaryPayments(row.original.driverId);
+          if (!res.ok) {
+            toast({ variant: "destructive", title: "Reversal failed", description: res.error });
+            return false;
+          }
+          toast({ title: `Payments reversed (${formatMoney(res.reversed)})` });
+          return true;
+        };
+        return (
           <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
             <Button
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs"
-              disabled={row.original.paidAmount > 0}
-              onClick={() => {
+              disabled={paid && !canDelete}
+              onClick={async () => {
+                if (!(await undoFirst())) return;
                 setForm({
                   id: row.original.id,
                   driverId: row.original.driverId,
@@ -267,11 +286,13 @@ export function DriverSalaryClient({
                   remarks: row.original.remarks,
                 });
                 setOpen(true);
+                if (paid) router.refresh();
               }}
             >
               Edit
             </Button>
-            {latestByDriver.get(row.original.driverId) === row.original.id &&
+            {!paid &&
+              latestByDriver.get(row.original.driverId) === row.original.id &&
               row.original.runningBalance > 0 && (
                 <Button
                   variant="ghost"
@@ -301,6 +322,7 @@ export function DriverSalaryClient({
                 className="h-6 px-2 text-xs text-destructive"
                 onClick={async () => {
                   if (!confirm(`Delete salary ${row.original.month} of ${row.original.driver}?`)) return;
+                  if (!(await undoFirst())) return;
                   const res = await deleteDriverSalary(row.original.id);
                   if (res.ok) {
                     toast({ title: "Salary deleted; shortages released, ledger reversed" });
@@ -312,7 +334,8 @@ export function DriverSalaryClient({
               </Button>
             )}
           </div>
-        ) : null,
+        );
+      },
     },
   ];
 
