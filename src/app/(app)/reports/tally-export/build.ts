@@ -249,7 +249,8 @@ function settlementVouchers(opts: {
   if (opts.paid > 0.009) {
     out.push({
       key: `${opts.keyBase}:BAL`,
-      type: opts.payIsCard ? "Journal" : "Receipt",
+      // paying the counter-party moves money OUT -> Payment; money IN -> Receipt
+      type: opts.payIsCard ? "Journal" : opts.counterSide === "DR" ? "Payment" : "Receipt",
       date: opts.date,
       narration: `Balance ${opts.counterSide === "DR" ? "payment" : "received"} — ${opts.narrationBase}`,
       lines: [counter(opts.paid), opposite(opts.payLedger, opts.paid)],
@@ -415,7 +416,8 @@ export async function buildChalanDocs(
           : a.bankName?.trim() || "BANK";
         vouchers.push({
           key: `CHALAN:${c.id}:ADV:${a.id}`,
-          type: "Receipt",
+          // advance PAID to the broker: money out -> Payment (Journal on a card)
+          type: moneyVoucherType(ctx, a.bankPartyId, "Payment"),
           date: aDate,
           narration,
           lines: [brokerDr, crLine(ledger, amt)],
@@ -423,7 +425,7 @@ export async function buildChalanDocs(
       } else if (a.type === "CASH") {
         vouchers.push({
           key: `CHALAN:${c.id}:ADV:${a.id}`,
-          type: "Receipt",
+          type: "Payment",
           date: aDate,
           narration,
           lines: [brokerDr, crLine(C("cash", "CASH"), amt)],
@@ -831,7 +833,7 @@ export async function buildSlipDocs(
           if (a.side !== "P") return;
           const amt = round2(toNum(a.amount ?? 0));
           if (amt <= 0 || a.type === "ADVANCE_ADJ") return;
-          const aDate = a.date ? tallyDate(new Date(`${a.date}T00:00:00`)) : sDate;
+          const aDate = a.date ? tallyDate(new Date(`${a.date}T00:00:00+05:30`)) : sDate;
           const nar = `${(a.type ?? "").replace(/_/g, " ")} advance received${a.remarks ? ` — ${a.remarks}` : ""} — ${tag}`;
           const partyCr = crLine(pLedger, amt, { name: refNo, type: "Agst Ref" });
           if (a.headKind === "BANK" || a.headKind === "CASH") {
@@ -953,7 +955,7 @@ export async function buildSlipDocs(
           if (a.side !== "V") return;
           const amt = round2(toNum(a.amount ?? 0));
           if (amt <= 0 || a.type === "ADVANCE_ADJ") return;
-          const aDate = a.date ? tallyDate(new Date(`${a.date}T00:00:00`)) : sDate;
+          const aDate = a.date ? tallyDate(new Date(`${a.date}T00:00:00+05:30`)) : sDate;
           const dieselBits =
             a.dieselQty && toNum(a.dieselQty) > 0
               ? ` ${toNum(a.dieselQty)} L${a.dieselRate ? ` @ ${toNum(a.dieselRate)}` : ""}`
@@ -969,7 +971,8 @@ export async function buildSlipDocs(
                   : a.bankName?.trim() || "BANK";
             vouchers.push({
               key: `SLIP:${s.id}:VADV:${i}`,
-              type: "Receipt",
+              // advance PAID to the owner: money out -> Payment (Journal on a card)
+              type: a.headKind === "CASH" ? "Payment" : moneyVoucherType(ctx, a.headId, "Payment"),
               date: aDate,
               narration: nar,
               lines: [ownerDr, crLine(ledger, amt)],

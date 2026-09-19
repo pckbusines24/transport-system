@@ -77,10 +77,15 @@ export interface TallyLedgerMaster {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/**
+ * yyyymmdd anchored to IST like formatDate — the server runs on UTC, so the
+ * local getters shifted every midnight-IST date to the previous day.
+ */
 export function tallyDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const t = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  const y = t.getUTCFullYear();
+  const m = String(t.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(t.getUTCDate()).padStart(2, "0");
   return `${y}${m}${day}`;
 }
 
