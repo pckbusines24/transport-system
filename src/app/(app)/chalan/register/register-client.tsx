@@ -516,6 +516,15 @@ export function ChalanRegisterClient({
             : []),
           {
             type: "select",
+            key: "pod",
+            label: "POD Status",
+            options: [
+              { value: "received", label: "Received" },
+              { value: "pending", label: "Pending" },
+            ],
+          },
+          {
+            type: "select",
             key: "shortage",
             label: "Shortage",
             options: [

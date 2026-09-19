@@ -18,7 +18,7 @@ export default async function ChalanRegisterPage({
 }) {
   const session = requireSession();
   await authorize(session, "chalan", "view");
-  const { date_from, date_to, q, broker, vehicle, status, payment, ownership, shortage } =
+  const { date_from, date_to, q, broker, vehicle, status, payment, ownership, shortage, pod } =
     searchParams;
   // two registers in one screen: MARKET (payable workflow, the default) and
   // OWNREL (own + relative vehicles — no payment actions, settlement via ledger)
@@ -81,6 +81,13 @@ export default async function ChalanRegisterPage({
           ? { lrs: { some: { lr: { pods: { some: { shortageWt: { gt: 0 } } } } } } }
           : shortage === "no"
             ? { lrs: { none: { lr: { pods: { some: { shortageWt: { gt: 0 } } } } } } }
+            : {}),
+        // POD status: received = every LR on the chalan has a POD; pending =
+        // at least one LR still without one
+        ...(pod === "received"
+          ? { lrs: { some: {}, none: { lr: { pods: { none: {} } } } } }
+          : pod === "pending"
+            ? { lrs: { some: { lr: { pods: { none: {} } } } } }
             : {}),
     };
     const [chalans, totalCount] = await Promise.all([
