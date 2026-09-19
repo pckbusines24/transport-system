@@ -17,7 +17,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput, IsoDateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
-import { Field, NumInput, PartyCombobox, VehicleCombobox, enterAdvances } from "@/components/fleet/fields";
+import { Field, NumInput, PartyCombobox, VehicleCombobox, enterAdvances, BankCashCombobox } from "@/components/fleet/fields";
 import { LrPicker, SelectedLrList, type PendingLrRow } from "@/components/fleet/lr-picker";
 import { computeChalan, dieselAdvanceAmount } from "@/lib/calc/chalan";
 import { tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
@@ -1156,7 +1156,7 @@ export function ChalanForm({
               <DateInput value={balDateText} onChange={(t) => setBalDateText(t)} />
             </Field>
             <Field label="Payment Head (Bank / Cash)">
-              <MasterCombobox
+              <BankCashCombobox
                 options={banks}
                 value={balHeadId}
                 onChange={setBalHeadId}

@@ -7,7 +7,8 @@ import { EVENT_LABEL, WARRANTY_LABEL } from "@/lib/spare-parts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ExportButton } from "@/components/data/export-button";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { VehicleCombobox } from "@/components/fleet/fields";
 import { WarrantyBadge } from "./spare-parts-client";
 import type { SparePartRow } from "./spare-parts-types";
 
@@ -84,7 +85,7 @@ export function SparePartsVehicleView({
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-64 space-y-1.5">
           <Label className="text-xs">Vehicle</Label>
-          <MasterCombobox options={vehicleOptions} value={vehicleId} onChange={setVehicleId} placeholder="Select vehicle..." />
+          <VehicleCombobox options={vehicleOptions} value={vehicleId} onChange={setVehicleId} placeholder="Select vehicle..." />
         </div>
         {vehicleId && (
           <div className="flex flex-wrap gap-2 text-xs">

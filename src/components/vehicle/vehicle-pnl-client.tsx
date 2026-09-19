@@ -22,7 +22,8 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, PartyCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import {
   deleteVehicleWithdrawal,
   saveVehicleWithdrawal,
@@ -1308,7 +1309,7 @@ export function VehiclePnlClient({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">Vehicle *</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={wdVehicleId}
                 onChange={setWdVehicleId}
@@ -1317,7 +1318,7 @@ export function VehiclePnlClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Party *</Label>
-              <MasterCombobox
+              <PartyCombobox ledgerGroup="OWNER_BROKER"
                 options={malikOptions}
                 value={wdPartyId}
                 onChange={setWdPartyId}
@@ -1344,7 +1345,7 @@ export function VehiclePnlClient({
               <Label className="text-xs">
                 {isDeposit ? "Deposited To (Bank / Cash) *" : "Paid From (Bank / Cash) *"}
               </Label>
-              <MasterCombobox
+              <BankCashCombobox
                 options={payOptions}
                 value={wdPayPartyId}
                 onChange={setWdPayPartyId}

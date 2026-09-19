@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import {
+  AccountHeadCreateDialog,
   PartyCreateDialog,
   VehicleCreateDialog,
   CityCreateDialog,
@@ -86,6 +87,7 @@ export function PartyCombobox({
   ledgerGroup = "OWNER_BROKER",
   placeholder = "Select party...",
   disabled,
+  className,
 }: {
   options: MasterOption[];
   value: string | null;
@@ -93,6 +95,7 @@ export function PartyCombobox({
   ledgerGroup?: LedgerGroup;
   placeholder?: string;
   disabled?: boolean;
+  className?: string;
 }) {
   const [local, setLocal] = React.useState<MasterOption[]>([]);
   const all = React.useMemo(
@@ -106,6 +109,7 @@ export function PartyCombobox({
       onChange={(v) => onChange(v, all.find((o) => o.value === v))}
       placeholder={placeholder}
       disabled={disabled}
+      className={className}
       createLabel="+ Create party"
       renderCreateDialog={(closeAndSelect) => (
         <PartyCreateDialog
@@ -129,12 +133,16 @@ export function VehicleCombobox({
   options,
   value,
   onChange,
+  placeholder = "Select vehicle...",
   disabled,
+  className,
 }: {
   options: MasterOption[];
   value: string | null;
   onChange: (v: string | null, option?: MasterOption) => void;
+  placeholder?: string;
   disabled?: boolean;
+  className?: string;
 }) {
   const [local, setLocal] = React.useState<MasterOption[]>([]);
   const all = React.useMemo(
@@ -146,8 +154,9 @@ export function VehicleCombobox({
       options={all}
       value={value}
       onChange={(v) => onChange(v, all.find((o) => o.value === v))}
-      placeholder="Select vehicle..."
+      placeholder={placeholder}
       disabled={disabled}
+      className={className}
       createLabel="+ Create vehicle"
       renderCreateDialog={(closeAndSelect) => (
         <VehicleCreateDialog
@@ -201,6 +210,120 @@ export function CityCombobox({
           onCreated={(opt) => {
             setLocal((prev) => [...prev, opt]);
             closeAndSelect(opt.value);
+          }}
+        />
+      )}
+    />
+  );
+}
+
+/** Income / Expense head combobox with inline create (Account Heads master). */
+export function AccountHeadCombobox({
+  options,
+  value,
+  onChange,
+  kind = "EXPENSE",
+  placeholder = "Select head...",
+  disabled,
+  className,
+}: {
+  options: MasterOption[];
+  value: string | null;
+  onChange: (v: string | null, option?: MasterOption) => void;
+  kind?: "INCOME" | "EXPENSE";
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [local, setLocal] = React.useState<MasterOption[]>([]);
+  const all = React.useMemo(
+    () => [
+      ...options,
+      ...local.filter((l) => l.meta === kind && !options.some((o) => o.value === l.value)),
+    ],
+    [options, local, kind]
+  );
+  return (
+    <MasterCombobox
+      options={all}
+      value={value}
+      onChange={(v) => onChange(v, all.find((o) => o.value === v))}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={className}
+      createLabel="+ Create head"
+      renderCreateDialog={(closeAndSelect) => (
+        <AccountHeadCreateDialog
+          open
+          defaultKind={kind}
+          onOpenChange={(o: boolean) => {
+            if (!o) closeAndSelect(value ?? "");
+          }}
+          onCreated={(opt) => {
+            setLocal((prev) => [...prev, opt]);
+            // a head of the other kind is saved but does not belong in this list
+            closeAndSelect(opt.meta === kind ? opt.value : value ?? "");
+          }}
+        />
+      )}
+    />
+  );
+}
+
+/**
+ * Bank / Cash / Card account combobox with inline create. Accounts are
+ * parties in the BANK / CASH / CARD ledger groups (Bank & Cash Heads master);
+ * the option's meta carries the group, which callers filter on.
+ */
+export function BankCashCombobox({
+  options,
+  value,
+  onChange,
+  mode,
+  placeholder = "Select account...",
+  disabled,
+  className,
+}: {
+  options: MasterOption[];
+  value: string | null;
+  onChange: (v: string | null, option?: MasterOption) => void;
+  /** pre-selects the ledger group in the create dialog and filters new rows */
+  mode?: "BANK" | "CASH" | "CARD";
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [local, setLocal] = React.useState<MasterOption[]>([]);
+  const all = React.useMemo(
+    () => [
+      ...options,
+      ...local.filter(
+        (l) => (!mode || l.meta === mode) && !options.some((o) => o.value === l.value)
+      ),
+    ],
+    [options, local, mode]
+  );
+  return (
+    <MasterCombobox
+      options={all}
+      value={value}
+      onChange={(v) => onChange(v, all.find((o) => o.value === v))}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={className}
+      createLabel="+ Create bank / cash account"
+      renderCreateDialog={(closeAndSelect) => (
+        <PartyCreateDialog
+          open
+          defaultGroup={mode ?? "BANK"}
+          onOpenChange={(o: boolean) => {
+            if (!o) closeAndSelect(value ?? "");
+          }}
+          onCreated={(raw) => {
+            const group = (raw as { ledgerGroup?: string }).ledgerGroup;
+            const opt: MasterOption = { value: raw.value, label: raw.label, meta: group };
+            setLocal((prev) => [...prev, opt]);
+            closeAndSelect(!mode || group === mode ? opt.value : value ?? "");
           }}
         />
       )}

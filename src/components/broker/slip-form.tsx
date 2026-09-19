@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput, IsoDateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox } from "@/components/fleet/fields";
 import {
   CityCreateDialog as CityDialog,
   PartyCreateDialog as PartyDialog,
@@ -600,7 +601,7 @@ export function BrokerSlipForm({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Bank / Cash Head</Label>
-            <MasterCombobox
+            <BankCashCombobox
               options={bankCashOptions}
               value={s.paymentHeadId}
               onChange={(v) => setSide2(side, { paymentHeadId: v })}

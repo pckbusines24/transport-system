@@ -28,7 +28,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { DataTable, type DataTableColumnMeta } from "@/components/data/data-table";
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, PartyCombobox } from "@/components/fleet/fields";
 import { deleteFinanceTxn, saveFinanceTxn } from "@/app/(app)/finance/actions";
 import type { FinanceTxnRow } from "@/app/(app)/finance/queries";
 
@@ -281,7 +282,7 @@ export function FinanceTxnClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Party *</Label>
-              <MasterCombobox
+              <PartyCombobox ledgerGroup="SUPPLIERS"
                 options={partyOptions}
                 value={form.partyId}
                 onChange={(v) => set({ partyId: v })}
@@ -313,7 +314,7 @@ export function FinanceTxnClient({
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label className="text-xs">Cash / Bank Account *</Label>
-              <MasterCombobox
+              <BankCashCombobox
                 options={bankOptions.filter((b) => !b.meta || b.meta === form.entryType)}
                 value={form.bankPartyId}
                 onChange={(v) => set({ bankPartyId: v })}

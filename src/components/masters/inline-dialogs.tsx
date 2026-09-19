@@ -56,6 +56,7 @@ import { saveVehicle } from "@/app/(app)/masters/vehicles/actions";
 import { saveProduct } from "@/app/(app)/masters/products/actions";
 import { saveProductGroup } from "@/app/(app)/masters/product-groups/actions";
 import { saveUnit } from "@/app/(app)/masters/units/actions";
+import { saveAccountHead } from "@/app/(app)/masters/account-heads/actions";
 
 export interface InlineCreateDialogProps {
   open: boolean;
@@ -231,6 +232,35 @@ export function UnitCreateDialog(props: InlineCreateDialogProps) {
       fields={unitFields}
       initial={unitDefaults}
       save={saveUnit}
+      dialogClassName="sm:max-w-md"
+    />
+  );
+}
+
+/** Income / Expense head — same two fields as the Account Heads master. */
+export function AccountHeadCreateDialog({
+  defaultKind = "EXPENSE",
+  ...props
+}: InlineCreateDialogProps & { defaultKind?: "INCOME" | "EXPENSE" }) {
+  return (
+    <InlineMasterDialog
+      {...props}
+      entity="Account Head"
+      kind="accountHead"
+      fields={[
+        { name: "name", label: "Name *", type: "text", uppercase: false },
+        {
+          name: "kind",
+          label: "Kind *",
+          type: "select",
+          options: [
+            { value: "INCOME", label: "Income" },
+            { value: "EXPENSE", label: "Expense" },
+          ],
+        },
+      ]}
+      initial={{ name: "", kind: defaultKind }}
+      save={saveAccountHead}
       dialogClassName="sm:max-w-md"
     />
   );

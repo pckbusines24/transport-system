@@ -20,7 +20,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { DataTable, type DataTableColumnMeta } from "@/components/data/data-table";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { VehicleCombobox } from "@/components/fleet/fields";
 import {
   allocateVehicleExpense,
   deleteVehicleExpenseAllocation,
@@ -346,7 +347,7 @@ export function VehicleExpenseAllocationClient({
                 <div key={i} className="grid grid-cols-12 items-end gap-2">
                   <div className="col-span-4 space-y-1">
                     <Label className="text-xs">Vehicle</Label>
-                    <MasterCombobox
+                    <VehicleCombobox
                       options={vehicleOptions}
                       value={r.vehicleId}
                       onChange={(v) => setRow(i, { vehicleId: v })}

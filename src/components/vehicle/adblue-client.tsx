@@ -29,7 +29,8 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, PartyCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import { deleteAdblueTxn, saveAdblueTxn } from "@/app/(app)/vehicle/adblue/actions";
 
 export interface AdblueRow {
@@ -376,7 +377,7 @@ export function AdblueClient({
               <Label className="text-xs">
                 Vehicle No {form.type === "ISSUE" ? "*" : "(optional)"}
               </Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={form.vehicleId}
                 onChange={(v) => set({ vehicleId: v })}
@@ -410,7 +411,7 @@ export function AdblueClient({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Supplier Ledger</Label>
-                  <MasterCombobox
+                  <PartyCombobox ledgerGroup="SUPPLIERS"
                     options={partyOptions}
                     value={form.supplierId}
                     onChange={(v) => set({ supplierId: v })}
@@ -484,7 +485,7 @@ export function AdblueClient({
                 {form.paymentMode !== "CREDIT" && (
                   <div className="space-y-1">
                     <Label className="text-xs">Paid From (Cash / Bank) *</Label>
-                    <MasterCombobox
+                    <BankCashCombobox
                       options={bankOptions}
                       value={form.bankPartyId}
                       onChange={(v) => set({ bankPartyId: v })}

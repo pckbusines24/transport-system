@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import { Field, NumInput, isoFromText, textFromIso, todayText } from "./shared";
 import {
   getPendingTripDocs,
@@ -556,7 +557,7 @@ export function TripSettlementForm({
             <Input value={tripNo} onChange={(e) => setTripNo(e.target.value)} />
           </Field>
           <Field label="Vehicle No *">
-            <MasterCombobox
+            <VehicleCombobox
               options={vehicles}
               value={vehicleId}
               onChange={setVehicleId}
@@ -1105,7 +1106,7 @@ export function TripSettlementForm({
               </Select>
             </Field>
             <Field label="Cash / Bank Account *">
-              <MasterCombobox
+              <BankCashCombobox mode={settleMode as "BANK" | "CASH" | "CARD"}
                 options={bankOptions.filter((b) => b.meta === settleMode)}
                 value={settleBank}
                 onChange={setSettleBank}

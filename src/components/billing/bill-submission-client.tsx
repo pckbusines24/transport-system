@@ -33,7 +33,8 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { PartyCombobox } from "@/components/fleet/fields";
 import {
   findInvoiceForSubmission,
   getInvoiceSubmissionHistory,
@@ -461,7 +462,7 @@ export function BillSubmissionClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Customer *</Label>
-              <MasterCombobox
+              <PartyCombobox ledgerGroup="CONSIGNEE_CONSIGNOR"
                 options={partyOptions}
                 value={partyId}
                 onChange={(v) => {

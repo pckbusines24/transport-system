@@ -30,6 +30,7 @@ import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import {
   deleteDriverAdvance,
   saveDriverAdvance,
@@ -289,7 +290,7 @@ export function DriverAdvanceClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Vehicle No</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={form.vehicleId}
                 onChange={(v) => set({ vehicleId: v })}
@@ -322,7 +323,7 @@ export function DriverAdvanceClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Cash / Bank Account</Label>
-              <MasterCombobox
+              <BankCashCombobox mode={form.paymentMode as "BANK" | "CASH" | "CARD"}
                 options={bankOptions.filter((b) =>
                   b.meta === form.paymentMode
                 )}

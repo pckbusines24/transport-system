@@ -30,7 +30,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { DataTable, type DataTableColumnMeta } from "@/components/data/data-table";
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, PartyCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import { deleteLoan, deleteLoanEmi, saveLoan } from "@/app/(app)/finance/actions";
 import { EmiPayDialog, type EmiPayTarget } from "@/components/finance/emi-pay-dialog";
 import type { EmiRow, LoanRow } from "@/app/(app)/finance/queries";
@@ -399,7 +400,7 @@ export function LoanRegisterClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Party / Finance Company *</Label>
-              <MasterCombobox
+              <PartyCombobox ledgerGroup="SUPPLIERS"
                 options={partyOptions}
                 value={loanForm.partyId}
                 onChange={(v) => setLoan({ partyId: v })}
@@ -409,7 +410,7 @@ export function LoanRegisterClient({
             {isVehicleLoan && (
               <div className="space-y-1">
                 <Label className="text-xs">Vehicle No *</Label>
-                <MasterCombobox
+                <VehicleCombobox
                   options={vehicleOptions}
                   value={loanForm.vehicleId}
                   onChange={(v) => setLoan({ vehicleId: v })}
@@ -563,7 +564,7 @@ export function LoanRegisterClient({
                 {loanForm.postDisbursement && (
                   <div className="space-y-1">
                     <Label className="text-xs">Bank / Cash Account *</Label>
-                    <MasterCombobox
+                    <BankCashCombobox
                       options={bankOptions}
                       value={loanForm.bankPartyId}
                       onChange={(v) => setLoan({ bankPartyId: v })}

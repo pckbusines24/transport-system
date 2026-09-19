@@ -29,7 +29,8 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { AccountHeadCombobox, BankCashCombobox, PartyCombobox } from "@/components/fleet/fields";
 import {
   deleteOfficeTransaction,
   saveOfficeTransaction,
@@ -448,7 +449,7 @@ export function OfficeTxnClient({
               <Label className="text-xs">
                 {form.txnType === "INCOME" ? "Income Head *" : "Expense Head *"}
               </Label>
-              <MasterCombobox
+              <AccountHeadCombobox kind={form.txnType}
                 options={heads}
                 value={form.headId}
                 onChange={(v) => set({ headId: v })}
@@ -457,7 +458,7 @@ export function OfficeTxnClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Supplier / Party (optional)</Label>
-              <MasterCombobox
+              <PartyCombobox ledgerGroup="SUPPLIERS"
                 options={partyOptions}
                 value={form.partyId}
                 onChange={(v) => set({ partyId: v })}
@@ -495,7 +496,7 @@ export function OfficeTxnClient({
                   Not needed — amount stays outstanding on the party ledger
                 </div>
               ) : (
-                <MasterCombobox
+                <BankCashCombobox mode={form.paymentMode as "BANK" | "CASH" | "CARD"}
                   options={bankOptions.filter((b) =>
                     b.meta === form.paymentMode
                   )}
@@ -580,7 +581,7 @@ export function OfficeTxnClient({
               {form.lines.map((l, i) => (
                 <div key={i} className="flex flex-wrap items-center gap-1.5">
                   <div className="w-56">
-                    <MasterCombobox
+                    <AccountHeadCombobox kind={form.txnType}
                       options={heads}
                       value={l.headId}
                       onChange={(v) =>

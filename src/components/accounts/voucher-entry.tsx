@@ -29,6 +29,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, PartyCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import {
   deleteVoucher,
   getAllocationCandidates,
@@ -691,7 +692,7 @@ export function VoucherEntry({
             <>
               <div className="space-y-1">
                 <Label className="text-xs">Party / Ledger *</Label>
-                <MasterCombobox
+                <PartyCombobox
                   options={partyOptions}
                   value={partyId}
                   onChange={onParty}
@@ -700,7 +701,7 @@ export function VoucherEntry({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Vehicle (when applicable)</Label>
-                <MasterCombobox
+                <VehicleCombobox
                   options={vehicleOptions}
                   value={vehicleId}
                   onChange={setVehicleId}
@@ -799,7 +800,7 @@ export function VoucherEntry({
             <>
               <div className="space-y-1">
                 <Label className="text-xs">From Bank/Cash *</Label>
-                <MasterCombobox
+                <BankCashCombobox
                   options={bankOptions}
                   value={partyId}
                   onChange={setPartyId}
@@ -808,7 +809,7 @@ export function VoucherEntry({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">To Bank/Cash *</Label>
-                <MasterCombobox
+                <BankCashCombobox
                   options={bankOptions}
                   value={bankPartyId}
                   onChange={setBankPartyId}

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox } from "@/components/fleet/fields";
 import { useToast } from "@/components/ui/use-toast";
 import {
   CityCreateDialog,
@@ -990,7 +991,7 @@ export function LrForm(props: LrFormProps) {
               />
             </Field>
             <Field label="Advance Bank" className="min-w-[220px]">
-              <MasterCombobox
+              <BankCashCombobox mode="BANK"
                 options={props.bankOptions}
                 value={v.advanceBank ? props.bankOptions.find((b) => b.label === v.advanceBank)?.value ?? null : null}
                 onChange={(val) => {

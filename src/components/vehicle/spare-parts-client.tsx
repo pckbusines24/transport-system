@@ -40,6 +40,7 @@ import { DataTable } from "@/components/data/data-table";
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { VehicleCombobox } from "@/components/fleet/fields";
 import {
   addWarrantyClaim,
   deleteSparePart,
@@ -637,7 +638,7 @@ function InstallDialog({
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Vehicle *" span2>
-            <MasterCombobox options={vehicleOptions} value={vehicleId} onChange={setVehicleId} placeholder="Select vehicle..." />
+            <VehicleCombobox options={vehicleOptions} value={vehicleId} onChange={setVehicleId} placeholder="Select vehicle..." />
           </Field>
           <Field label="Installation Date *"><DateInput value={dateText} onChange={setDateText} /></Field>
           <Field label="Vehicle KM Reading *"><Input type="number" inputMode="numeric" className="text-right" value={kmText} onChange={(e) => setKmText(e.target.value)} /></Field>

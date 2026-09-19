@@ -23,8 +23,8 @@ import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FileUploadField } from "@/components/data/file-upload-field";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
-import { PartyCombobox } from "@/components/fleet/fields";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { PartyCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import {
   deleteDriver,
   exitDriver,
@@ -496,7 +496,7 @@ export function DriverClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Assign Vehicle (optional)</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={form.vehicleId}
                 onChange={(v) => set({ vehicleId: v })}
@@ -614,7 +614,7 @@ export function DriverClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">New Vehicle *</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={transfer.newVehicleId}
                 onChange={(v) => setTransfer((f) => ({ ...f, newVehicleId: v }))}

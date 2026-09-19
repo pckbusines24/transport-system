@@ -29,7 +29,8 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { VehicleCombobox } from "@/components/fleet/fields";
 import {
   createTyre,
   deleteTyre,
@@ -407,7 +408,7 @@ export function TyreClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Vehicle No *</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={form.vehicleId}
                 onChange={(v) => set({ vehicleId: v })}
@@ -527,7 +528,7 @@ export function TyreClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">New Vehicle No *</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={transfer.newVehicleId}
                 onChange={(v) => setTransfer((f) => ({ ...f, newVehicleId: v }))}

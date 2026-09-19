@@ -30,6 +30,7 @@ import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox } from "@/components/fleet/fields";
 import {
   deleteDriverSalary,
   getPendingShortages,
@@ -672,7 +673,7 @@ export function DriverSalaryClient({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Cash / Bank Account *</Label>
-                  <MasterCombobox
+                  <BankCashCombobox mode={pay.paymentMode as "BANK" | "CASH" | "CARD"}
                     options={bankOptions.filter((b) =>
                       b.meta === pay.paymentMode
                     )}

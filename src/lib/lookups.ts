@@ -122,12 +122,12 @@ export async function getProductGroupOptions(): Promise<Option[]> {
 // invalidation are identical. Afterwards they call this to turn the new id
 // into the combobox option shape the dropdown lists.
 
-export type MasterKind = "party" | "vehicle" | "city" | "product" | "productGroup" | "unit";
+export type MasterKind = "party" | "vehicle" | "city" | "product" | "productGroup" | "unit" | "accountHead";
 
 export async function getMasterOption(
   kind: MasterKind,
   id: string
-): Promise<Option & { transportName?: string | null; ownerName?: string | null }> {
+): Promise<Option & { transportName?: string | null; ownerName?: string | null; ledgerGroup?: string }> {
   const s = requireSession();
   return withTenant(s.tenantId, async (tx) => {
     switch (kind) {
@@ -142,7 +142,13 @@ export async function getMasterOption(
           // carries the two-way name-link data so it links without a page reload
           transportName: p.transportName ?? null,
           ownerName: p.name,
+          // bank / cash comboboxes key their filter on the group
+          ledgerGroup: p.ledgerGroup,
         };
+      }
+      case "accountHead": {
+        const h = await tx.accountHead.findUniqueOrThrow({ where: { id } });
+        return { value: h.id, label: h.name, meta: h.kind };
       }
       case "vehicle": {
         const v = await tx.vehicle.findUniqueOrThrow({ where: { id }, include: { owner: true } });

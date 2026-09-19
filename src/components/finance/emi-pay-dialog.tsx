@@ -15,7 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
-import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import type { MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox } from "@/components/fleet/fields";
 import { getEmiSuggestion, payLoanEmi } from "@/app/(app)/finance/actions";
 
 /**
@@ -190,7 +191,7 @@ export function EmiPayDialog({
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label className="text-xs">Bank / Cash *</Label>
-            <MasterCombobox
+            <BankCashCombobox
               options={bankOptions}
               value={form.bankPartyId}
               onChange={(v) => set({ bankPartyId: v })}

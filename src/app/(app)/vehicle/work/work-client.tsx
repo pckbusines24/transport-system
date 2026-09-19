@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { VehicleCombobox } from "@/components/fleet/fields";
 import { deleteVehicleWork, saveVehicleWork } from "./actions";
 
 /**
@@ -263,7 +264,7 @@ export function WorkEntryClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Vehicle Number *</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicles}
                 value={form.vehicleId}
                 onChange={(v) => setForm((f) => ({ ...f, vehicleId: v }))}

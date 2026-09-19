@@ -29,6 +29,7 @@ import { DataTable, type DataTableColumnMeta } from "@/components/data/data-tabl
 import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox } from "@/components/fleet/fields";
 import {
   finalizeDriverFnf,
   getFnfPreview,
@@ -335,7 +336,7 @@ export function DriverFnfClient({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Cash / Bank Account *</Label>
-                  <MasterCombobox
+                  <BankCashCombobox mode={form.paymentMode as "BANK" | "CASH" | "CARD"}
                     options={bankOptions.filter((b) =>
                       b.meta === form.paymentMode
                     )}

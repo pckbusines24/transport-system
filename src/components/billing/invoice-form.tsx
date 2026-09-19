@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox } from "@/components/fleet/fields";
 import { PartyCreateDialog } from "@/components/masters/inline-dialogs";
 import {
   getBillingLrsByIds,
@@ -790,7 +791,7 @@ export function InvoiceForm({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Bank Account (printed on bill)</Label>
-            <MasterCombobox
+            <BankCashCombobox mode="BANK"
               options={bankOptions}
               value={bankPartyId}
               onChange={setBankPartyId}

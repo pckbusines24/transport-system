@@ -30,6 +30,7 @@ import { DateInput } from "@/components/data/date-input";
 import { ExportButton } from "@/components/data/export-button";
 import { FilterBar } from "@/components/data/filter-bar";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { BankCashCombobox, VehicleCombobox } from "@/components/fleet/fields";
 import {
   deleteDriverSettlement,
   saveDriverSettlement,
@@ -334,7 +335,7 @@ export function DriverSettlementClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Vehicle No</Label>
-              <MasterCombobox
+              <VehicleCombobox
                 options={vehicleOptions}
                 value={form.vehicleId}
                 onChange={(v) => setForm((f) => ({ ...f, vehicleId: v }))}
@@ -448,7 +449,7 @@ export function DriverSettlementClient({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Cash / Bank Account *</Label>
-              <MasterCombobox
+              <BankCashCombobox mode={settle.paymentMode as "BANK" | "CASH" | "CARD"}
                 options={bankOptions.filter((b) =>
                   b.meta === settle.paymentMode
                 )}
