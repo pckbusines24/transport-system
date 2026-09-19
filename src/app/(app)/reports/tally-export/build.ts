@@ -63,10 +63,35 @@ interface Ctx {
   >;
   headById: Map<string, string>;
   vehicleById: Map<string, { id: string; number: string; ownershipType: string }>;
+  cityById: Map<string, string>;
+}
+
+/** "₹5,470/MT" style rate text for the narration; empty when no rate. */
+function rateText(rate: number, basis: string | null | undefined): string {
+  if (!(rate > 0)) return "";
+  const unit =
+    basis === "QTY" ? "/Qty" : basis === "FIXED" ? "/Trip" : basis === "ACTUAL_WT" || basis === "CHARGE_WT" ? "/MT" : "";
+  return `₹${rate.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}${unit}`;
+}
+
+/**
+ * Pipe-separated audit narration:
+ *   <Kind> against <Doc> No. X | Vehicle No. Y | From to To | <Rate label> ₹r/MT | extra...
+ * Missing pieces are skipped rather than printed empty.
+ */
+function docNarration(parts: (string | null | undefined | false)[]): string {
+  return parts.filter((x): x is string => !!x && x.trim().length > 0).join(" | ");
+}
+
+function routeText(ctx: Ctx, fromId: string | null | undefined, toId: string | null | undefined): string {
+  const from = fromId ? ctx.cityById.get(fromId) : null;
+  const to = toId ? ctx.cityById.get(toId) : null;
+  if (from && to) return `${from} to ${to}`;
+  return from ?? to ?? "";
 }
 
 async function loadCtx(tx: Tx, session: Session): Promise<Ctx> {
-  const [parties, heads, mapRows, vehicles] = await Promise.all([
+  const [parties, heads, mapRows, vehicles, cities] = await Promise.all([
     tx.party.findMany({
       select: {
         id: true,
@@ -83,12 +108,14 @@ async function loadCtx(tx: Tx, session: Session): Promise<Ctx> {
     tx.accountHead.findMany({ select: { id: true, name: true } }),
     tx.tallyLedgerMap.findMany({ where: { firmId: session.firmId } }),
     tx.vehicle.findMany({ select: { id: true, number: true, ownershipType: true } }),
+    tx.city.findMany({ select: { id: true, name: true } }),
   ]);
   return {
     look: makeTallyLookup(mapRows),
     partyById: new Map(parties.map((p) => [p.id, { ...p, tdsMode: p.tdsMode as string | null }])),
     headById: new Map(heads.map((h) => [h.id, h.name])),
     vehicleById: new Map(vehicles.map((v) => [v.id, v])),
+    cityById: new Map(cities.map((c) => [c.id, c.name])),
   };
 }
 
@@ -340,6 +367,10 @@ export async function buildChalanDocs(
     const chDate = tallyDate(c.chalanDate);
     const refNo = c.chalanNo;
     const tag = `chalan ${c.chalanNo} — ${vehicle.number}`;
+    const route = routeText(ctx, c.sourceCityId, c.destCityId);
+    // "Chalan No. 7 | Vehicle No. CG13AP3775 | Raigarh to Chennai"
+    const docRef = docNarration([`Chalan No. ${c.chalanNo}`, `Vehicle No. ${vehicle.number}`, route]);
+    const purchaseRate = rateText(toNum(c.rate), c.rateBasis);
 
     const isDecl = broker.tdsMode === "DECLARATION";
     const components: [string, number][] = [
@@ -359,7 +390,11 @@ export async function buildChalanDocs(
         type: "Purchase",
         date: chDate,
         reference: refNo,
-        narration: `Chalan ${c.chalanNo} — ${vehicle.number}${c.remarks ? ` — ${c.remarks}` : ""}`,
+        narration: docNarration([
+          `Purchase against ${docRef}`,
+          purchaseRate && `Purchase Rate ${purchaseRate}`,
+          c.remarks,
+        ]),
         lines: [
           ...components.filter(([, a]) => a > 0).map(([l, a]) => drLine(l, a)),
           crLine(brokerLedger, earnTotal, { name: refNo, type: "New Ref" }),
@@ -408,7 +443,12 @@ export async function buildChalanDocs(
         a.dieselQty && toNum(a.dieselQty) > 0
           ? ` ${toNum(a.dieselQty)} L${a.dieselRate ? ` @ ${toNum(a.dieselRate)}` : ""}`
           : "";
-      const narration = `${a.type.replace(/_/g, " ")} advance${dieselBits}${a.supplierName ? ` — ${a.supplierName}` : ""} — ${tag}${a.remarks ? ` — ${a.remarks}` : ""}`;
+      const narration = docNarration([
+        `Payment against ${docRef}`,
+        `Advance Payment (${a.type.replace(/_/g, " ")}${dieselBits})`,
+        a.supplierName,
+        a.remarks,
+      ]);
       const brokerDr = drLine(brokerLedger, amt, { name: refNo, type: "Agst Ref" });
       if (a.type === "BANK") {
         const ledger = a.bankPartyId
@@ -458,7 +498,7 @@ export async function buildChalanDocs(
             : vs?.date
               ? tallyDate(vs.date)
               : chDate,
-          narrationBase: `${tag}${c.balRemarks ? ` — ${c.balRemarks}` : ""}`,
+          narrationBase: docNarration([docRef, "Balance Payment", c.balRemarks]),
           counterSide: "DR",
           paid: round2(toNum(c.balPaidAmount) + (vs?.paid ?? 0)),
           payLedger: c.balPaymentHeadId
@@ -767,6 +807,15 @@ export async function buildSlipDocs(
     const sDate = tallyDate(s.slipDate);
     const refNo = s.slipNo;
     const tag = `broker slip ${s.slipNo}${vehicle ? ` — ${vehicle.number}` : ""}`;
+    const route = routeText(ctx, s.loadStationId, s.destCityId);
+    const docRef = docNarration([
+      `Broker Slip No. ${s.slipNo}`,
+      vehicle && `Vehicle No. ${vehicle.number}`,
+      route,
+    ]);
+    // party (sales) and owner (purchase) sides carry their OWN rate — never swapped
+    const salesRate = rateText(toNum(s.pRate), s.pRateBasis ?? s.rateBasis);
+    const purchaseRate = rateText(toNum(s.vRate), s.vRateBasis ?? s.rateBasis);
     const advances: SlipAdvance[] = Array.isArray(s.advances) ? (s.advances as SlipAdvance[]) : [];
 
     // ---------- PARTY SIDE (receivable) — always exports when present
@@ -788,7 +837,11 @@ export async function buildSlipDocs(
             type: "Sales",
             date: sDate,
             reference: refNo,
-            narration: `Broker slip ${s.slipNo}${vehicle ? ` — ${vehicle.number}` : ""}${s.pRemarks ? ` — ${s.pRemarks}` : ""}`,
+            narration: docNarration([
+              `Sales against ${docRef}`,
+              salesRate && `Sales Rate ${salesRate}`,
+              s.pRemarks,
+            ]),
             lines: [
               drLine(pLedger, pTotal, { name: refNo, type: "New Ref" }),
               ...pComponents.filter(([, a]) => a > 0).map(([l, a]) => crLine(l, a)),
@@ -834,7 +887,11 @@ export async function buildSlipDocs(
           const amt = round2(toNum(a.amount ?? 0));
           if (amt <= 0 || a.type === "ADVANCE_ADJ") return;
           const aDate = a.date ? tallyDate(new Date(`${a.date}T00:00:00+05:30`)) : sDate;
-          const nar = `${(a.type ?? "").replace(/_/g, " ")} advance received${a.remarks ? ` — ${a.remarks}` : ""} — ${tag}`;
+          const nar = docNarration([
+            `Receipt against ${docRef}`,
+            `Advance Received (${(a.type ?? "").replace(/_/g, " ")})`,
+            a.remarks,
+          ]);
           const partyCr = crLine(pLedger, amt, { name: refNo, type: "Agst Ref" });
           if (a.headKind === "BANK" || a.headKind === "CASH") {
             vouchers.push({
@@ -871,7 +928,7 @@ export async function buildSlipDocs(
               counterLedger: pLedger,
               refNo,
               date: s.pPaymentDate ? tallyDate(s.pPaymentDate) : sDate,
-              narrationBase: `${tag}${s.pPaymentRemarks ? ` — ${s.pPaymentRemarks}` : ""}`,
+              narrationBase: docNarration([docRef, "Balance Received", s.pPaymentRemarks]),
               counterSide: "CR", // party credited — money came IN
               paid: toNum(s.pPaidAmount),
               payLedger: s.pPaymentHeadId
@@ -911,7 +968,11 @@ export async function buildSlipDocs(
             type: "Purchase",
             date: sDate,
             reference: refNo,
-            narration: `Broker slip ${s.slipNo} (owner side)${vehicle ? ` — ${vehicle.number}` : ""}${s.vRemarks ? ` — ${s.vRemarks}` : ""}`,
+            narration: docNarration([
+              `Purchase against ${docRef}`,
+              purchaseRate && `Purchase Rate ${purchaseRate}`,
+              s.vRemarks,
+            ]),
             lines: [
               ...vComponents.filter(([, a]) => a > 0).map(([l, a]) => drLine(l, a)),
               crLine(oLedger, vTotal, { name: refNo, type: "New Ref" }),
@@ -960,7 +1021,12 @@ export async function buildSlipDocs(
             a.dieselQty && toNum(a.dieselQty) > 0
               ? ` ${toNum(a.dieselQty)} L${a.dieselRate ? ` @ ${toNum(a.dieselRate)}` : ""}`
               : "";
-          const nar = `${(a.type ?? "").replace(/_/g, " ")} advance paid${dieselBits}${a.supplierName ? ` — ${a.supplierName}` : ""} — ${tag}${a.remarks ? ` — ${a.remarks}` : ""}`;
+          const nar = docNarration([
+            `Payment against ${docRef}`,
+            `Advance Payment (${(a.type ?? "").replace(/_/g, " ")}${dieselBits})`,
+            a.supplierName,
+            a.remarks,
+          ]);
           const ownerDr = drLine(oLedger, amt, { name: refNo, type: "Agst Ref" });
           if (a.headKind === "BANK" || a.headKind === "CASH") {
             const ledger =
@@ -1002,7 +1068,7 @@ export async function buildSlipDocs(
                 : vv?.date
                   ? tallyDate(vv.date)
                   : sDate,
-              narrationBase: `${tag} (owner side)${s.vPaymentRemarks ? ` — ${s.vPaymentRemarks}` : ""}`,
+              narrationBase: docNarration([docRef, "Owner Balance Payment", s.vPaymentRemarks]),
               counterSide: "DR", // owner debited — money went OUT
               paid: round2(toNum(s.vPaidAmount) + (vv?.paid ?? 0)),
               payLedger: s.vPaymentHeadId
