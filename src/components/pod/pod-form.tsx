@@ -150,7 +150,15 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
 
   const toggle = (id: string, on: boolean) => {
     setSelected((prev) => ({ ...prev, [id]: on }));
-    if (on) setLines((prev) => (prev[id] ? prev : { ...prev, [id]: emptyLine() }));
+    // Rec Wt starts at the LR's actual weight (shortage 0); the user edits
+    // it only when the delivered weight differs
+    if (on)
+      setLines((prev) => {
+        if (prev[id]) return prev;
+        const lr = pendingLrs.find((l) => l.id === id);
+        const recWt = lr && lr.actualWt > 0 ? String(lr.actualWt) : "";
+        return { ...prev, [id]: { ...emptyLine(), recWt } };
+      });
   };
 
   const setLine = (id: string, patch: Partial<LineState>) =>
