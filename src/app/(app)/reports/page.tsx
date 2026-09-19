@@ -68,6 +68,12 @@ const SECTIONS: { title: string; links: { label: string; href: string; icon: typ
         icon: Wrench,
         desc: "Vehicle-wise trips with expense drill-down",
       },
+      {
+        label: "Vehicle Expense Adjustment Report",
+        href: "/reports/vehicle-expense-adjustment",
+        icon: Scale,
+        desc: "Chalan / broker-slip expense deductions vs Vehicle Expense Book, head-wise with drill-down",
+      },
     ],
   },
   {
