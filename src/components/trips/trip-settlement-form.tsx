@@ -319,8 +319,8 @@ export function TripSettlementForm({
   const [rtoExp, setRtoExp] = React.useState(initial?.rtoExp ?? 0);
   const [fixedExp, setFixedExp] = React.useState(initial?.fixedTripExp ?? 0);
   // ACTUAL method — the operating heads that are not auto-fetched
-  const [roadExp, setRoadExp] = React.useState(initial?.roadExp ?? 0);
-  const [otherOpExp, setOtherOpExp] = React.useState(initial?.otherOpExp ?? 0);
+  const [roadExp] = React.useState(initial?.roadExp ?? 0);
+  const [otherOpExp] = React.useState(initial?.otherOpExp ?? 0);
 
   // auto-fetch the previous trip's New Loading KM into Loading KM
   React.useEffect(() => {
