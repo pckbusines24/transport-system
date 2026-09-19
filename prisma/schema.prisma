@@ -809,7 +809,7 @@ model Chalan {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, chalanNo])
+  @@index([firmId, fyId, chalanNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
   @@index([tenantId, vehicleId])
 }
@@ -885,7 +885,7 @@ model LoadingChalan {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, chalanNo])
+  @@index([firmId, fyId, chalanNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
 }
 
@@ -938,7 +938,7 @@ model Delivery {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, delNo])
+  @@index([firmId, fyId, delNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
 }
 
@@ -975,7 +975,7 @@ model Crossing {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, chalanNo])
+  @@index([firmId, fyId, chalanNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
 }
 
@@ -1006,7 +1006,7 @@ model OutwardCrossing {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, ocNo])
+  @@index([firmId, fyId, ocNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
 }
 
@@ -1052,7 +1052,7 @@ model HireSlip {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, slipNo])
+  @@index([firmId, fyId, slipNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
 }
 
@@ -1087,7 +1087,7 @@ model SettlementSummary {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, summaryNo])
+  @@index([firmId, fyId, summaryNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
 }
 
@@ -1337,7 +1337,7 @@ model StaffAdvance {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, advanceNo])
+  @@index([firmId, fyId, advanceNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, partyId])
 }
 
@@ -1359,7 +1359,7 @@ model StaffLoan {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, loanNo])
+  @@index([firmId, fyId, loanNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, partyId])
 }
 
@@ -1444,7 +1444,7 @@ model OfficeTransaction {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, voucherNo])
+  @@index([firmId, fyId, voucherNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId, txnType])
   @@index([tenantId, partyId])
 }
@@ -1549,7 +1549,7 @@ model Voucher {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, type, voucherNo])
+  @@index([firmId, fyId, type, voucherNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId, type])
 }
 
@@ -1813,7 +1813,7 @@ model BrokerSlip {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, slipNo])
+  @@index([firmId, fyId, slipNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId])
   @@index([tenantId, vehicleId])
 }
@@ -1908,7 +1908,7 @@ model Trip {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, tripNo])
+  @@index([firmId, fyId, tripNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, vehicleId, tripDate])
 }
 
@@ -2009,7 +2009,7 @@ model Loan {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, loanNo])
+  @@index([firmId, fyId, loanNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId, status])
   @@index([tenantId, vehicleId])
 }
@@ -2080,7 +2080,7 @@ model FinanceTxn {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, voucherNo])
+  @@index([firmId, fyId, voucherNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId, date])
 }
 
@@ -2143,7 +2143,7 @@ model JobEntry {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, invoiceNo])
+  @@index([firmId, fyId, invoiceNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, vehicleId])
 }
 
@@ -2196,7 +2196,7 @@ model Purchase {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  @@unique([firmId, fyId, kind, invoiceNo])
+  @@index([firmId, fyId, kind, invoiceNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId])
 }
 
@@ -2313,7 +2313,7 @@ model CourierDispatch {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, dispatchNo])
+  @@index([firmId, fyId, dispatchNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId, dispatchDate])
 }
 
@@ -2376,7 +2376,7 @@ model SparePart {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([tenantId, firmId, serialNo])
+  @@index([tenantId, firmId, serialNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, status])
   @@index([tenantId, firmId, warrantyExpiryDate])
   @@index([tenantId, firmId, currentVehicleId])
@@ -2764,7 +2764,7 @@ model VehicleExpenseVoucher {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, voucherNo])
+  @@index([firmId, fyId, voucherNo]) // uniqueness among active rows only: partial index in migration
   @@index([tenantId, firmId, fyId, date])
 }
 
@@ -2916,7 +2916,7 @@ model DriverFnf {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 
-  @@unique([firmId, fyId, settlementNo])
+  @@index([firmId, fyId, settlementNo]) // uniqueness among active rows only: partial index in migration
   // one F&F per driver, EVER — closes the race where two concurrent
   // finalizations both passed the findFirst existence check
   @@unique([driverId])

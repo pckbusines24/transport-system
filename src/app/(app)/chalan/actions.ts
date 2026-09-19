@@ -354,24 +354,6 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
       if (clash) {
         return { ok: false as const, error: `Chalan No ${data.chalanNo} already exists — use a different number.` };
       }
-      // the DB unique constraint counts soft-deleted chalans too — surface a
-      // clear message instead of a raw constraint error at insert time
-      const deletedHolder = await tx.chalan.findFirst({
-        where: {
-          firmId: session.firmId,
-          chalanNo: data.chalanNo,
-          deletedAt: { not: null },
-          ...(data.id ? { id: { not: data.id } } : {}),
-        },
-        select: { id: true },
-      });
-      if (deletedHolder) {
-        return {
-          ok: false as const,
-          error: `Chalan No ${data.chalanNo} belongs to a deleted chalan and cannot be reused — use a different number.`,
-        };
-      }
-
       // an LR can ride only ONE live chalan — a second link would accrue the
       // same hire twice
       if (data.lrIds.length) {
