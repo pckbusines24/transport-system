@@ -157,28 +157,11 @@ export interface StatusChalan {
   timeline: { stage: string; date: string | null; status: string; done: boolean }[];
 }
 
-export interface StatusSummary {
-  lrs: number;
-  qty: number;
-  freight: number;
-  addition: number;
-  deduction: number;
-  commission: number;
-  mamool: number;
-  tds: number;
-  advance: number;
-  billAmount: number;
-  received: number;
-  pending: number;
-  shortageWt: number;
-}
-
 export interface StatusResult {
   chalans: StatusChalan[];
   /** LRs matched by the search that are not on any chalan */
   looseLrs: StatusLr[];
   bills: StatusBill[];
-  summary: StatusSummary;
   truncated: boolean;
 }
 
@@ -245,10 +228,6 @@ export async function getStatusData(
     chalans: [],
     looseLrs: [],
     bills: [],
-    summary: {
-      lrs: 0, qty: 0, freight: 0, addition: 0, deduction: 0, commission: 0, mamool: 0,
-      tds: 0, advance: 0, billAmount: 0, received: 0, pending: 0, shortageWt: 0,
-    },
     truncated: false,
   };
   if (!hasAnyFilter(f)) return empty;
@@ -632,25 +611,8 @@ export async function getStatusData(
     });
 
     const looseLrs = looseRows.map(shapeLr);
-    const allShaped = [...out.flatMap((c) => c.lrs), ...looseLrs];
     const billsAll = Array.from(billById.values());
 
-    const summary: StatusSummary = {
-      lrs: allShaped.length,
-      qty: allShaped.reduce((s, l) => s + l.qty, 0),
-      freight: round2(out.reduce((s, c) => s + c.bookingFreight, 0) + looseLrs.reduce((s, l) => s + l.freight, 0)),
-      addition: round2(out.reduce((s, c) => s + c.settlement.addition, 0)),
-      deduction: round2(out.reduce((s, c) => s + c.settlement.deduction, 0)),
-      commission: round2(out.reduce((s, c) => s + c.settlement.commission, 0)),
-      mamool: round2(out.reduce((s, c) => s + c.settlement.mamool, 0)),
-      tds: round2(out.reduce((s, c) => s + c.settlement.tds, 0)),
-      advance: round2(out.reduce((s, c) => s + c.settlement.advanceTotal, 0)),
-      billAmount: round2(billsAll.reduce((s, b) => s + b.netTotal, 0)),
-      received: round2(billsAll.reduce((s, b) => s + b.received, 0)),
-      pending: round2(billsAll.reduce((s, b) => s + b.outstanding, 0)),
-      shortageWt: roundWt(allShaped.reduce((s, l) => s + l.pod.shortageWt, 0)),
-    };
-
-    return { chalans: out, looseLrs, bills: billsAll, summary, truncated };
+    return { chalans: out, looseLrs, bills: billsAll, truncated };
   });
 }

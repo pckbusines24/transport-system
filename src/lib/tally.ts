@@ -90,7 +90,15 @@ export function tallyDate(d: Date): string {
 }
 
 function voucherXml(v: TallyVoucher): string {
-  const lines = v.lines
+  // Tally Prime's standard Purchase voucher: party (Cr) on top, purchase
+  // account(s) (Dr) below. The builders emit heads first, so reorder here —
+  // amounts, names and narration untouched; other voucher types unchanged.
+  const ordered =
+    v.type === "Purchase"
+      ? [...v.lines.filter((l) => l.side === "CR"), ...v.lines.filter((l) => l.side === "DR")]
+      : v.lines;
+  const partyLedger = v.type === "Purchase" ? ordered.find((l) => l.side === "CR")?.ledger : undefined;
+  const lines = ordered
     .map((ln) => {
       const amt = ln.side === "DR" ? -ln.amount : ln.amount;
       const bills = (ln.bills ?? [])
@@ -113,6 +121,7 @@ function voucherXml(v: TallyVoucher): string {
     `<VOUCHERTYPENAME>${v.type}</VOUCHERTYPENAME>` +
     (v.voucherNo ? `<VOUCHERNUMBER>${esc(v.voucherNo)}</VOUCHERNUMBER>` : "") +
     (v.reference ? `<REFERENCE>${esc(v.reference)}</REFERENCE>` : "") +
+    (partyLedger ? `<PARTYLEDGERNAME>${esc(partyLedger)}</PARTYLEDGERNAME>` : "") +
     `<NARRATION>${esc(v.narration)}</NARRATION><ISINVOICE>No</ISINVOICE>` +
     `${lines}</VOUCHER></TALLYMESSAGE>`
   );

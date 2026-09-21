@@ -5,18 +5,22 @@ import { toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 
 /**
- * Vehicle Expense Adjustment Report — READ-ONLY comparison of
+ * Vehicle Expense Adjustment Report — READ-ONLY, BROKER vehicles only
+ * (Vehicle Master → Ownership = Broker). Owner Name is the vehicle master's
+ * owner party, blank when the master has none — never a slip-side name.
  *
- *   DEDUCTED: expense-head advances deducted from a broker / owner on a chalan
- *             (ChalanAdvance with an expense head — diesel, tyre, repair, ...)
- *             or on the OWNER side of a broker slip (advances JSON, side "V",
- *             headKind EXPENSE)
- *   BOOKED:   the same heads booked in the Vehicle Expense Book
- *             (VehicleExpenseItem lines, head-split honoured)
+ *   DEDUCTED: expense-head advances taken from the owner / broker
+ *             - on a chalan (ChalanAdvance: diesel, tyre, toll, other…)
+ *               CANCELLED chalans are KEPT — the original entry stays in the
+ *               report, flagged "Cancelled"; nothing is reversed or moved
+ *             - on the OWNER side of a broker slip (advances JSON, side "V")
+ *   BOOKED:   actual vehicle expense against the vehicle
+ *             - Vehicle Expense Book lines (head-split honoured)
+ *             - PARTY side of a broker slip: expense the party gave for the
+ *               broker's vehicle (advances JSON, side "P", expense head)
  *
- * Difference = Deducted − Booked. Bank / cash advances and ADVANCE_ADJ rows
- * are money, not expense heads, so they are outside this report. Nothing is
- * posted or changed here.
+ * Bank / cash advances and ADVANCE_ADJ rows are money, not expense, and are
+ * excluded on both sides. Adjustment = Deducted − Booked. Nothing is posted.
  */
 
 export interface AdjFilters {
@@ -29,50 +33,34 @@ export interface AdjFilters {
 
 export interface AdjEntry {
   id: string;
-  source: "CHALAN" | "BROKER_SLIP" | "EXPENSE";
+  kind: "DEDUCTED" | "BOOKED";
+  source: "Chalan" | "Broker Slip – Owner Side" | "Vehicle Expense" | "Broker Slip – Party Paid";
   date: string;
   docNo: string;
   docDate: string;
   vehicleId: string;
   vehicleNo: string;
-  brokerId: string;
-  broker: string;
   headId: string;
   head: string;
   particular: string;
   amount: number;
-  reference: string;
+  /** "Cancelled" for a cancelled chalan — amount is retained */
+  status: string;
 }
 
-export interface AdjCell {
+export interface AdjVehicleRow {
+  vehicleId: string;
+  vehicleNo: string;
+  owner: string;
   deducted: number;
   booked: number;
   diff: number;
-}
-
-export interface AdjHeadRow extends AdjCell {
-  headId: string;
-  head: string;
-  deductedEntries: AdjEntry[];
-  bookedEntries: AdjEntry[];
-}
-
-export interface AdjVehicleNode extends AdjCell {
-  vehicleId: string;
-  vehicleNo: string;
-  heads: AdjHeadRow[];
-}
-
-export interface AdjBrokerNode extends AdjCell {
-  brokerId: string;
-  broker: string;
-  vehicles: AdjVehicleNode[];
+  entries: AdjEntry[];
 }
 
 export interface AdjResult {
-  heads: AdjHeadRow[];
-  brokers: AdjBrokerNode[];
-  total: AdjCell;
+  vehicles: AdjVehicleRow[];
+  total: { deducted: number; booked: number; diff: number };
 }
 
 const KEYWORDS: [string, string][] = [
@@ -97,6 +85,19 @@ function inRange(d: Date, r: Prisma.DateTimeFilter | null): boolean {
   return true;
 }
 
+type SlipAdv = {
+  side?: "P" | "V";
+  type?: string;
+  headKind?: string | null;
+  headId?: string | null;
+  supplierName?: string | null;
+  amount?: number;
+  date?: string | null;
+  remarks?: string | null;
+  dieselQty?: number | null;
+  dieselRate?: number | null;
+};
+
 export async function getAdjustmentReport(
   session: Session & { firmId: string; fyId: string },
   f: AdjFilters
@@ -107,14 +108,25 @@ export async function getAdjustmentReport(
 
     const [heads, vehicles, parties] = await Promise.all([
       tx.accountHead.findMany({ select: { id: true, name: true, kind: true } }),
-      tx.vehicle.findMany({ select: { id: true, number: true, ownerId: true } }),
+      // ONLY broker-owned vehicles from the Vehicle Master
+      tx.vehicle.findMany({
+        where: {
+          ownershipType: "BROKER",
+          ...(f.vehicleId ? { id: f.vehicleId } : {}),
+          ...(f.brokerId ? { ownerId: f.brokerId } : {}),
+        },
+        select: { id: true, number: true, ownerId: true },
+        orderBy: { number: "asc" },
+      }),
       tx.party.findMany({ select: { id: true, name: true } }),
     ]);
     const headName = new Map(heads.map((h) => [h.id, h.name]));
-    const vehicleNo = new Map(vehicles.map((v) => [v.id, v.number]));
-    const vehicleOwner = new Map(vehicles.map((v) => [v.id, v.ownerId]));
     const partyName = new Map(parties.map((p) => [p.id, p.name]));
-    // advance type → head, for legacy chalan advances saved without a head
+    const vehicleById = new Map(vehicles.map((v) => [v.id, v]));
+    const vehicleIds = vehicles.map((v) => v.id);
+    if (!vehicleIds.length) return { vehicles: [], total: { deducted: 0, booked: 0, diff: 0 } };
+
+    // advance type → head, for legacy advances saved without a head
     const headByKeyword = new Map<string, { id: string; name: string }>();
     for (const [type, kw] of KEYWORDS) {
       const h = heads.find((x) => x.kind === "EXPENSE" && x.name.toLowerCase().includes(kw));
@@ -126,17 +138,19 @@ export async function getAdjustmentReport(
       if (kw) return kw;
       return { id: `TYPE:${type}`, name: `${type.charAt(0)}${type.slice(1).toLowerCase().replace(/_/g, " ")} (no head)` };
     };
+    const isMoney = (type: string, headKind?: string | null) =>
+      type === "BANK" || type === "CASH" || type === "ADVANCE_ADJ" || headKind === "BANK" || headKind === "CASH" || headKind === "INCOME";
+    const qtyText = (q?: unknown, r?: unknown) =>
+      q && toNum(q) > 0 ? ` ${toNum(q)} L${r && toNum(r) > 0 ? ` @ ${toNum(r)}` : ""}` : "";
 
     const entries: AdjEntry[] = [];
 
-    // ---------- DEDUCTED: chalan expense-head advances
+    // ---------- DEDUCTED: chalan advances (cancelled chalans RETAINED, flagged)
     const chalans = await tx.chalan.findMany({
       where: {
         firmId,
         deletedAt: null,
-        cancelledAt: null,
-        ...(f.vehicleId ? { vehicleId: f.vehicleId } : {}),
-        ...(f.brokerId ? { brokerId: f.brokerId } : {}),
+        vehicleId: { in: vehicleIds },
         advances: { some: { type: { notIn: ["BANK", "CASH", "ADVANCE_ADJ"] } } },
       },
       select: {
@@ -144,7 +158,7 @@ export async function getAdjustmentReport(
         chalanNo: true,
         chalanDate: true,
         vehicleId: true,
-        brokerId: true,
+        cancelledAt: true,
         advances: {
           where: { type: { notIn: ["BANK", "CASH", "ADVANCE_ADJ"] } },
           select: { id: true, type: true, headId: true, amount: true, date: true, supplierName: true, remarks: true, dieselQty: true, dieselRate: true },
@@ -152,6 +166,8 @@ export async function getAdjustmentReport(
       },
     });
     for (const c of chalans) {
+      const v = vehicleById.get(c.vehicleId);
+      if (!v) continue;
       for (const a of c.advances) {
         const amt = toNum(a.amount);
         if (amt <= 0) continue;
@@ -159,72 +175,60 @@ export async function getAdjustmentReport(
         if (!inRange(d, range)) continue;
         const h = resolveHead(a.headId, a.type);
         if (f.headId && h.id !== f.headId) continue;
-        const qty = a.dieselQty && toNum(a.dieselQty) > 0 ? ` ${toNum(a.dieselQty)} L${a.dieselRate ? ` @ ${toNum(a.dieselRate)}` : ""}` : "";
         entries.push({
           id: `CA:${a.id}`,
-          source: "CHALAN",
+          kind: "DEDUCTED",
+          source: "Chalan",
           date: d.toISOString(),
           docNo: c.chalanNo,
           docDate: c.chalanDate.toISOString(),
-          vehicleId: c.vehicleId,
-          vehicleNo: vehicleNo.get(c.vehicleId) ?? "",
-          brokerId: c.brokerId,
-          broker: partyName.get(c.brokerId) ?? "",
+          vehicleId: v.id,
+          vehicleNo: v.number,
           headId: h.id,
           head: h.name,
-          particular: [`${a.type.replace(/_/g, " ")} advance${qty}`, a.supplierName, a.remarks].filter(Boolean).join(" — "),
+          particular: [`${a.type.replace(/_/g, " ")} advance${qtyText(a.dieselQty, a.dieselRate)}`, a.supplierName, a.remarks].filter(Boolean).join(" — "),
           amount: amt,
-          reference: `Chalan ${c.chalanNo}`,
+          status: c.cancelledAt ? "Cancelled" : "Active",
         });
       }
     }
 
-    // ---------- DEDUCTED: broker slip owner-side expense-head advances
+    // ---------- broker slips: owner side = DEDUCTED, party side = BOOKED (party paid)
     const slips = await tx.brokerSlip.findMany({
-      where: {
-        firmId,
-        deletedAt: null,
-        advances: { not: Prisma.DbNull },
-        ...(f.vehicleId ? { vehicleId: f.vehicleId } : {}),
-        ...(f.brokerId ? { transporterId: f.brokerId } : {}),
-      },
-      select: { id: true, slipNo: true, slipDate: true, vehicleId: true, transporterId: true, advances: true },
+      where: { firmId, deletedAt: null, vehicleId: { in: vehicleIds }, advances: { not: Prisma.DbNull } },
+      select: { id: true, slipNo: true, slipDate: true, vehicleId: true, advances: true },
     });
-    type SlipAdv = {
-      side?: "P" | "V"; type?: string; headKind?: string | null; headId?: string | null;
-      supplierName?: string | null; amount?: number; date?: string | null; remarks?: string | null;
-      dieselQty?: number | null; dieselRate?: number | null;
-    };
     for (const s of slips) {
+      const v = s.vehicleId ? vehicleById.get(s.vehicleId) : null;
+      if (!v) continue;
       const advs: SlipAdv[] = Array.isArray(s.advances) ? (s.advances as SlipAdv[]) : [];
       advs.forEach((a, i) => {
-        if (a.side !== "V") return;
         const type = a.type ?? "OTHER";
-        if (type === "BANK" || type === "CASH" || type === "ADVANCE_ADJ") return;
-        if (a.headKind === "BANK" || a.headKind === "CASH" || a.headKind === "INCOME") return;
+        if (isMoney(type, a.headKind)) return;
+        if (a.side !== "V" && a.side !== "P") return;
         const amt = round2(toNum(a.amount ?? 0));
         if (amt <= 0) return;
         const d = a.date ? new Date(`${a.date}T00:00:00+05:30`) : s.slipDate;
         if (!inRange(d, range)) return;
         const h = resolveHead(a.headId, type);
         if (f.headId && h.id !== f.headId) return;
-        const brokerId = s.transporterId ?? (s.vehicleId ? vehicleOwner.get(s.vehicleId) ?? "" : "");
-        const qty = a.dieselQty && toNum(a.dieselQty) > 0 ? ` ${toNum(a.dieselQty)} L${a.dieselRate ? ` @ ${toNum(a.dieselRate)}` : ""}` : "";
+        const owner = a.side === "V";
         entries.push({
           id: `SA:${s.id}:${i}`,
-          source: "BROKER_SLIP",
+          kind: owner ? "DEDUCTED" : "BOOKED",
+          source: owner ? "Broker Slip – Owner Side" : "Broker Slip – Party Paid",
           date: d.toISOString(),
           docNo: s.slipNo,
           docDate: s.slipDate.toISOString(),
-          vehicleId: s.vehicleId ?? "",
-          vehicleNo: s.vehicleId ? vehicleNo.get(s.vehicleId) ?? "" : "",
-          brokerId: brokerId ?? "",
-          broker: brokerId ? partyName.get(brokerId) ?? "" : "",
+          vehicleId: v.id,
+          vehicleNo: v.number,
           headId: h.id,
           head: h.name,
-          particular: [`${type.replace(/_/g, " ")} advance${qty}`, a.supplierName, a.remarks].filter(Boolean).join(" — "),
+          particular: [`${type.replace(/_/g, " ")}${owner ? " advance" : " given by party"}${qtyText(a.dieselQty, a.dieselRate)}`, a.supplierName, a.remarks]
+            .filter(Boolean)
+            .join(" — "),
           amount: amt,
-          reference: `Broker Slip ${s.slipNo}`,
+          status: "Active",
         });
       });
     }
@@ -232,7 +236,7 @@ export async function getAdjustmentReport(
     // ---------- BOOKED: vehicle expense book (allocated lines, head-split honoured)
     const items = await tx.vehicleExpenseItem.findMany({
       where: {
-        ...(f.vehicleId ? { vehicleId: f.vehicleId } : {}),
+        vehicleId: { in: vehicleIds },
         ...(range ? { allocDate: range } : {}),
         voucher: { firmId, deletedAt: null, txnType: "EXPENSE" },
       },
@@ -245,87 +249,67 @@ export async function getAdjustmentReport(
         qty: true,
         voucher: {
           select: {
-            id: true, voucherNo: true, date: true, headId: true, partyId: true, itemName: true, refNo: true, remarks: true, amount: true,
+            voucherNo: true, date: true, headId: true, partyId: true, itemName: true, refNo: true, remarks: true,
             lines: { select: { headId: true, amount: true, remarks: true } },
           },
         },
       },
     });
     for (const it of items) {
-      const brokerId = vehicleOwner.get(it.vehicleId) ?? "";
-      if (f.brokerId && brokerId !== f.brokerId) continue;
+      const v = vehicleById.get(it.vehicleId);
+      if (!v) continue;
       const itemAmt = toNum(it.amount);
       if (itemAmt <= 0) continue;
-      const v = it.voucher;
-      // head-split: share this vehicle's allocation across the bill's head lines
-      const lines = v.lines.filter((l) => toNum(l.amount) > 0);
+      const vo = it.voucher;
+      const lines = vo.lines.filter((l) => toNum(l.amount) > 0);
       const lineTotal = lines.reduce((s, l) => s + toNum(l.amount), 0);
-      const parts: { headId: string; amount: number; note: string }[] =
+      const parts =
         lines.length && lineTotal > 0
           ? lines.map((l) => ({ headId: l.headId, amount: round2((itemAmt * toNum(l.amount)) / lineTotal), note: l.remarks ?? "" }))
-          : [{ headId: v.headId, amount: itemAmt, note: "" }];
+          : [{ headId: vo.headId, amount: itemAmt, note: "" }];
       for (const p of parts) {
         if (f.headId && p.headId !== f.headId) continue;
         entries.push({
           id: `VE:${it.id}:${p.headId}`,
-          source: "EXPENSE",
+          kind: "BOOKED",
+          source: "Vehicle Expense",
           date: it.allocDate.toISOString(),
-          docNo: v.voucherNo,
-          docDate: v.date.toISOString(),
-          vehicleId: it.vehicleId,
-          vehicleNo: vehicleNo.get(it.vehicleId) ?? "",
-          brokerId,
-          broker: brokerId ? partyName.get(brokerId) ?? "" : "",
+          docNo: `${vo.voucherNo}${vo.refNo ? ` / ${vo.refNo}` : ""}`,
+          docDate: vo.date.toISOString(),
+          vehicleId: v.id,
+          vehicleNo: v.number,
           headId: p.headId,
           head: headName.get(p.headId) ?? "",
-          particular: [v.itemName, p.note || v.remarks, it.remarks, v.partyId ? partyName.get(v.partyId) : null, it.qty ? `qty ${toNum(it.qty)}` : null]
+          particular: [vo.itemName, p.note || vo.remarks, it.remarks, vo.partyId ? partyName.get(vo.partyId) : null, it.qty ? `qty ${toNum(it.qty)}` : null]
             .filter(Boolean)
             .join(" — "),
           amount: p.amount,
-          reference: `${v.voucherNo}${v.refNo ? ` / ${v.refNo}` : ""}`,
+          status: "Active",
         });
       }
     }
 
-    // ---------- aggregate
-    const cell = (list: AdjEntry[]): AdjCell => {
-      const deducted = round2(list.filter((e) => e.source !== "EXPENSE").reduce((s, e) => s + e.amount, 0));
-      const booked = round2(list.filter((e) => e.source === "EXPENSE").reduce((s, e) => s + e.amount, 0));
-      return { deducted, booked, diff: round2(deducted - booked) };
-    };
-    const byDate = (a: AdjEntry, b: AdjEntry) => a.date.localeCompare(b.date);
-    const headRows = (list: AdjEntry[]): AdjHeadRow[] => {
-      const m = new Map<string, AdjEntry[]>();
-      for (const e of list) m.set(e.headId, [...(m.get(e.headId) ?? []), e]);
-      return Array.from(m.entries())
-        .map(([headId, es]) => ({
-          headId,
-          head: es[0].head,
-          ...cell(es),
-          deductedEntries: es.filter((e) => e.source !== "EXPENSE").sort(byDate),
-          bookedEntries: es.filter((e) => e.source === "EXPENSE").sort(byDate),
-        }))
-        .sort((a, b) => a.head.localeCompare(b.head));
-    };
-
-    const brokerMap = new Map<string, AdjEntry[]>();
-    for (const e of entries) brokerMap.set(e.brokerId, [...(brokerMap.get(e.brokerId) ?? []), e]);
-    const brokers: AdjBrokerNode[] = Array.from(brokerMap.entries())
-      .map(([brokerId, es]) => {
-        const vm = new Map<string, AdjEntry[]>();
-        for (const e of es) vm.set(e.vehicleId, [...(vm.get(e.vehicleId) ?? []), e]);
-        const vehiclesOut: AdjVehicleNode[] = Array.from(vm.entries())
-          .map(([vehicleId, ves]) => ({
-            vehicleId,
-            vehicleNo: ves[0].vehicleNo || "(no vehicle)",
-            ...cell(ves),
-            heads: headRows(ves),
-          }))
-          .sort((a, b) => a.vehicleNo.localeCompare(b.vehicleNo));
-        return { brokerId, broker: es[0].broker || "(no broker / owner)", ...cell(es), vehicles: vehiclesOut };
-      })
-      .sort((a, b) => a.broker.localeCompare(b.broker));
-
-    return { heads: headRows(entries), brokers, total: cell(entries) };
+    // ---------- vehicle-wise rows (every broker vehicle with activity)
+    const byVehicle = new Map<string, AdjEntry[]>();
+    for (const e of entries) byVehicle.set(e.vehicleId, [...(byVehicle.get(e.vehicleId) ?? []), e]);
+    const rows: AdjVehicleRow[] = vehicles
+      .filter((v) => byVehicle.has(v.id))
+      .map((v) => {
+        const es = (byVehicle.get(v.id) ?? []).sort((a, b) => a.date.localeCompare(b.date));
+        const deducted = round2(es.filter((e) => e.kind === "DEDUCTED").reduce((s, e) => s + e.amount, 0));
+        const booked = round2(es.filter((e) => e.kind === "BOOKED").reduce((s, e) => s + e.amount, 0));
+        return {
+          vehicleId: v.id,
+          vehicleNo: v.number,
+          owner: v.ownerId ? partyName.get(v.ownerId) ?? "" : "",
+          deducted,
+          booked,
+          diff: round2(deducted - booked),
+          entries: es,
+        };
+      });
+    const deducted = round2(rows.reduce((s, r) => s + r.deducted, 0));
+    const booked = round2(rows.reduce((s, r) => s + r.booked, 0));
+    return { vehicles: rows, total: { deducted, booked, diff: round2(deducted - booked) } };
   });
 }

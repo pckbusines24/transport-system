@@ -615,6 +615,7 @@ model Lr {
   // the party master is never touched
   consignorAddress String?
   consigneeAddress String?
+  billToAddress    String?
   billToId      String?
   vehicleId     String?
   vehicleText   String? // dummy LR free text

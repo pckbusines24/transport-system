@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/ui/info-hint";
-import { StatCard } from "@/components/ui/stat";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FilterBar, type FilterOption } from "@/components/data/filter-bar";
 import type { StatusBill, StatusChalan, StatusFilters, StatusLr, StatusReceipt, StatusResult } from "./status-data";
@@ -574,7 +573,6 @@ export function StatusClient({
 }) {
   const searched =
     !!filters.lrNo || !!filters.chalanNo || !!filters.billNo || !!filters.vehicleId || !!filters.brokerId || !!filters.dateFrom || !!filters.dateTo;
-  const s = data.summary;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -607,22 +605,6 @@ export function StatusClient({
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-            <StatCard label="Total LR" value={s.lrs} hint={`${data.chalans.length} chalan${data.chalans.length === 1 ? "" : "s"}`} />
-            <StatCard label="Total Qty" value={s.qty} />
-            <StatCard label="Total Freight" value={money(s.freight)} hint="booking bhada" />
-            <StatCard label="Total Addition" value={money(s.addition)} />
-            <StatCard label="Total Deduction" value={money(s.deduction)} />
-            <StatCard label="Total Commission" value={money(s.commission)} />
-            <StatCard label="Total Mamool" value={money(s.mamool)} />
-            <StatCard label="Total TDS" value={money(s.tds)} />
-            <StatCard label="Total Advance" value={money(s.advance)} hint="paid to owner / broker" />
-            <StatCard label="Total Bill Amount" value={money(s.billAmount)} />
-            <StatCard label="Total Received" value={money(s.received)} tone="success" />
-            <StatCard label="Total Pending" value={money(s.pending)} tone={s.pending > 0 ? "destructive" : "success"} />
-            <StatCard label="Total Shortage" value={`${formatWt(s.shortageWt)} MT`} tone={s.shortageWt > 0 ? "destructive" : "default"} />
-          </div>
-
           {data.truncated && (
             <p className="text-xs text-warning">Showing the latest 150 chalans — narrow the filters to see the rest.</p>
           )}

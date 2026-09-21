@@ -84,6 +84,7 @@ export interface LrFormValues {
   /** per-LR address override (blank = print the master address) */
   consignorAddress: string;
   consigneeAddress: string;
+  billToAddress: string;
   billToId: string;
   vehicleId: string;
   vehicleText: string;
@@ -143,8 +144,9 @@ const requiredSchema = z.object({
   destCityId: z.string().min(1, "Destination city is required"),
   consignorId: z.string().min(1, "Consignor is required"),
   consigneeId: z.string().min(1, "Consignee is required"),
-  consignorAddress: z.string().optional().default(""),
-  consigneeAddress: z.string().optional().default(""),
+  consignorAddress: z.string().nullish(),
+  consigneeAddress: z.string().nullish(),
+  billToAddress: z.string().nullish(),
   items: z
     .array(z.object({ productName: z.string().min(1, "Every item needs a product") }))
     .min(1, "At least one item is required"),
@@ -176,25 +178,22 @@ function Field({
   label,
   children,
   className,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
   className?: string;
+  /** validation message — turns the label red and prints it under the input */
+  error?: string;
 }) {
   return (
-    <div className={cn("space-y-1", className)}>
-      <Label className="text-xs">{label}</Label>
+    <div
+      data-field-error={error ? "" : undefined}
+      className={cn("space-y-1", className, error && "rounded-md ring-2 ring-destructive/60 ring-offset-2 ring-offset-background")}
+    >
+      <Label className={cn("text-xs", error && "text-destructive")}>{label}</Label>
       {children}
-    </div>
-  );
-}
-
-function PartyInfo({ detail }: { detail?: PartyDetail }) {
-  if (!detail || (!detail.address && !detail.gstin)) return null;
-  return (
-    <div className="rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
-      {detail.address && <div className="truncate">{detail.address}</div>}
-      {detail.gstin && <div>GSTIN: {detail.gstin}</div>}
+      {error && <p className="text-[11px] font-medium text-destructive">{error}</p>}
     </div>
   );
 }
@@ -219,17 +218,15 @@ function PartyAddress({
   const overridden = value.trim().length > 0 && value.trim() !== master.trim();
   return (
     <div className="space-y-1">
-      <Textarea
-        rows={2}
-        className="min-h-[3.25rem] text-xs"
-        placeholder={master || "Address for this LR (optional)"}
+      <Input
+        placeholder="Address (optional)"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
       />
       <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
         <span>
-          {overridden ? "Custom address — this LR only, master unchanged" : "Master address"}
+          {overridden ? "Edited for this LR only — master unchanged" : "Master address — edit here if needed for this LR"}
           {detail?.gstin ? ` · GSTIN: ${detail.gstin}` : ""}
         </span>
         {overridden && !disabled && (
@@ -307,21 +304,33 @@ export function LrForm(props: LrFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computedItemsFreight]);
 
-  // a per-LR address belongs to the party it was typed for — picking another
-  // party drops it so the new party's master address shows (not on first load)
-  const prevConsignor = React.useRef(v.consignorId);
-  const prevConsignee = React.useRef(v.consigneeId);
+  // The address box carries the MASTER address as its value, editable for this
+  // LR. Picking a party (or loading an LR saved without an override) fills it
+  // from the master; changing the party refills it for the new party.
+  const prevConsignor = React.useRef<string | undefined>(undefined);
+  const prevConsignee = React.useRef<string | undefined>(undefined);
+  const prevBillTo = React.useRef<string | undefined>(undefined);
   React.useEffect(() => {
+    if (prevBillTo.current !== v.billToId) {
+      const first = prevBillTo.current === undefined;
+      prevBillTo.current = v.billToId;
+      if (!first || !(v.billToAddress ?? "").trim()) setValue("billToAddress", billToDetail?.address ?? "");
+    }
     if (prevConsignor.current !== v.consignorId) {
+      const first = prevConsignor.current === undefined;
       prevConsignor.current = v.consignorId;
-      setValue("consignorAddress", "");
+      if (!first || !(v.consignorAddress ?? "").trim()) setValue("consignorAddress", consignorDetail?.address ?? "");
     }
     if (prevConsignee.current !== v.consigneeId) {
+      const first = prevConsignee.current === undefined;
       prevConsignee.current = v.consigneeId;
-      setValue("consigneeAddress", "");
+      if (!first || !(v.consigneeAddress ?? "").trim()) setValue("consigneeAddress", consigneeDetail?.address ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [v.consignorId, v.consigneeId]);
+  }, [v.consignorId, v.consigneeId, v.billToId, consignorDetail?.address, consigneeDetail?.address, billToDetail?.address]);
+
+  // which required inputs failed the last save attempt — shown on the fields
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
   const totals = computeLrTotals({
     freight: toNum(v.freight),
@@ -396,8 +405,19 @@ export function LrForm(props: LrFormProps) {
       destCityId: values.destCityId,
       consignorId: values.consignorId,
       consigneeId: values.consigneeId,
-      consignorAddress: values.consignorAddress || null,
-      consigneeAddress: values.consigneeAddress || null,
+      // stored only when edited — an untouched box keeps following the master
+      consignorAddress:
+        values.consignorAddress?.trim() && values.consignorAddress.trim() !== (consignorDetail?.address ?? "").trim()
+          ? values.consignorAddress.trim()
+          : null,
+      consigneeAddress:
+        values.consigneeAddress?.trim() && values.consigneeAddress.trim() !== (consigneeDetail?.address ?? "").trim()
+          ? values.consigneeAddress.trim()
+          : null,
+      billToAddress:
+        values.billToAddress?.trim() && values.billToAddress.trim() !== (billToDetail?.address ?? "").trim()
+          ? values.billToAddress.trim()
+          : null,
       billToId: values.billToId || null,
       vehicleId: values.vehicleId || null,
       vehicleText: values.vehicleText || null,
@@ -448,9 +468,21 @@ export function LrForm(props: LrFormProps) {
 
     const check = requiredSchema.safeParse(payload);
     if (!check.success) {
-      toast({ variant: "destructive", title: check.error.issues[0]?.message ?? "Invalid form" });
+      const errs: Record<string, string> = {};
+      for (const issue of check.error.issues) {
+        const key = String(issue.path[0] ?? "form");
+        if (!errs[key]) errs[key] = issue.message;
+      }
+      setFieldErrors(errs);
+      toast({
+        variant: "destructive",
+        title: `Cannot save — ${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? "" : "s"} need attention`,
+        description: Object.values(errs).join(" · "),
+      });
+      document.querySelector("[data-field-error]")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    setFieldErrors({});
 
     if (props.batchMode && props.onBatchAdd) {
       props.onBatchAdd(payload, structuredClone(values));
@@ -505,7 +537,7 @@ export function LrForm(props: LrFormProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 p-4 pt-0 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="LR No *">
+          <Field label="LR No *" error={fieldErrors.lrNo}>
             <Input
               {...register("lrNo")}
               className={inputCls}
@@ -513,7 +545,7 @@ export function LrForm(props: LrFormProps) {
               title={props.mode === "edit" ? "LR number is locked after saving" : undefined}
             />
           </Field>
-          <Field label="LR Date *">
+          <Field label="LR Date *" error={fieldErrors.lrDate}>
             <DateInput
               value={v.lrDateText}
               onChange={(text) => setValue("lrDateText", text)}
@@ -535,7 +567,7 @@ export function LrForm(props: LrFormProps) {
           <CardTitle className="text-sm">Route</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 p-4 pt-0 sm:grid-cols-2">
-          <Field label="Source City *">
+          <Field label="Source City *" error={fieldErrors.sourceCityId}>
             <MasterCombobox
               options={cityOptions}
               value={v.sourceCityId}
@@ -556,7 +588,7 @@ export function LrForm(props: LrFormProps) {
               )}
             />
           </Field>
-          <Field label="Destination City *">
+          <Field label="Destination City *" error={fieldErrors.destCityId}>
             <MasterCombobox
               options={cityOptions}
               value={v.destCityId}
@@ -587,7 +619,7 @@ export function LrForm(props: LrFormProps) {
         </CardHeader>
         <CardContent className="grid gap-3 p-4 pt-0 lg:grid-cols-3">
           <div className="space-y-2">
-            <Field label="Consignor *">
+            <Field label="Consignor *" error={fieldErrors.consignorId}>
               <MasterCombobox
                 options={partyOptions}
                 value={v.consignorId}
@@ -616,7 +648,7 @@ export function LrForm(props: LrFormProps) {
             />
           </div>
           <div className="space-y-2">
-            <Field label="Consignee *">
+            <Field label="Consignee *" error={fieldErrors.consigneeId}>
               <MasterCombobox
                 options={partyOptions}
                 value={v.consigneeId}
@@ -666,7 +698,11 @@ export function LrForm(props: LrFormProps) {
                 )}
               />
             </Field>
-            <PartyInfo detail={billToDetail} />
+            <PartyAddress
+              detail={billToDetail}
+              value={v.billToAddress ?? ""}
+              onChange={(val) => setValue("billToAddress", val)}
+            />
           </div>
         </CardContent>
       </Card>
@@ -830,13 +866,17 @@ export function LrForm(props: LrFormProps) {
       </Card>
 
       {/* ---------- Items ---------- */}
-      <Card>
+      <Card
+        data-field-error={fieldErrors.items ? "" : undefined}
+        className={cn(fieldErrors.items && "ring-2 ring-destructive/60")}
+      >
         <CardHeader className="flex flex-row items-center justify-between p-4 pb-2">
           <CardTitle className="flex items-center gap-2 text-sm">
             Product Details
             <Badge variant={cargoType === "ODC" ? "destructive" : "secondary"}>
               {cargoType === "ODC" ? "ODC LR" : "Normal LR"}
             </Badge>
+            {fieldErrors.items && <span className="text-xs font-medium text-destructive">{fieldErrors.items}</span>}
           </CardTitle>
           <Button
             type="button"
