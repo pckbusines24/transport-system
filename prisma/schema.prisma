@@ -611,6 +611,10 @@ model Lr {
   destCityId    String
   consignorId   String
   consigneeId   String
+  // per-LR address overrides: typed on the LR form, printed on THIS LR only —
+  // the party master is never touched
+  consignorAddress String?
+  consigneeAddress String?
   billToId      String?
   vehicleId     String?
   vehicleText   String? // dummy LR free text

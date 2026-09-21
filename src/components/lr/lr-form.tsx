@@ -81,6 +81,9 @@ export interface LrFormValues {
   destCityId: string;
   consignorId: string;
   consigneeId: string;
+  /** per-LR address override (blank = print the master address) */
+  consignorAddress: string;
+  consigneeAddress: string;
   billToId: string;
   vehicleId: string;
   vehicleText: string;
@@ -140,6 +143,8 @@ const requiredSchema = z.object({
   destCityId: z.string().min(1, "Destination city is required"),
   consignorId: z.string().min(1, "Consignor is required"),
   consigneeId: z.string().min(1, "Consignee is required"),
+  consignorAddress: z.string().optional().default(""),
+  consigneeAddress: z.string().optional().default(""),
   items: z
     .array(z.object({ productName: z.string().min(1, "Every item needs a product") }))
     .min(1, "At least one item is required"),
@@ -190,6 +195,49 @@ function PartyInfo({ detail }: { detail?: PartyDetail }) {
     <div className="rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
       {detail.address && <div className="truncate">{detail.address}</div>}
       {detail.gstin && <div>GSTIN: {detail.gstin}</div>}
+    </div>
+  );
+}
+
+/**
+ * Address shown under Consignor / Consignee: the master address by default,
+ * editable for THIS LR only. A typed value is stored on the LR and printed on
+ * it; the party master is never changed. "Use master" clears the override.
+ */
+function PartyAddress({
+  detail,
+  value,
+  onChange,
+  disabled,
+}: {
+  detail?: PartyDetail;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const master = detail?.address ?? "";
+  const overridden = value.trim().length > 0 && value.trim() !== master.trim();
+  return (
+    <div className="space-y-1">
+      <Textarea
+        rows={2}
+        className="min-h-[3.25rem] text-xs"
+        placeholder={master || "Address for this LR (optional)"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
+        <span>
+          {overridden ? "Custom address — this LR only, master unchanged" : "Master address"}
+          {detail?.gstin ? ` · GSTIN: ${detail.gstin}` : ""}
+        </span>
+        {overridden && !disabled && (
+          <button type="button" className="text-primary hover:underline" onClick={() => onChange("")}>
+            Use master
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -258,6 +306,22 @@ export function LrForm(props: LrFormProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computedItemsFreight]);
+
+  // a per-LR address belongs to the party it was typed for — picking another
+  // party drops it so the new party's master address shows (not on first load)
+  const prevConsignor = React.useRef(v.consignorId);
+  const prevConsignee = React.useRef(v.consigneeId);
+  React.useEffect(() => {
+    if (prevConsignor.current !== v.consignorId) {
+      prevConsignor.current = v.consignorId;
+      setValue("consignorAddress", "");
+    }
+    if (prevConsignee.current !== v.consigneeId) {
+      prevConsignee.current = v.consigneeId;
+      setValue("consigneeAddress", "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.consignorId, v.consigneeId]);
 
   const totals = computeLrTotals({
     freight: toNum(v.freight),
@@ -332,6 +396,8 @@ export function LrForm(props: LrFormProps) {
       destCityId: values.destCityId,
       consignorId: values.consignorId,
       consigneeId: values.consigneeId,
+      consignorAddress: values.consignorAddress || null,
+      consigneeAddress: values.consigneeAddress || null,
       billToId: values.billToId || null,
       vehicleId: values.vehicleId || null,
       vehicleText: values.vehicleText || null,
@@ -543,7 +609,11 @@ export function LrForm(props: LrFormProps) {
                 )}
               />
             </Field>
-            <PartyInfo detail={consignorDetail} />
+            <PartyAddress
+              detail={consignorDetail}
+              value={v.consignorAddress ?? ""}
+              onChange={(val) => setValue("consignorAddress", val)}
+            />
           </div>
           <div className="space-y-2">
             <Field label="Consignee *">
@@ -568,7 +638,11 @@ export function LrForm(props: LrFormProps) {
                 )}
               />
             </Field>
-            <PartyInfo detail={consigneeDetail} />
+            <PartyAddress
+              detail={consigneeDetail}
+              value={v.consigneeAddress ?? ""}
+              onChange={(val) => setValue("consigneeAddress", val)}
+            />
           </div>
           <div className="space-y-2">
             <Field label="Billed To">

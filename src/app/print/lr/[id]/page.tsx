@@ -270,7 +270,7 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
                       <div className="text-[13px] font-black uppercase" style={{ color: RED }}>
                         {consignor?.name}
                       </div>
-                      <div className="font-bold">{addr(consignor)}</div>
+                      <div className="font-bold">{lr.consignorAddress?.trim() || addr(consignor)}</div>
                       {consignor?.mobile && <div className="font-bold">Mob. : {consignor.mobile}</div>}
                       {consignor?.gstin && <div className="font-bold">GSTIN : {consignor.gstin}</div>}
                     </div>
@@ -281,7 +281,7 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
                       <div className="text-[13px] font-black uppercase" style={{ color: RED }}>
                         {consignee?.name}
                       </div>
-                      <div className="font-bold">{addr(consignee)}</div>
+                      <div className="font-bold">{lr.consigneeAddress?.trim() || addr(consignee)}</div>
                       {consignee?.mobile && <div className="font-bold">Mob. : {consignee.mobile}</div>}
                       {consignee?.gstin && <div className="font-bold">GSTIN : {consignee.gstin}</div>}
                     </div>
