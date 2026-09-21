@@ -76,6 +76,9 @@ export default async function BrokerSlipPage({
           // backs the Broker <-> Transport Name two-way link, as in Chalan Entry
           transportName: p.transportName,
           ownerName: p.ownerName,
+          // owner-side TDS % auto-fills from the master, as in Chalan Entry
+          pan: p.pan,
+          tdsMode: p.tdsMode,
         })),
         vehicles: vehicleRows.map((v) => ({
           value: v.id,

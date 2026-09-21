@@ -6,6 +6,7 @@ import { Copy, Plus, Trash2 } from "lucide-react";
 import { formatDate, formatMoney, parseDdMmYyyy, toNum } from "@/lib/utils";
 import type { RateBasis } from "@/lib/calc/rate";
 import { Badge } from "@/components/ui/badge";
+import { tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -197,6 +198,9 @@ function Num({
 export interface BrokerNameOption extends MasterOption {
   transportName?: string | null;
   ownerName?: string | null;
+  /** from the party master — drives the owner-side TDS % auto-fill */
+  pan?: string | null;
+  tdsMode?: TdsMode | null;
 }
 
 interface BrokerSlipFormProps {
@@ -391,6 +395,26 @@ export function BrokerSlipForm({
     set("ownerName", b ? (b.ownerName ?? b.label) : "");
   };
   const selectedOwner = brokerOptions.find((b) => b.value === form.ownerId);
+
+  // Owner-side TDS % from the owner's master (PAN 4th letter / declaration),
+  // exactly as Chalan Entry does for its broker. Applied when the owner is
+  // picked or changed; an existing slip keeps its saved % until the owner is
+  // changed; a typed % is kept until the owner changes again.
+  const ownerTds = selectedOwner ? { pan: selectedOwner.pan ?? null, tdsMode: selectedOwner.tdsMode ?? null } : null;
+  const ownerIsDeclared = ownerTds?.tdsMode === "DECLARATION";
+  const ownerAutoTdsPct = tdsPctFromPan(ownerTds?.pan, ownerTds?.tdsMode);
+  const lastTdsOwner = React.useRef<string | null | undefined>(form.id ? form.ownerId : undefined);
+  React.useEffect(() => {
+    if (lastTdsOwner.current === form.ownerId) return;
+    lastTdsOwner.current = form.ownerId;
+    if (!form.ownerId) return;
+    const own = !!form.vehicleId && ownVehicleIds.includes(form.vehicleId);
+    if (own) return; // own vehicle: nothing to deduct from
+    const opt = brokerOptions.find((b) => b.value === form.ownerId);
+    if (!opt) return;
+    setSide("v", { tdsPct: tdsPctFromPan(opt.pan, opt.tdsMode), tdsAmt: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.ownerId]);
 
   // ---------- advances ----------
   const addAdvance = () =>
@@ -879,7 +903,21 @@ export function BrokerSlipForm({
           </div>
 
           <div className="grid grid-cols-3 gap-2 md:grid-cols-4">
-            <Num label="TDS %" value={s.tdsPct} onChange={(n) => setSide(side, { tdsPct: n })} />
+            <div className="space-y-1">
+              <Num
+                label="TDS %"
+                value={side === "v" && ownerIsDeclared ? 0 : s.tdsPct}
+                disabled={side === "v" && ownerIsDeclared}
+                onChange={(n) => setSide(side, { tdsPct: n })}
+              />
+              {side === "v" && ownerTds && (
+                <Badge variant={ownerIsDeclared ? "default" : s.tdsPct === ownerAutoTdsPct ? "secondary" : "outline"} className="text-[10px]">
+                  {ownerIsDeclared
+                    ? "Declared — TDS not applicable"
+                    : `${ownerAutoTdsPct}% — ${ownerAutoTdsPct === 1 ? "individual" : "company"} PAN${s.tdsPct === ownerAutoTdsPct ? "" : " (overridden)"}`}
+                </Badge>
+              )}
+            </div>
             <Num
               label="TDS Amt"
               value={s.tdsPct > 0 ? totals.tdsAmt : s.tdsAmt}
