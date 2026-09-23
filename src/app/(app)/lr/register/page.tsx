@@ -77,13 +77,27 @@ export default async function LrRegisterPage({
     const obd = { contains: searchParams.obd, mode: "insensitive" as const };
     where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), { OR: [{ obdNo: obd }, { invoices: { some: { obdNo: obd } } }] }];
   }
+  const andPush = (clause: Prisma.LrWhereInput) => {
+    where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause];
+  };
+  // invoice / ref numbers live on the LR (legacy single) and on its invoice rows
+  if (searchParams.inv) {
+    const inv = { contains: searchParams.inv, mode: "insensitive" as const };
+    andPush({ OR: [{ invoiceNo: inv }, { invoices: { some: { invoiceNo: inv } } }] });
+  }
+  if (searchParams.ref) {
+    const ref = { contains: searchParams.ref, mode: "insensitive" as const };
+    andPush({ OR: [{ refNo: ref }, { refLrNo: ref }, { invoices: { some: { refNo: ref } } }] });
+  }
+  if (searchParams.cargo === "NORMAL" || searchParams.cargo === "ODC") where.cargoType = searchParams.cargo;
+  if (searchParams.product) andPush({ items: { some: { productId: searchParams.product } } });
   if (searchParams.status && (LR_STATUSES as readonly string[]).includes(searchParams.status)) {
     where.status = searchParams.status as (typeof LR_STATUSES)[number];
   }
 
   const page = parsePage(searchParams.page);
-  const { lrs, total, totals, cities, parties, vehicles } = await withTenant(session.tenantId, async (tx) => {
-    const [lrs, total, freightAgg, wtAgg, cities, parties, vehicles, partyMap] = await Promise.all([
+  const { lrs, total, totals, cities, parties, vehicles, products } = await withTenant(session.tenantId, async (tx) => {
+    const [lrs, total, freightAgg, wtAgg, cities, parties, vehicles, partyMap, products] = await Promise.all([
       tx.lr.findMany({
         where,
         include: { items: true, invoices: { orderBy: { sortOrder: "asc" } } },
@@ -107,6 +121,7 @@ export default async function LrRegisterPage({
       }),
       tx.vehicle.findMany({ orderBy: { number: "asc" }, select: { id: true, number: true } }),
       tx.party.findMany({ select: { id: true, name: true } }),
+      tx.product.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, group: { select: { name: true } } } }),
     ]);
     const cityById = new Map(cities.map((c) => [c.id, c.name]));
     const partyById = new Map(partyMap.map((p) => [p.id, p.name]));
@@ -144,7 +159,7 @@ export default async function LrRegisterPage({
       actualWt: toNum(wtAgg._sum.actualWt),
       chargeWt: toNum(wtAgg._sum.chargeWt),
     };
-    return { lrs: rows, total, totals, cities, parties, vehicles };
+    return { lrs: rows, total, totals, cities, parties, vehicles, products };
   });
 
   const cityOptions = cities.map((c) => ({ value: c.id, label: c.name }));
@@ -172,6 +187,23 @@ export default async function LrRegisterPage({
       options: vehicles.map((v) => ({ value: v.id, label: v.number })),
     },
     { type: "text", key: "obd", label: "OBD No" },
+    { type: "text", key: "inv", label: "Invoice No" },
+    { type: "text", key: "ref", label: "Ref No" },
+    {
+      type: "select",
+      key: "cargo",
+      label: "Cargo",
+      options: [
+        { value: "NORMAL", label: "Normal" },
+        { value: "ODC", label: "ODC" },
+      ],
+    },
+    {
+      type: "combobox",
+      key: "product",
+      label: "Product",
+      options: products.map((p) => ({ value: p.id, label: p.name, meta: p.group?.name || undefined })),
+    },
     {
       type: "select",
       key: "status",

@@ -18,14 +18,14 @@ export const dynamic = "force-dynamic";
 export default async function ChalanCancelAdvancesPage({
   searchParams,
 }: {
-  searchParams: { date_from?: string; date_to?: string };
+  searchParams: { date_from?: string; date_to?: string; chalan?: string; broker?: string; status?: string };
 }) {
   const session = requireSession();
   await authorize(session, "chalan", "view");
 
   const hasDates = Boolean(searchParams.date_from || searchParams.date_to);
 
-  const { advances, parties, chalans } = await withTenant(session.tenantId, async (tx) => {
+  const { advances, parties, chalans, brokerOptions } = await withTenant(session.tenantId, async (tx) => {
     // FY continuity: an unrecovered cancel-advance stays listed EVERY year
     // until the money comes back; fully-recovered ones stay scoped to the
     // session FY so the register does not fill with closed history — UNLESS
@@ -63,16 +63,25 @@ export default async function ChalanCancelAdvancesPage({
       where: { id: { in: advances.map((a) => a.partyId) } },
       select: { id: true, name: true },
     });
+    // filter options: every owner / broker, searchable by transport name too
+    const brokerOptions = await tx.party.findMany({
+      where: { ledgerGroup: { in: ["OWNER_BROKER", "RELATIVE"] }, isActive: true },
+      select: { id: true, name: true, transportName: true, alias: true },
+      orderBy: { name: "asc" },
+    });
     const chalans = await tx.chalan.findMany({
       where: { id: { in: advances.map((a) => a.sourceRefId ?? "") } },
       select: { id: true, chalanNo: true, cancelReason: true, cancelledAt: true },
     });
-    return { advances, parties, chalans };
+    return { advances, parties, chalans, brokerOptions };
   });
 
   const partyName = new Map(parties.map((p) => [p.id, p.name]));
   const chalanOf = new Map(chalans.map((c) => [c.id, c]));
 
+  const statusOf = (balance: number, consumed: number) =>
+    balance <= 0.009 ? "RECOVERED" : consumed > 0.009 ? "PARTLY" : "OPEN";
+  const chalanQ = searchParams.chalan?.trim().toLowerCase() ?? "";
   const rows = advances.map((a) => {
     const amount = toNum(String(a.amount));
     const consumed = toNum(String(a.consumedAmount));
@@ -91,11 +100,41 @@ export default async function ChalanCancelAdvancesPage({
         .map((u) => `${u.refNo} ${formatMoney(toNum(String(u.amount)))}`)
         .join(", "),
       remarks: a.remarks ?? "",
+      partyId: a.partyId,
+      status: statusOf(balance, consumed),
     };
-  });
+  }).filter(
+    (r) =>
+      (!chalanQ || r.chalanNo.toLowerCase().includes(chalanQ)) &&
+      (!searchParams.broker || r.partyId === searchParams.broker) &&
+      (!searchParams.status || r.status === searchParams.status)
+  );
 
   const totalOpen = rows.reduce((s, r) => s + r.balance, 0);
-  const filters: FilterDef[] = [{ type: "daterange", key: "date", label: "Date" }];
+  const filters: FilterDef[] = [
+    { type: "daterange", key: "date", label: "Date" },
+    { type: "text", key: "chalan", label: "Cancelled Chalan No" },
+    {
+      type: "combobox",
+      key: "broker",
+      label: "Broker / Owner",
+      options: brokerOptions.map((b) => ({
+        value: b.id,
+        label: b.name,
+        meta: [b.transportName, b.alias].filter(Boolean).join(" · ") || undefined,
+      })),
+    },
+    {
+      type: "select",
+      key: "status",
+      label: "Status",
+      options: [
+        { value: "OPEN", label: "Open" },
+        { value: "PARTLY", label: "Partly Adjusted" },
+        { value: "RECOVERED", label: "Recovered" },
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-4 p-4">

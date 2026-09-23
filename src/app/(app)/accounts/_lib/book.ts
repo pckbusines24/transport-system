@@ -30,6 +30,10 @@ export interface BookParams {
   /** amount range (applies to the entry amount, either side) */
   amtFrom?: number;
   amtTo?: number;
+  /** counter-account ("Account" column) exact name */
+  counter?: string;
+  /** voucher number contains, case-insensitive */
+  voucherNo?: string;
 }
 
 /**
@@ -55,6 +59,8 @@ export async function ledgerBookRows(params: BookParams): Promise<{
   refTypes: string[];
   /** distinct reference numbers OF THE SELECTED LEDGER ONLY (empty otherwise) */
   refNos: string[];
+  /** distinct counter-account names in the (unfiltered-by-counter) result */
+  counters: string[];
 }> {
   const { session } = params;
   return withTenant(session.tenantId, async (tx) => {
@@ -600,8 +606,21 @@ export async function ledgerBookRows(params: BookParams): Promise<{
     const bodyRows = adjRows.length
       ? [...rows, ...adjRows].sort((a, b) => String(a.date).localeCompare(String(b.date)))
       : rows;
+    // counter-account / voucher-number filters apply to entry rows only; the
+    // opening row stays. Running balances are the ledger's true figures at
+    // each entry, so a filtered list still reads correctly.
+    const counters = Array.from(new Set(bodyRows.map((r) => String(r.account ?? "")).filter(Boolean))).sort();
+    const vq = params.voucherNo?.trim().toLowerCase();
+    const filteredBody =
+      params.counter || vq
+        ? bodyRows.filter(
+            (r) =>
+              (!params.counter || r.account === params.counter) &&
+              (!vq || String(r.voucherNo ?? "").toLowerCase().includes(vq))
+          )
+        : bodyRows;
     // the opening row stays pinned first, whatever the dates say
-    const mergedRows = openingRow ? [openingRow, ...bodyRows] : bodyRows;
+    const mergedRows = openingRow ? [openingRow, ...filteredBody] : filteredBody;
 
     // a row settling several documents carries them comma-joined — the
     // dropdown offers each individual reference, exact-match ready
@@ -617,6 +636,7 @@ export async function ledgerBookRows(params: BookParams): Promise<{
       vehicles: scopedVehicleIds ? vehicles.filter((v) => scopedVehicleIds.has(v.id)) : vehicles,
       refTypes: refTypeGroups.map((g) => g.refType).sort(),
       refNos: refNoTokens,
+      counters,
     };
   });
 }

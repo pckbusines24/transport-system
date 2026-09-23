@@ -15,7 +15,16 @@ export const dynamic = "force-dynamic";
 export default async function BankBookPage({
   searchParams,
 }: {
-  searchParams: { date_from?: string; date_to?: string; party?: string; type?: string };
+  searchParams: {
+    date_from?: string;
+    date_to?: string;
+    party?: string;
+    type?: string;
+    account?: string;
+    ref?: string;
+    voucher?: string;
+    side?: string;
+  };
 }) {
   const session = requireSession();
   await authorize(session, "reports", "view");
@@ -24,12 +33,17 @@ export default async function BankBookPage({
     ? (searchParams.type as LedgerGroup)
     : undefined;
 
-  const { rows, parties } = await ledgerBookRows({
+  const side = searchParams.side === "DEBIT" || searchParams.side === "CREDIT" ? searchParams.side : undefined;
+  const { rows, parties, counters } = await ledgerBookRows({
     session,
     groups: type ? [type] : ["BANK", "CASH", "CARD"],
     partyId: searchParams.party,
     dateFrom: searchParams.date_from,
     dateTo: searchParams.date_to,
+    refNo: searchParams.ref?.trim() || undefined,
+    voucherNo: searchParams.voucher?.trim() || undefined,
+    counter: searchParams.account || undefined,
+    side,
   });
 
   const filters: FilterDef[] = [
@@ -49,6 +63,23 @@ export default async function BankBookPage({
       key: "party",
       label: "Account",
       options: parties.map((p) => ({ value: p.id, label: `${p.name} (${p.ledgerGroup})` })),
+    },
+    {
+      type: "combobox",
+      key: "account",
+      label: "Account (counter ledger)",
+      options: counters.map((c) => ({ value: c, label: c })),
+    },
+    { type: "text", key: "ref", label: "Reference No" },
+    { type: "text", key: "voucher", label: "Voucher No" },
+    {
+      type: "select",
+      key: "side",
+      label: "Debit / Credit",
+      options: [
+        { value: "DEBIT", label: "Debit only" },
+        { value: "CREDIT", label: "Credit only" },
+      ],
     },
   ];
 
