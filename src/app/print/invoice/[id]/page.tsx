@@ -71,9 +71,15 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
     ? toNum(firm.cgstPct) + toNum(firm.sgstPct) || toNum(firm.igstPct)
     : 0;
   const rcm = invoice.reverseCharge && gstTotal === 0;
+  // RCM information box: the recipient's tax is worked on the bill's GRAND
+  // TOTAL as printed (net of advance, round-off applied) — the same rounding
+  // rule the print view uses for the figure it shows
+  const balance = toNum(invoice.balance);
+  const legacyRound = Math.abs(toNum(invoice.roundOff)) < 0.005 && Math.round(balance) !== balance;
+  const printedGrandTotal = legacyRound ? Math.round(balance) : balance;
   const rcmSplit = rcm
     ? gstSplit({
-        taxableValue: toNum(invoice.grandTotal),
+        taxableValue: printedGrandTotal,
         gstPct: firmGstPct,
         supplierStateCode: firmState.code || null,
         recipientStateCode: partyState.code || null,
@@ -158,7 +164,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
     },
     rcm: rcmSplit
       ? {
-          taxableValue: toNum(invoice.grandTotal),
+          taxableValue: printedGrandTotal,
           pct: firmGstPct,
           cgst: rcmSplit.cgst,
           sgst: rcmSplit.sgst,

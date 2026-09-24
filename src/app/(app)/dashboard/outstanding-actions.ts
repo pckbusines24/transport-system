@@ -343,7 +343,7 @@ async function collect(
     }
     return out;
   }
-  const [chalans, slips, hires, brokerVehicles, officeBills, vehicleBills, adblueBills, salaries, driverPay, drivers] =
+  const [chalans, slips, hires, brokerVehicles, officeBills, vehicleBills, adblueBills, salaries, driverPay, drivers, driverSalaries] =
     await Promise.all([
       // draft chalans owe their hire too — the Outstanding register carries
       // them, so hiding them here made the tile and the register disagree
@@ -396,6 +396,12 @@ async function collect(
         select: DRIVER_SETTLEMENT_COLS,
       }),
       tx.driver.findMany({ select: { id: true, partyId: true, name: true } }),
+      // driver salaries: net payable until paid (FIFO paidAmount — the payment
+      // voucher records the run, the row carries the settled figure)
+      tx.driverSalary.findMany({
+        where: { ...scope, deletedAt: null },
+        select: { id: true, driverId: true, month: true, netPayable: true, paidAmount: true, paymentDate: true },
+      }),
     ]);
   const market = new Set(brokerVehicles.map((v) => v.id));
   const marketChalans = chalans.filter((c) => market.has(c.vehicleId));
@@ -577,6 +583,25 @@ async function collect(
       amount: p.original,
       settled: p.settled,
       outstanding: p.outstanding,
+    });
+  }
+
+  // driver salaries: pending months are payable like staff salaries
+  for (const s of driverSalaries) {
+    const original = toNum(String(s.netPayable));
+    const settled = ownBy(s.paymentDate ?? (asOf ? null : new Date()), toNum(String(s.paidAmount)));
+    const outstanding = round2(original - settled);
+    if (outstanding <= 0.009) continue;
+    const drv = driverById.get(s.driverId);
+    out.push({
+      partyId: drv?.partyId ?? null,
+      partyName: drv?.name ?? null,
+      refNo: `DSAL-${s.month}`,
+      date: monthEndOf(s.month),
+      type: "DRIVER SALARY",
+      amount: original,
+      settled,
+      outstanding,
     });
   }
 
