@@ -28,6 +28,7 @@ import {
   deleteStaffSalary,
   getStaffDetails,
   payStaffSalary,
+  payStaffRunning,
   processStaffSalary,
   saveStaffAdvance,
   saveStaffLoan,
@@ -378,8 +379,8 @@ export function StaffPayrollClient({
   };
 
   // pay pending salary from details
-  const [payFor, setPayFor] = React.useState<{ salaryId: string; month: string } | null>(null);
-  const [pay, setPay] = React.useState({ dateText: formatDate(new Date()), headId: null as string | null });
+  const [payFor, setPayFor] = React.useState<{ salaryId: string; month: string; outstanding: number; running?: boolean } | null>(null);
+  const [pay, setPay] = React.useState({ dateText: formatDate(new Date()), headId: null as string | null, amount: 0 });
   const submitPay = async () => {
     if (!payFor || !pay.headId) {
       toast({ variant: "destructive", title: "Select the bank/cash head" });
@@ -387,13 +388,24 @@ export function StaffPayrollClient({
     }
     setBusy(true);
     try {
-      const res = await payStaffSalary({
-        salaryId: payFor.salaryId,
-        paymentDate: textToIso(pay.dateText),
-        paymentHeadId: pay.headId,
-      });
+      const res = payFor.running
+        ? await payStaffRunning({
+            partyId: details?.partyId ?? "",
+            paymentDate: textToIso(pay.dateText),
+            paymentHeadId: pay.headId,
+            amount: pay.amount,
+          })
+        : await payStaffSalary({
+            salaryId: payFor.salaryId,
+            paymentDate: textToIso(pay.dateText),
+            paymentHeadId: pay.headId,
+            amount: pay.amount,
+          });
       if (res.ok) {
-        toast({ title: `Salary ${payFor.month} paid` });
+        toast({
+          title: `Salary ${payFor.month}: ${formatMoney(res.paid)} paid`,
+          description: res.remaining > 0.009 ? `${formatMoney(res.remaining)} still pending` : "Fully paid",
+        });
         setPayFor(null);
         if (details) await openDetails(details.partyId);
         router.refresh();
@@ -753,39 +765,87 @@ export function StaffPayrollClient({
                       { header: "Advance Recovery", key: "advanceRecovery", numeric: true },
                       { header: "Loan Recovery", key: "loanRecovery", numeric: true },
                       { header: "Net Salary", key: "netSalary", numeric: true },
-                      { header: "Status", key: "paymentStatus" },
-                      { header: "Paid On", accessor: (r) => (r.paymentDate ? formatDate(r.paymentDate) : "") },
+                      { header: "Outstanding", key: "outstanding", numeric: true },
+                      { header: "Prev Pending", key: "prevPending", numeric: true },
+                      { header: "Running Balance", key: "runningBalance", numeric: true },
+                      {
+                        header: "Status",
+                        accessor: (r) =>
+                          r.paymentStatus === "PAID"
+                            ? "PAID"
+                            : r.isSettled
+                              ? "PAID VIA VOUCHER"
+                              : r.voucherSettled > 0.009
+                                ? "PARTLY PAID"
+                                : "PENDING",
+                      },
+                      { header: "Paid Via Voucher", accessor: (r) => (r.voucherSettled > 0.009 ? r.voucherSettled : "") , numeric: true },
+                      { header: "Voucher No", accessor: (r) => r.voucherNos.join(", ") },
+                      { header: "Paid On", accessor: (r) => (r.paymentDate ? formatDate(r.paymentDate) : r.voucherPaidDate ? formatDate(r.voucherPaidDate) : "") },
                     ]}
                   />
                 </div>
                 {details.salaries.length === 0 && (
                   <div className="text-xs text-muted-foreground">No salaries processed yet.</div>
                 )}
+                {details.salaries.length > 0 && (() => {
+                  const last = details.salaries[details.salaries.length - 1];
+                  return (
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/50 px-2 py-1 text-xs">
+                      <span>
+                        Running salary balance: <b className="tabular-nums">{formatMoney(last.runningBalance)}</b>
+                        <span className="text-muted-foreground"> (all pending months, oldest first)</span>
+                      </span>
+                      {last.runningBalance > 0.009 && (
+                        <Button
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => {
+                            setPay((p) => ({ ...p, amount: last.runningBalance }));
+                            setPayFor({ salaryId: last.id, month: `running balance up to ${last.month}`, outstanding: last.runningBalance, running: true });
+                          }}
+                        >
+                          Pay running balance
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })()}
                 {details.salaries.map((s) => (
                   <div key={s.id} className="flex items-center justify-between gap-2 border-b py-1 text-xs last:border-0">
                     <span className="font-medium">{s.month}</span>
                     <span className="tabular-nums">Gross {formatMoney(s.grossSalary)}</span>
                     <span className="tabular-nums">Ded {formatMoney(s.totalDeductions)}</span>
                     <span className="tabular-nums font-medium">Net {formatMoney(s.netSalary)}</span>
+                    <span className="tabular-nums text-muted-foreground" title="Outstanding of earlier months">Prev {formatMoney(s.prevPending)}</span>
+                    <span className="tabular-nums" title="Previous pending + this month's outstanding">Running <b>{formatMoney(s.runningBalance)}</b></span>
                     {s.paymentStatus === "PAID" ? (
                       <Badge>Paid{s.paymentDate ? ` ${formatDate(s.paymentDate)}` : ""}</Badge>
                     ) : s.isSettled ? (
                       // settled by a payment voucher: not payable again, and a
                       // Pay button here would only dead-end on the guard
-                      <Badge variant="secondary">Paid via voucher</Badge>
+                      <Badge variant="secondary" title={s.voucherNos.join(", ")}>
+                        Paid via voucher{s.voucherPaidDate ? ` ${formatDate(s.voucherPaidDate)}` : ""}
+                        {s.voucherNos.length ? ` (${s.voucherNos.join(", ")})` : ""}
+                      </Badge>
                     ) : (
                       <span className="flex items-center gap-1">
-                        <Badge variant="destructive">Pending</Badge>
-                        {s.voucherSettled > 0.009 && (
-                          <span className="text-[10px] text-muted-foreground">
-                            {formatMoney(s.voucherSettled)} via voucher
-                          </span>
+                        {s.voucherSettled > 0.009 ? (
+                          <Badge variant="warning">
+                            Partly paid {formatMoney(s.voucherSettled)} · pending {formatMoney(s.netSalary - s.voucherSettled)}
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive">Pending</Badge>
                         )}
                         <Button
                           variant="secondary"
                           size="sm"
                           className="h-6 px-2 text-xs"
-                          onClick={() => setPayFor({ salaryId: s.id, month: s.month })}
+                          onClick={() => {
+                            const outstanding = Math.round((s.netSalary - s.voucherSettled) * 100) / 100;
+                            setPay((p) => ({ ...p, amount: outstanding }));
+                            setPayFor({ salaryId: s.id, month: s.month, outstanding });
+                          }}
                         >
                           Pay
                         </Button>
@@ -956,6 +1016,16 @@ export function StaffPayrollClient({
             <div className="space-y-1">
               <Label className="text-xs">Paid From (Bank / Cash)</Label>
               <MasterCombobox options={bankOptions} value={pay.headId} onChange={(v) => setPay((p) => ({ ...p, headId: v }))} placeholder="Select head..." />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Amount (outstanding {formatMoney(payFor?.outstanding ?? 0)} — reduce for a part payment)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                className="h-8 text-right"
+                value={pay.amount ? String(pay.amount) : ""}
+                onChange={(e) => setPay((p) => ({ ...p, amount: Number(e.target.value) || 0 }))}
+              />
             </div>
           </div>
           <DialogFooter>

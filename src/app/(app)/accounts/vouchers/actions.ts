@@ -14,6 +14,7 @@ import { round2 } from "@/lib/calc/tds";
 import { adjustmentsTotal, applyAdjustments, ensureAdjustmentHead } from "@/lib/adjust-engine";
 import { tdsHead } from "@/lib/account-heads";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
+import { undoDriverSalaryVoucherTx } from "@/lib/driver-salary-pay";
 import {
   payableSettlement,
   refPositions,
@@ -1201,6 +1202,11 @@ export async function deleteVoucher(
         throw new Error(
           "The shortage raised by this voucher already has recoveries booked from other documents — release those recoveries first."
         );
+      }
+      // driver salary months this voucher paid open again (paid amounts and
+      // payment-time shortage adjustments handed back, newest month first)
+      if (before.allocations.some((a) => a.refType === "DRIVER_SALARY")) {
+        await undoDriverSalaryVoucherTx(tx, session.firmId, id);
       }
       await tx.voucher.update({ where: { id }, data: { deletedAt: new Date() } });
       // driver settlements this voucher had settled become payable again

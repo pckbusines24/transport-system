@@ -11,6 +11,7 @@ import { settledByRef } from "@/lib/settlement";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
+import { createModulePaymentVoucher } from "@/lib/module-voucher";
 
 /**
  * Staff Payroll & Advance Management. Every transaction posts to the ledger
@@ -462,22 +463,13 @@ export async function processStaffSalary(
         // paidAmount — the ledger re-posted the new net while the registers
         // still offered the difference for a second payment (double pay), and
         // un-paying from the edit form was silently impossible.
-        ...(d.markPaid
-          ? {
-              paymentStatus: "PAID",
-              paymentDate: toDate(d.paymentDate as string),
-              paymentHeadId: d.paymentHeadId,
-              // recorded as an amount, not just a flag: the payment voucher
-              // needs to know how much of this salary is already settled here,
-              // and a status cannot be netted against a partial allocation
-              paidAmount: netSalary,
-            }
-          : {
-              paymentStatus: "PENDING",
-              paymentDate: null,
-              paymentHeadId: null,
-              paidAmount: 0,
-            }),
+        // "Process & Pay" no longer marks the row paid here: the payment is a
+        // Payment Voucher created right after the save (below), and its
+        // allocation is what settles the salary
+        paymentStatus: "PENDING",
+        paymentDate: null,
+        paymentHeadId: null,
+        paidAmount: 0,
       };
 
       let salaryId: string;
@@ -551,6 +543,29 @@ export async function processStaffSalary(
       }
 
       await postSalaryLedger(tx, session, salaryId);
+      // "Process & Pay": the payment is a Payment Voucher allocated to this
+      // salary — same path as the Pay button on the register
+      if (d.markPaid && netSalary > 0.009) {
+        const saved = await tx.staffSalary.findFirstOrThrow({ where: { id: salaryId } });
+        await createModulePaymentVoucher(tx, session, {
+          date: toDate(d.paymentDate as string),
+          partyId: saved.partyId,
+          bankPartyId: d.paymentHeadId as string,
+          paid: netSalary,
+          moduleLink: "STAFF_PAYROLL",
+          allocations: [
+            {
+              refType: "STAFF_PAYROLL",
+              refId: saved.id,
+              refNo: saved.refNo || `SAL-${saved.month}`,
+              billAmt: netSalary,
+              amount: netSalary,
+            },
+          ],
+          narration: `Staff salary ${saved.month} — ${saved.refNo || ""}`.trim(),
+          partyNarration: `Salary paid ${saved.month}`,
+        });
+      }
       await syncLoanStatus(tx, d.loanId);
       // an edit that switched (or cleared) the loan re-opens the previous one:
       // its recovered total just dropped, so CLOSED may no longer be true
@@ -572,53 +587,156 @@ export async function payStaffSalary(input: {
   salaryId: string;
   paymentDate: string;
   paymentHeadId: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  /** partial payment; blank / 0 = the whole outstanding */
+  amount?: number | null;
+}): Promise<{ ok: true; paid: number; remaining: number } | { ok: false; error: string }> {
   const session = requireSession();
   await authorize(session, "office", "edit");
   if (!input.paymentDate || !input.paymentHeadId) {
     return { ok: false, error: "Payment date and bank/cash head are required" };
   }
   try {
-    await withTenant(session.tenantId, async (tx) => {
+    const out = await withTenant(session.tenantId, async (tx) => {
       const before = await tx.staffSalary.findFirstOrThrow({
         // firm-scoped (no FY): an old-year due salary is payable from the new
         // year; the exact id keeps it precise
         where: { id: input.salaryId, firmId: session.firmId, deletedAt: null },
       });
-      // already settled by a payment voucher => paying here would pay twice
+      // outstanding = net − own paid − what payment vouchers already settled
       const settledHere = await settledByRef(tx, {
         firmId: session.firmId,
         fyId: session.fyId,
         refTypes: ["STAFF_PAYROLL"],
         refIds: [before.id],
       });
-      if ((settledHere.get(before.id) ?? 0) > 0.009) {
-        throw new Error(
-          "This salary is already settled by a payment voucher — delete that voucher before paying it here."
-        );
+      const outstanding = round2(
+        toNum(String(before.netSalary)) - toNum(String(before.paidAmount)) - (settledHere.get(before.id) ?? 0)
+      );
+      if (outstanding <= 0.009) throw new Error("This salary is already fully paid.");
+      const net = input.amount && input.amount > 0 ? round2(input.amount) : outstanding;
+      if (net > outstanding + 0.009) {
+        throw new Error(`Amount exceeds the outstanding ${outstanding.toFixed(2)} on this salary.`);
       }
-      const after = await tx.staffSalary.update({
-        where: { id: input.salaryId },
-        data: {
-          paymentStatus: "PAID",
-          paymentDate: toDate(input.paymentDate),
-          paymentHeadId: input.paymentHeadId,
-          paidAmount: before.netSalary,
-        },
+      // the payment is a real Payment Voucher: it shows in the Voucher
+      // Register, settles this salary through its allocation, and the salary
+      // cannot be deleted until that voucher is
+      const voucher = await createModulePaymentVoucher(tx, session, {
+        date: toDate(input.paymentDate),
+        partyId: before.partyId,
+        bankPartyId: input.paymentHeadId,
+        paid: net,
+        moduleLink: "STAFF_PAYROLL",
+        allocations: [
+          {
+            refType: "STAFF_PAYROLL",
+            refId: before.id,
+            refNo: before.refNo || `SAL-${before.month}`,
+            billAmt: toNum(String(before.netSalary)),
+            amount: net,
+          },
+        ],
+        narration: `Staff salary ${before.month}${net < outstanding - 0.009 ? " (part payment)" : ""} — ${before.refNo || ""}`.trim(),
+        partyNarration: `Salary paid ${before.month}`,
       });
-      await reverseLedger(tx, "STAFF_SALARY", input.salaryId);
-      await postSalaryLedger(tx, session, input.salaryId);
       await audit(tx, session, {
         entity: "StaffSalary",
         entityId: input.salaryId,
         action: "UPDATE",
         before,
-        after,
+        after: { paidByVoucher: voucher.voucherNo, amount: net, remaining: round2(outstanding - net) },
       });
+      return { paid: net, remaining: round2(outstanding - net) };
     });
     revalidatePath(REVALIDATE);
     revalidateOutstanding(session.tenantId);
-    return { ok: true };
+    return { ok: true, ...out };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Payment failed" };
+  }
+}
+
+/**
+ * Pay a staff member's RUNNING salary balance — every outstanding month,
+ * oldest first — on ONE Payment Voucher with one allocation per month
+ * settled (exactly like the driver salary "Pay" on the running balance).
+ * A part payment clears the oldest months first and leaves the rest pending.
+ */
+export async function payStaffRunning(input: {
+  partyId: string;
+  paymentDate: string;
+  paymentHeadId: string;
+  /** blank / 0 = the whole running balance */
+  amount?: number | null;
+}): Promise<{ ok: true; paid: number; remaining: number; voucherNo: string } | { ok: false; error: string }> {
+  const session = requireSession();
+  await authorize(session, "office", "edit");
+  if (!input.paymentDate || !input.paymentHeadId) {
+    return { ok: false, error: "Payment date and bank/cash head are required" };
+  }
+  try {
+    const out = await withTenant(session.tenantId, async (tx) => {
+      const salaries = await tx.staffSalary.findMany({
+        where: { firmId: session.firmId, partyId: input.partyId, deletedAt: null },
+        orderBy: { month: "asc" },
+      });
+      const settled = await settledByRef(tx, {
+        firmId: session.firmId,
+        fyId: session.fyId,
+        refTypes: ["STAFF_PAYROLL"],
+        refIds: salaries.map((s) => s.id),
+      });
+      const open = salaries
+        .map((s) => ({
+          s,
+          due: Math.max(
+            0,
+            round2(toNum(String(s.netSalary)) - toNum(String(s.paidAmount)) - (settled.get(s.id) ?? 0))
+          ),
+        }))
+        .filter((x) => x.due > 0.009);
+      const running = round2(open.reduce((sum, x) => sum + x.due, 0));
+      if (running <= 0.009) throw new Error("No outstanding salary balance.");
+      const pay = input.amount && input.amount > 0 ? round2(input.amount) : running;
+      if (pay > running + 0.009) throw new Error(`Amount exceeds the running balance ${running.toFixed(2)}.`);
+
+      // FIFO across months
+      let left = pay;
+      const allocations: { refType: "STAFF_PAYROLL"; refId: string; refNo: string; billAmt: number; amount: number }[] = [];
+      for (const x of open) {
+        if (left <= 0.009) break;
+        const take = Math.min(x.due, left);
+        left = round2(left - take);
+        allocations.push({
+          refType: "STAFF_PAYROLL",
+          refId: x.s.id,
+          refNo: x.s.refNo || `SAL-${x.s.month}`,
+          billAmt: toNum(String(x.s.netSalary)),
+          amount: take,
+        });
+      }
+      const party = await tx.party.findFirst({ where: { id: input.partyId }, select: { name: true } });
+      const last = open[open.length - 1].s.month;
+      const voucher = await createModulePaymentVoucher(tx, session, {
+        date: toDate(input.paymentDate),
+        partyId: input.partyId,
+        bankPartyId: input.paymentHeadId,
+        paid: pay,
+        moduleLink: "STAFF_PAYROLL",
+        allocations,
+        narration: `Staff salary running balance up to ${last} — ${party?.name ?? ""}${pay < running - 0.009 ? " (part payment)" : ""}`.trim(),
+        partyNarration: `Salary paid (running balance up to ${last})`,
+      });
+      await audit(tx, session, {
+        entity: "StaffSalary",
+        entityId: open[open.length - 1].s.id,
+        action: "UPDATE",
+        after: { runningPay: { voucherNo: voucher.voucherNo, paid: pay, months: allocations.length, remaining: round2(running - pay) } },
+      });
+      return { paid: pay, remaining: round2(running - pay), voucherNo: voucher.voucherNo };
+    });
+    revalidatePath(REVALIDATE);
+    revalidateOutstanding(session.tenantId);
+    return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Payment failed" };
   }
@@ -687,7 +805,9 @@ async function postSalaryLedger(
     const h = await salaryHead(tx, session.tenantId, "Salary Deductions (Staff)", "INCOME");
     entries.push({ ...common, accountHeadId: h, side: "CREDIT", amount: otherDed, narration: `Deductions — salary ${monthLabel}` });
   }
-  if (s.paymentStatus === "PAID" && s.paymentHeadId && net > 0) {
+  // money legs only for LEGACY own-paid rows (paidAmount > 0); payments made
+  // now are Payment Vouchers with their own postings
+  if (s.paymentStatus === "PAID" && s.paymentHeadId && net > 0 && toNum(String(s.paidAmount)) > 0) {
     entries.push({
       ...payCommon,
       partyId: s.paymentHeadId,
@@ -891,6 +1011,15 @@ export interface StaffDetails {
     voucherSettled: number;
     /** fully covered by own payment + voucher settlements */
     isSettled: boolean;
+    /** net − own paid − voucher settled */
+    outstanding: number;
+    /** outstanding of earlier months (months run oldest → newest) */
+    prevPending: number;
+    /** prevPending + outstanding — what "Pay running balance" pays */
+    runningBalance: number;
+    /** date of the latest payment voucher settling this month */
+    voucherPaidDate: string | null;
+    voucherNos: string[];
     paymentDate: string | null;
     paymentHeadId: string | null;
     remarks: string;
@@ -949,7 +1078,30 @@ export async function getStaffDetails(
         refIds: salaries.map((s) => s.id),
       }),
     ]);
+    // latest payment-voucher date per salary (the "paid on" of a voucher-paid month)
+    const salVoucherRows = salaries.length
+      ? await tx.voucherAllocation.findMany({
+          where: {
+            refType: "STAFF_PAYROLL",
+            refId: { in: salaries.map((s) => s.id) },
+            voucher: { deletedAt: null, firmId: session.firmId },
+          },
+          select: { refId: true, voucher: { select: { voucherDate: true, voucherNo: true } } },
+        })
+      : [];
+    const salVoucherDate = new Map<string, Date>();
+    const salVoucherNos = new Map<string, string[]>();
+    for (const r of salVoucherRows) {
+      const prev = salVoucherDate.get(r.refId);
+      if (!prev || r.voucher.voucherDate > prev) salVoucherDate.set(r.refId, r.voucher.voucherDate);
+      salVoucherNos.set(r.refId, [...(salVoucherNos.get(r.refId) ?? []), r.voucher.voucherNo]);
+    }
 
+    const outstandingOf = (s: (typeof salaries)[number]) =>
+      Math.max(
+        0,
+        round2(toNum(String(s.netSalary)) - toNum(String(s.paidAmount)) - (salViaVoucher.get(s.id) ?? 0))
+      );
     const advAdjusted = new Map<string, number>();
     const loanRecovered = new Map<string, number>();
     for (const s of salaries) {
@@ -1025,9 +1177,12 @@ export async function getStaffDetails(
             remarks: l.remarks ?? "",
           };
         }),
-        salaries: salaries.map((s) => ({
+        salaries: salaries.map((s, i) => ({
           id: s.id,
           month: s.month,
+          outstanding: outstandingOf(s),
+          prevPending: round2(salaries.slice(0, i).reduce((sum, x) => sum + outstandingOf(x), 0)),
+          runningBalance: round2(salaries.slice(0, i + 1).reduce((sum, x) => sum + outstandingOf(x), 0)),
           basic: toNum(String(s.basic)),
           allowances: toNum(String(s.allowances)),
           overtime: toNum(String(s.overtime)),
@@ -1052,6 +1207,8 @@ export async function getStaffDetails(
           isSettled:
             round2(toNum(String(s.paidAmount)) + (salViaVoucher.get(s.id) ?? 0)) >=
             toNum(String(s.netSalary)) - 0.009,
+          voucherPaidDate: salVoucherDate.get(s.id)?.toISOString() ?? null,
+          voucherNos: salVoucherNos.get(s.id) ?? [],
           paymentDate: s.paymentDate ? s.paymentDate.toISOString() : null,
           paymentHeadId: s.paymentHeadId,
           remarks: s.remarks ?? "",

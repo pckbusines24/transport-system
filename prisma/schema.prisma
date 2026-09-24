@@ -96,6 +96,8 @@ enum ModuleLink {
   STAFF_ADVANCE
   DRIVER_SETTLEMENT
   ADBLUE_PURCHASE
+  // driver salary paid from Driver Management (allocation refType)
+  DRIVER_SALARY
   OTHERS
 }
 
