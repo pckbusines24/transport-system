@@ -33,6 +33,8 @@ export const ALL_PAYABLE_REF_TYPES: ModuleLink[] = [
   // when he owes the company, so it belongs to both lists — the sign on the
   // settlement row says which way this one goes
   "DRIVER_SETTLEMENT",
+  // pending driver salary months (Driver Management → Salary)
+  "DRIVER_SALARY",
 ];
 /** Everything a Receipt Voucher can settle. */
 export const ALL_RECEIVABLE_REF_TYPES: ModuleLink[] = [
@@ -43,6 +45,10 @@ export const ALL_RECEIVABLE_REF_TYPES: ModuleLink[] = [
   // an advance is money the staff member owes back
   "STAFF_ADVANCE",
   "DRIVER_SETTLEMENT",
+  // a staff loan is money the staff member owes back
+  "STAFF_LOAN",
+  // a driver advance not consumed by a trip sheet, received back in cash
+  "DRIVER_ADVANCE",
 ];
 
 /**

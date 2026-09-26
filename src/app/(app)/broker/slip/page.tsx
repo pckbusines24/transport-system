@@ -218,10 +218,16 @@ export default async function BrokerSlipPage({
           settledRoundOff: n(slip.pRoundOff) + (pPos?.voucherRoundOff ?? 0),
         },
         V: {
-          status: slip.vPaymentStatus,
-          roundOff: n(slip.vRoundOff),
-          shortage: n(slip.vShortage),
-          paidAmount: n(slip.vPaidAmount),
+          // a voucher-settled owner side reads as PAID even though the slip's
+          // own v-columns were never written
+          status:
+            slip.vPaymentStatus === "PAID" || (vPos && vPos.outstanding <= 0.009) ? "PAID" : slip.vPaymentStatus,
+          // the settlement voucher's figures fill the inputs when the slip's own
+          // block is empty — the save path refuses a second settlement on a
+          // fully settled side, so this cannot double-post
+          roundOff: n(slip.vRoundOff) || (vPos?.voucherRoundOff ?? 0),
+          shortage: n(slip.vShortage) || (vPos?.voucherShortage ?? 0),
+          paidAmount: n(slip.vPaidAmount) || (vPos?.voucherPaid ?? 0),
           paymentDate: iso(slip.vPaymentDate),
           paymentHeadId: slip.vPaymentHeadId,
           paymentMode: slip.vPaymentMode ?? "BANK",

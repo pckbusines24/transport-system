@@ -19,10 +19,11 @@ export function gstSplit(opts: {
     !!supplierStateCode &&
     (!recipientStateCode || supplierStateCode === recipientStateCode);
   if (intra) {
-    // halves must reconstruct the rounded total exactly — 2 × round2(total/2)
-    // can drift a paisa (e.g. 10.01 → 5.01 + 5.00, never 5.01 + 5.01)
-    const cgst = round2(total / 2);
-    return { cgst, sgst: round2(total - cgst), igst: 0 };
+    // CGST and SGST are each the SAME rate on the same base, so each half is
+    // rounded on its own and the two are always equal (the bill shows
+    // 1,655.70 + 1,655.70, never 1,655.70 + 1,655.69)
+    const half = round2((taxableValue * gstPct) / 200);
+    return { cgst: half, sgst: half, igst: 0 };
   }
   return { cgst: 0, sgst: 0, igst: total };
 }

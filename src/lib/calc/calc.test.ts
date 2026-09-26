@@ -54,10 +54,14 @@ describe("GST", () => {
       gstSplit({ taxableValue: 1000, gstPct: 12, supplierStateCode: "22", recipientStateCode: null })
     ).toEqual({ cgst: 60, sgst: 60, igst: 0 });
   });
-  it("intra-state halves reconstruct the rounded total exactly (no paisa drift)", () => {
-    // 333.50 @ 3% = 10.005 -> 10.01 total; halves must sum to 10.01, not 10.02
+  it("intra-state: CGST and SGST are always equal, each rounded on its own", () => {
+    // 333.50 @ 3% -> each half 5.0025 -> 5.00; the bill prints 5.00 + 5.00
     const g = gstSplit({ taxableValue: 333.5, gstPct: 3, supplierStateCode: "22", recipientStateCode: "22" });
-    expect(g.cgst + g.sgst).toBeCloseTo(10.01, 2);
+    expect(g.cgst).toBe(g.sgst);
+    expect(g.cgst).toBe(5);
+    // 66,228 @ 5% -> 1,655.70 + 1,655.70, never 1,655.70 + 1,655.69
+    const h = gstSplit({ taxableValue: 66228, gstPct: 5, supplierStateCode: "22", recipientStateCode: "22" });
+    expect(h).toEqual({ cgst: 1655.7, sgst: 1655.7, igst: 0 });
   });
 });
 

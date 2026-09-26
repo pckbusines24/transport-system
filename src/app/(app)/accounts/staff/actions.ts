@@ -138,6 +138,19 @@ export async function saveStaffAdvance(
     return await withTenant(session.tenantId, async (tx) => {
       const advanceNo = await nextNo(tx, "staffAdvance", session.firmId, session.fyId, "SADV-");
       const date = toDate(d.date);
+      // the advance is a real Payment Voucher: it shows in the Voucher
+      // Register, posts the money (bank Cr / staff Dr) itself, and the advance
+      // cannot be deleted until that voucher is
+      const voucher = await createModulePaymentVoucher(tx, session, {
+        date,
+        partyId: d.partyId,
+        bankPartyId: d.headId,
+        paid: d.amount,
+        moduleLink: "STAFF_ADVANCE",
+        allocations: [],
+        narration: `Staff advance ${advanceNo}${d.remarks ? " — " + d.remarks : ""}`,
+        partyNarration: `Advance given ${advanceNo}`,
+      });
       const created = await tx.staffAdvance.create({
         data: {
           tenantId: session.tenantId,
@@ -149,32 +162,10 @@ export async function saveStaffAdvance(
           amount: d.amount,
           headId: d.headId,
           remarks: d.remarks || null,
+          voucherId: voucher.id,
           createdById: session.userId,
         },
       });
-      // money out of bank/cash, receivable on the staff party
-      await postLedger(tx, session, [
-        {
-          date,
-          partyId: d.headId,
-          side: "CREDIT",
-          amount: d.amount,
-          refType: "STAFF_ADVANCE",
-          refId: created.id,
-          refNo: advanceNo,
-          narration: `Staff advance ${advanceNo}${d.remarks ? " — " + d.remarks : ""}`,
-        },
-        {
-          date,
-          partyId: d.partyId,
-          side: "DEBIT",
-          amount: d.amount,
-          refType: "STAFF_ADVANCE",
-          refId: created.id,
-          refNo: advanceNo,
-          narration: `Advance given ${advanceNo}`,
-        },
-      ]);
       await audit(tx, session, {
         entity: "StaffAdvance",
         entityId: created.id,
@@ -212,6 +203,16 @@ export async function saveStaffLoan(
     return await withTenant(session.tenantId, async (tx) => {
       const loanNo = await nextNo(tx, "staffLoan", session.firmId, session.fyId, "SLN-");
       const date = toDate(d.date);
+      const voucher = await createModulePaymentVoucher(tx, session, {
+        date,
+        partyId: d.partyId,
+        bankPartyId: d.headId,
+        paid: d.amount,
+        moduleLink: "OTHERS",
+        allocations: [],
+        narration: `Staff loan ${loanNo}${d.remarks ? " — " + d.remarks : ""}`,
+        partyNarration: `Loan given ${loanNo}`,
+      });
       const created = await tx.staffLoan.create({
         data: {
           tenantId: session.tenantId,
@@ -224,31 +225,10 @@ export async function saveStaffLoan(
           emiAmount: d.emiAmount,
           headId: d.headId,
           remarks: d.remarks || null,
+          voucherId: voucher.id,
           createdById: session.userId,
         },
       });
-      await postLedger(tx, session, [
-        {
-          date,
-          partyId: d.headId,
-          side: "CREDIT",
-          amount: d.amount,
-          refType: "STAFF_LOAN",
-          refId: created.id,
-          refNo: loanNo,
-          narration: `Staff loan ${loanNo}${d.remarks ? " — " + d.remarks : ""}`,
-        },
-        {
-          date,
-          partyId: d.partyId,
-          side: "DEBIT",
-          amount: d.amount,
-          refType: "STAFF_LOAN",
-          refId: created.id,
-          refNo: loanNo,
-          narration: `Loan given ${loanNo}`,
-        },
-      ]);
       await audit(tx, session, {
         entity: "StaffLoan",
         entityId: created.id,
@@ -304,7 +284,15 @@ async function loanRecoveredTotal(tx: Tx, loanId: string, excludeSalaryId?: stri
     where: { loanId, deletedAt: null, ...(excludeSalaryId ? { id: { not: excludeSalaryId } } : {}) },
     select: { loanRecovery: true },
   });
-  return round2(rows.reduce((s, r) => s + toNum(String(r.loanRecovery)), 0));
+  // plus what salary payment vouchers recovered against the loan
+  const viaVoucher = await tx.voucherAllocation.findMany({
+    where: { refType: "STAFF_LOAN", refId: loanId, voucher: { deletedAt: null } },
+    select: { amount: true },
+  });
+  return round2(
+    rows.reduce((s, r) => s + toNum(String(r.loanRecovery)), 0) +
+      viaVoucher.reduce((s, a) => s + toNum(String(a.amount)), 0)
+  );
 }
 
 /** Create or update a month's salary; reverses + re-posts the ledger. */
@@ -583,13 +571,56 @@ export async function processStaffSalary(
 }
 
 /** Pay (or re-pay after edit) a processed salary. */
+type Recovery = { advances?: { id: string; amount: number }[]; loans?: { id: string; amount: number }[] };
+
+/**
+ * Validates the recoveries a salary payment wants to make against open
+ * advances / loans and returns the allocation rows that record them on the
+ * payment voucher (STAFF_ADVANCE / STAFF_LOAN allocations). A recovery is a
+ * non-cash settlement: it reduces the salary outstanding AND the advance /
+ * loan balance without any money moving — no ledger leg is needed.
+ */
+async function recoveryAllocations(
+  tx: Tx,
+  session: ReturnType<typeof requireSession>,
+  partyId: string,
+  r: Recovery | null | undefined
+): Promise<{ rows: { refType: "STAFF_ADVANCE" | "STAFF_LOAN"; refId: string; refNo: string; billAmt: number; amount: number }[]; total: number; loanIds: string[] }> {
+  const rows: { refType: "STAFF_ADVANCE" | "STAFF_LOAN"; refId: string; refNo: string; billAmt: number; amount: number }[] = [];
+  for (const x of r?.advances ?? []) {
+    const amt = round2(x.amount);
+    if (amt <= 0) continue;
+    const adv = await tx.staffAdvance.findFirst({ where: { id: x.id, partyId, firmId: session.firmId, deletedAt: null } });
+    if (!adv) throw new Error("Advance not found for this staff member");
+    const adjusted = await advanceAdjustedTotal(tx, adv.id);
+    const viaVoucher = await settledByRef(tx, { firmId: session.firmId, fyId: session.fyId, refTypes: ["STAFF_ADVANCE"], refIds: [adv.id] });
+    const balance = round2(toNum(String(adv.amount)) - adjusted - (viaVoucher.get(adv.id) ?? 0));
+    if (amt > balance + 0.009) throw new Error(`Advance ${adv.advanceNo} balance is only ${balance.toFixed(2)}`);
+    rows.push({ refType: "STAFF_ADVANCE", refId: adv.id, refNo: adv.advanceNo, billAmt: toNum(String(adv.amount)), amount: amt });
+  }
+  const loanIds: string[] = [];
+  for (const x of r?.loans ?? []) {
+    const amt = round2(x.amount);
+    if (amt <= 0) continue;
+    const loan = await tx.staffLoan.findFirst({ where: { id: x.id, partyId, firmId: session.firmId, deletedAt: null } });
+    if (!loan) throw new Error("Loan not found for this staff member");
+    const balance = round2(toNum(String(loan.amount)) - (await loanRecoveredTotal(tx, loan.id)));
+    if (amt > balance + 0.009) throw new Error(`Loan ${loan.loanNo} balance is only ${balance.toFixed(2)}`);
+    rows.push({ refType: "STAFF_LOAN", refId: loan.id, refNo: loan.loanNo, billAmt: toNum(String(loan.amount)), amount: amt });
+    loanIds.push(loan.id);
+  }
+  return { rows, total: round2(rows.reduce((t, x) => t + x.amount, 0)), loanIds };
+}
+
 export async function payStaffSalary(input: {
   salaryId: string;
   paymentDate: string;
   paymentHeadId: string;
-  /** partial payment; blank / 0 = the whole outstanding */
+  /** cash to pay; blank / 0 = whatever is outstanding after recoveries */
   amount?: number | null;
-}): Promise<{ ok: true; paid: number; remaining: number } | { ok: false; error: string }> {
+  /** settle part of the salary against open advances / loans (no cash) */
+  recovery?: Recovery | null;
+}): Promise<{ ok: true; paid: number; recovered: number; remaining: number } | { ok: false; error: string }> {
   const session = requireSession();
   await authorize(session, "office", "edit");
   if (!input.paymentDate || !input.paymentHeadId) {
@@ -598,11 +629,8 @@ export async function payStaffSalary(input: {
   try {
     const out = await withTenant(session.tenantId, async (tx) => {
       const before = await tx.staffSalary.findFirstOrThrow({
-        // firm-scoped (no FY): an old-year due salary is payable from the new
-        // year; the exact id keeps it precise
         where: { id: input.salaryId, firmId: session.firmId, deletedAt: null },
       });
-      // outstanding = net − own paid − what payment vouchers already settled
       const settledHere = await settledByRef(tx, {
         firmId: session.firmId,
         fyId: session.fyId,
@@ -613,18 +641,23 @@ export async function payStaffSalary(input: {
         toNum(String(before.netSalary)) - toNum(String(before.paidAmount)) - (settledHere.get(before.id) ?? 0)
       );
       if (outstanding <= 0.009) throw new Error("This salary is already fully paid.");
-      const net = input.amount && input.amount > 0 ? round2(input.amount) : outstanding;
-      if (net > outstanding + 0.009) {
-        throw new Error(`Amount exceeds the outstanding ${outstanding.toFixed(2)} on this salary.`);
+      const rec = await recoveryAllocations(tx, session, before.partyId, input.recovery);
+      if (rec.total > outstanding + 0.009) {
+        throw new Error(`Recoveries ${rec.total.toFixed(2)} exceed the outstanding ${outstanding.toFixed(2)}.`);
       }
-      // the payment is a real Payment Voucher: it shows in the Voucher
-      // Register, settles this salary through its allocation, and the salary
-      // cannot be deleted until that voucher is
+      const cashRoom = round2(outstanding - rec.total);
+      const cash = input.amount && input.amount > 0 ? round2(input.amount) : cashRoom;
+      if (cash > cashRoom + 0.009) {
+        throw new Error(`Cash ${cash.toFixed(2)} + recoveries ${rec.total.toFixed(2)} exceed the outstanding ${outstanding.toFixed(2)}.`);
+      }
+      if (cash + rec.total <= 0.009) throw new Error("Nothing to pay or recover.");
+      const settledNow = round2(cash + rec.total);
       const voucher = await createModulePaymentVoucher(tx, session, {
         date: toDate(input.paymentDate),
         partyId: before.partyId,
         bankPartyId: input.paymentHeadId,
-        paid: net,
+        paid: cash,
+        deduction: rec.total,
         moduleLink: "STAFF_PAYROLL",
         allocations: [
           {
@@ -632,20 +665,24 @@ export async function payStaffSalary(input: {
             refId: before.id,
             refNo: before.refNo || `SAL-${before.month}`,
             billAmt: toNum(String(before.netSalary)),
-            amount: net,
+            amount: cash,
+            deduction: rec.total,
+            remarks: rec.total > 0 ? `incl. ${rec.total.toFixed(2)} recovered against advance / loan` : undefined,
           },
+          ...rec.rows,
         ],
-        narration: `Staff salary ${before.month}${net < outstanding - 0.009 ? " (part payment)" : ""} — ${before.refNo || ""}`.trim(),
+        narration: `Staff salary ${before.month}${settledNow < outstanding - 0.009 ? " (part payment)" : ""}${rec.total > 0 ? ` — ${rec.total.toFixed(2)} adjusted against advance / loan` : ""} — ${before.refNo || ""}`.trim(),
         partyNarration: `Salary paid ${before.month}`,
       });
+      for (const id of rec.loanIds) await syncLoanStatus(tx, id);
       await audit(tx, session, {
         entity: "StaffSalary",
         entityId: input.salaryId,
         action: "UPDATE",
         before,
-        after: { paidByVoucher: voucher.voucherNo, amount: net, remaining: round2(outstanding - net) },
+        after: { paidByVoucher: voucher.voucherNo, cash, recovered: rec.total, remaining: round2(outstanding - settledNow) },
       });
-      return { paid: net, remaining: round2(outstanding - net) };
+      return { paid: cash, recovered: rec.total, remaining: round2(outstanding - settledNow) };
     });
     revalidatePath(REVALIDATE);
     revalidateOutstanding(session.tenantId);
@@ -659,15 +696,17 @@ export async function payStaffSalary(input: {
  * Pay a staff member's RUNNING salary balance — every outstanding month,
  * oldest first — on ONE Payment Voucher with one allocation per month
  * settled (exactly like the driver salary "Pay" on the running balance).
- * A part payment clears the oldest months first and leaves the rest pending.
+ * Recoveries against open advances / loans settle first (no cash), then the
+ * cash; a part payment clears the oldest months first and leaves the rest.
  */
 export async function payStaffRunning(input: {
   partyId: string;
   paymentDate: string;
   paymentHeadId: string;
-  /** blank / 0 = the whole running balance */
+  /** cash; blank / 0 = the whole running balance after recoveries */
   amount?: number | null;
-}): Promise<{ ok: true; paid: number; remaining: number; voucherNo: string } | { ok: false; error: string }> {
+  recovery?: Recovery | null;
+}): Promise<{ ok: true; paid: number; recovered: number; remaining: number; voucherNo: string } | { ok: false; error: string }> {
   const session = requireSession();
   await authorize(session, "office", "edit");
   if (!input.paymentDate || !input.paymentHeadId) {
@@ -688,51 +727,64 @@ export async function payStaffRunning(input: {
       const open = salaries
         .map((s) => ({
           s,
-          due: Math.max(
-            0,
-            round2(toNum(String(s.netSalary)) - toNum(String(s.paidAmount)) - (settled.get(s.id) ?? 0))
-          ),
+          due: Math.max(0, round2(toNum(String(s.netSalary)) - toNum(String(s.paidAmount)) - (settled.get(s.id) ?? 0))),
         }))
         .filter((x) => x.due > 0.009);
       const running = round2(open.reduce((sum, x) => sum + x.due, 0));
       if (running <= 0.009) throw new Error("No outstanding salary balance.");
-      const pay = input.amount && input.amount > 0 ? round2(input.amount) : running;
-      if (pay > running + 0.009) throw new Error(`Amount exceeds the running balance ${running.toFixed(2)}.`);
+      const rec = await recoveryAllocations(tx, session, input.partyId, input.recovery);
+      if (rec.total > running + 0.009) {
+        throw new Error(`Recoveries ${rec.total.toFixed(2)} exceed the running balance ${running.toFixed(2)}.`);
+      }
+      const cashRoom = round2(running - rec.total);
+      const cash = input.amount && input.amount > 0 ? round2(input.amount) : cashRoom;
+      if (cash > cashRoom + 0.009) {
+        throw new Error(`Cash ${cash.toFixed(2)} + recoveries ${rec.total.toFixed(2)} exceed the running balance ${running.toFixed(2)}.`);
+      }
+      if (cash + rec.total <= 0.009) throw new Error("Nothing to pay or recover.");
 
-      // FIFO across months
-      let left = pay;
-      const allocations: { refType: "STAFF_PAYROLL"; refId: string; refNo: string; billAmt: number; amount: number }[] = [];
+      // FIFO across months: recoveries settle first, then cash
+      let recLeft = rec.total;
+      let cashLeft = cash;
+      const allocations: { refType: "STAFF_PAYROLL" | "STAFF_ADVANCE" | "STAFF_LOAN"; refId: string; refNo: string; billAmt: number; amount: number; deduction?: number }[] = [];
       for (const x of open) {
-        if (left <= 0.009) break;
-        const take = Math.min(x.due, left);
-        left = round2(left - take);
+        if (recLeft + cashLeft <= 0.009) break;
+        const r = Math.min(x.due, recLeft);
+        recLeft = round2(recLeft - r);
+        const c = Math.min(round2(x.due - r), cashLeft);
+        cashLeft = round2(cashLeft - c);
         allocations.push({
           refType: "STAFF_PAYROLL",
           refId: x.s.id,
           refNo: x.s.refNo || `SAL-${x.s.month}`,
           billAmt: toNum(String(x.s.netSalary)),
-          amount: take,
+          amount: c,
+          deduction: r,
         });
       }
+      allocations.push(...rec.rows);
       const party = await tx.party.findFirst({ where: { id: input.partyId }, select: { name: true } });
       const last = open[open.length - 1].s.month;
+      const settledNow = round2(cash + rec.total);
       const voucher = await createModulePaymentVoucher(tx, session, {
         date: toDate(input.paymentDate),
         partyId: input.partyId,
         bankPartyId: input.paymentHeadId,
-        paid: pay,
+        paid: cash,
+        deduction: rec.total,
         moduleLink: "STAFF_PAYROLL",
         allocations,
-        narration: `Staff salary running balance up to ${last} — ${party?.name ?? ""}${pay < running - 0.009 ? " (part payment)" : ""}`.trim(),
+        narration: `Staff salary running balance up to ${last} — ${party?.name ?? ""}${settledNow < running - 0.009 ? " (part payment)" : ""}${rec.total > 0 ? ` — ${rec.total.toFixed(2)} adjusted against advance / loan` : ""}`.trim(),
         partyNarration: `Salary paid (running balance up to ${last})`,
       });
+      for (const id of rec.loanIds) await syncLoanStatus(tx, id);
       await audit(tx, session, {
         entity: "StaffSalary",
         entityId: open[open.length - 1].s.id,
         action: "UPDATE",
-        after: { runningPay: { voucherNo: voucher.voucherNo, paid: pay, months: allocations.length, remaining: round2(running - pay) } },
+        after: { runningPay: { voucherNo: voucher.voucherNo, cash, recovered: rec.total, months: allocations.filter((a) => a.refType === "STAFF_PAYROLL").length, remaining: round2(running - settledNow) } },
       });
-      return { paid: pay, remaining: round2(running - pay), voucherNo: voucher.voucherNo };
+      return { paid: cash, recovered: rec.total, remaining: round2(running - settledNow), voucherNo: voucher.voucherNo };
     });
     revalidatePath(REVALIDATE);
     revalidateOutstanding(session.tenantId);
@@ -874,6 +926,15 @@ export async function deleteStaffAdvance(
           error: `Advance ${adv.advanceNo} is settled by a receipt voucher — delete that voucher first`,
         };
       }
+      if (adv.voucherId) {
+        const v = await tx.voucher.findFirst({ where: { id: adv.voucherId, deletedAt: null }, select: { voucherNo: true } });
+        if (v) {
+          return {
+            ok: false as const,
+            error: `Advance ${adv.advanceNo} was paid through voucher ${v.voucherNo} — delete that voucher (Accounts → Voucher Register); it removes the advance with it.`,
+          };
+        }
+      }
       await tx.staffAdvance.update({ where: { id }, data: { deletedAt: new Date() } });
       await reverseLedger(tx, "STAFF_ADVANCE", id);
       await audit(tx, session, { entity: "StaffAdvance", entityId: id, action: "DELETE", before: adv });
@@ -902,6 +963,15 @@ export async function deleteStaffLoan(
           ok: false as const,
           error: `Loan ${loan.loanNo} has ${recovered.toFixed(2)} recovered through salary — delete or edit those salaries first`,
         };
+      }
+      if (loan.voucherId) {
+        const v = await tx.voucher.findFirst({ where: { id: loan.voucherId, deletedAt: null }, select: { voucherNo: true } });
+        if (v) {
+          return {
+            ok: false as const,
+            error: `Loan ${loan.loanNo} was paid through voucher ${v.voucherNo} — delete that voucher (Accounts → Voucher Register); it removes the loan with it.`,
+          };
+        }
       }
       await tx.staffLoan.update({ where: { id }, data: { deletedAt: new Date() } });
       await reverseLedger(tx, "STAFF_LOAN", id);
@@ -1104,6 +1174,15 @@ export async function getStaffDetails(
       );
     const advAdjusted = new Map<string, number>();
     const loanRecovered = new Map<string, number>();
+    const loanViaVoucher = loans.length
+      ? await tx.voucherAllocation.findMany({
+          where: { refType: "STAFF_LOAN", refId: { in: loans.map((l) => l.id) }, voucher: { deletedAt: null } },
+          select: { refId: true, amount: true },
+        })
+      : [];
+    for (const a of loanViaVoucher) {
+      loanRecovered.set(a.refId, round2((loanRecovered.get(a.refId) ?? 0) + toNum(String(a.amount))));
+    }
     for (const s of salaries) {
       if (s.advanceId)
         advAdjusted.set(

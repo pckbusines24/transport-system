@@ -98,6 +98,10 @@ enum ModuleLink {
   ADBLUE_PURCHASE
   // driver salary paid from Driver Management (allocation refType)
   DRIVER_SALARY
+  // staff loan recovered on a salary payment voucher (allocation refType)
+  STAFF_LOAN
+  // driver advance received back on a Receipt Voucher (allocation refType)
+  DRIVER_ADVANCE
   OTHERS
 }
 
@@ -1339,6 +1343,9 @@ model StaffAdvance {
   amount    Decimal  @default(0) @db.Decimal(12, 2)
   headId    String? // bank/cash party paid from
   remarks   String?
+  // the Payment Voucher that moved the money (advances given from the staff
+  // screen are real vouchers); delete the voucher to delete the advance
+  voucherId String?
 
   createdById String?
   createdAt   DateTime  @default(now())
@@ -1361,6 +1368,7 @@ model StaffLoan {
   headId    String? // bank/cash party paid from
   status    String   @default("OPEN") // OPEN | CLOSED (auto when fully recovered)
   remarks   String?
+  voucherId String?
 
   createdById String?
   createdAt   DateTime  @default(now())

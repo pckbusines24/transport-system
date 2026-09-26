@@ -206,9 +206,17 @@ export default async function BrokerRegisterPage({
     pPaymentDate: s.pPaymentDate ? s.pPaymentDate.toISOString() : null,
     vPaymentStatus:
       (vPos.get(s.id)?.outstanding ?? Number(s.vBalance)) <= 0.009 ? "PAID" : "PENDING",
-    vPaidAmount: Number(s.vPaidAmount),
-    vRoundOff: Number(s.vRoundOff),
-    vShortage: Number(s.vShortage),
+    // owner-side settlement lives on the Payment Voucher (the slip's own
+    // v-columns stay 0 there) — fold it in, exactly like the party side, so
+    // the status badge, amounts and print all reconcile
+    vPaidAmount: round2(
+      Number(s.vPaidAmount) +
+        (vPos.get(s.id)?.voucherPaid ?? 0) +
+        (vPos.get(s.id)?.voucherTds ?? 0) +
+        (vPos.get(s.id)?.voucherOther ?? 0)
+    ),
+    vRoundOff: round2(Number(s.vRoundOff) + (vPos.get(s.id)?.voucherRoundOff ?? 0)),
+    vShortage: round2(Number(s.vShortage) + (vPos.get(s.id)?.voucherShortage ?? 0)),
     vPaymentDate: s.vPaymentDate ? s.vPaymentDate.toISOString() : null,
     unloadDate: s.unloadDate ? s.unloadDate.toISOString() : null,
     createdAt: s.createdAt.toISOString(),

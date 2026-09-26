@@ -14,7 +14,14 @@ import { round2 } from "@/lib/calc/tds";
 import { adjustmentsTotal, applyAdjustments, ensureAdjustmentHead } from "@/lib/adjust-engine";
 import { tdsHead } from "@/lib/account-heads";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
-import { undoDriverSalaryVoucherTx } from "@/lib/driver-salary-pay";
+import {
+  driverAdvanceReceived,
+  recomputeDriverAdvances,
+  recomputeDriverSalaryRows,
+  recomputeStaffLoans,
+  releaseDriverShortagesForVoucher,
+  staffLoanRecovered,
+} from "@/lib/module-recovery";
 import {
   payableSettlement,
   refPositions,
@@ -77,6 +84,9 @@ const allocationSchema = z.object({
       "VEHICLE_EXPENSE",
       "STAFF_ADVANCE",
       "DRIVER_SETTLEMENT",
+      "DRIVER_SALARY",
+      "STAFF_LOAN",
+      "DRIVER_ADVANCE",
       "ADBLUE_PURCHASE",
     ])
     .nullish(),
@@ -117,6 +127,9 @@ const voucherSchema = z.object({
       "VEHICLE_EXPENSE",
       "STAFF_ADVANCE",
       "DRIVER_SETTLEMENT",
+      "DRIVER_SALARY",
+      "STAFF_LOAN",
+      "DRIVER_ADVANCE",
       "ADBLUE_PURCHASE",
       "OTHERS",
     ])
@@ -469,6 +482,28 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
             advs.forEach((a) =>
               gross.set(a.id, round2(Number(a.amount) - (byAdvance.get(a.id) ?? 0)))
             );
+          } else if (refType === "DRIVER_SALARY") {
+            // paidAmount is DERIVED from live allocations, so the month's full
+            // net is the ceiling and `already` (other vouchers) does the rest
+            const months = await tx.driverSalary.findMany({ where: docScope });
+            months.forEach((m) => gross.set(m.id, data.type === "PAYMENT" ? Number(m.netPayable) : 0));
+          } else if (refType === "DRIVER_ADVANCE") {
+            // an advance a trip sheet has not consumed can be received back
+            const advs = await tx.driverAdvance.findMany({ where: docScope });
+            advs.forEach((a) => gross.set(a.id, data.type === "RECEIPT" && !a.tripId ? Number(a.amount) : 0));
+          } else if (refType === "STAFF_LOAN") {
+            const loans = await tx.staffLoan.findMany({ where: docScope });
+            const rec = await tx.staffSalary.groupBy({
+              by: ["loanId"],
+              where: { loanId: { in: refIds }, deletedAt: null },
+              _sum: { loanRecovery: true },
+            });
+            const byLoan = new Map(rec.map((r) => [r.loanId ?? "", Number(r._sum.loanRecovery ?? 0)]));
+            // payroll recoveries are not allocations, so they come off here;
+            // voucher recoveries are `already`
+            loans.forEach((l) =>
+              gross.set(l.id, data.type === "RECEIPT" ? round2(Number(l.amount) - (byLoan.get(l.id) ?? 0)) : 0)
+            );
           } else if (refType === "ADBLUE_PURCHASE") {
             const refills = await tx.adblueTxn.findMany({ where: docScope });
             // unbilled stock owes nothing yet, and a refill paid at entry is done
@@ -510,6 +545,7 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
             "BILLING", "GST_BILLING", "FREIGHT_CHALLAN", "BROKER_ENTRY", "BROKER_SLIP_PARTY",
             "LORRY_HIRE", "CASH_MEMO", "OFFICE_EXPENSE", "OFFICE_INCOME", "STAFF_PAYROLL",
             "VEHICLE_EXPENSE", "STAFF_ADVANCE", "ADBLUE_PURCHASE", "DRIVER_SETTLEMENT",
+            "DRIVER_SALARY", "STAFF_LOAN", "DRIVER_ADVANCE",
           ];
           if (scopedTypes.includes(refType)) {
             for (const r of rows) {
@@ -1129,6 +1165,29 @@ export async function saveVoucher(input: unknown): Promise<SaveVoucherResult> {
         }
       }
 
+      // ---- derived documents: driver salary months, driver advances and
+      // staff loans read their paid / received / recovered state from live
+      // allocations — refresh every row this voucher touches (an edit may have
+      // dropped rows: refresh those the previous version touched too)
+      {
+        const prev = data.id
+          ? await tx.voucherAllocation.findMany({
+              where: { voucherId: savedId },
+              select: { refType: true, refId: true },
+            })
+          : [];
+        const refsOf = (t: string) =>
+          Array.from(
+            new Set([
+              ...data.allocations.filter((a) => (a.refType ?? data.moduleLink) === t).map((a) => a.refId),
+              ...prev.filter((a) => a.refType === t).map((a) => a.refId),
+            ])
+          );
+        await recomputeDriverSalaryRows(tx, session.firmId, refsOf("DRIVER_SALARY"));
+        await recomputeDriverAdvances(tx, session.firmId, refsOf("DRIVER_ADVANCE"));
+        await recomputeStaffLoans(tx, session.firmId, refsOf("STAFF_LOAN"));
+      }
+
       return savedId;
     });
 
@@ -1203,11 +1262,43 @@ export async function deleteVoucher(
           "The shortage raised by this voucher already has recoveries booked from other documents — release those recoveries first."
         );
       }
-      // driver salary months this voucher paid open again (paid amounts and
-      // payment-time shortage adjustments handed back, newest month first)
-      if (before.allocations.some((a) => a.refType === "DRIVER_SALARY")) {
-        await undoDriverSalaryVoucherTx(tx, session.firmId, id);
+      // an advance / loan GIVEN through this voucher: the money never moved,
+      // so the advance / loan goes with it — unless something already
+      // recovered against it
+      const advGiven = await tx.staffAdvance.findMany({ where: { voucherId: id, deletedAt: null } });
+      for (const adv of advGiven) {
+        const rec = await tx.staffSalary.aggregate({ where: { advanceId: adv.id, deletedAt: null }, _sum: { advanceRecovery: true } });
+        const viaAlloc = await tx.voucherAllocation.findMany({
+          where: { refType: "STAFF_ADVANCE", refId: adv.id, voucher: { deletedAt: null, id: { not: id } } },
+          select: { amount: true },
+        });
+        const recovered = Number(rec._sum.advanceRecovery ?? 0) + viaAlloc.reduce((t, a) => t + Number(a.amount), 0);
+        if (recovered > 0.009) {
+          throw new Error(`Advance ${adv.advanceNo} paid by this voucher already has ${recovered.toFixed(2)} recovered — reverse those recoveries first.`);
+        }
+        await tx.staffAdvance.update({ where: { id: adv.id }, data: { deletedAt: new Date() } });
       }
+      const loanGiven = await tx.staffLoan.findMany({ where: { voucherId: id, deletedAt: null } });
+      for (const loan of loanGiven) {
+        const rec = await tx.staffSalary.aggregate({ where: { loanId: loan.id, deletedAt: null }, _sum: { loanRecovery: true } });
+        const viaAlloc = await tx.voucherAllocation.findMany({
+          where: { refType: "STAFF_LOAN", refId: loan.id, voucher: { deletedAt: null, id: { not: id } } },
+          select: { amount: true },
+        });
+        const recovered = Number(rec._sum.loanRecovery ?? 0) + viaAlloc.reduce((t, a) => t + Number(a.amount), 0);
+        if (recovered > 0.009) {
+          throw new Error(`Loan ${loan.loanNo} paid by this voucher already has ${recovered.toFixed(2)} recovered — reverse those recoveries first.`);
+        }
+        await tx.staffLoan.update({ where: { id: loan.id }, data: { deletedAt: new Date() } });
+      }
+      // derived documents recompute as if this voucher were already gone:
+      // driver salary months (paid amounts + payment-time shortage
+      // adjustments handed back), driver advances, staff loans
+      const refsOf = (t: string) => before.allocations.filter((a) => a.refType === t).map((a) => a.refId);
+      await releaseDriverShortagesForVoucher(tx, session.firmId, before.allocations);
+      await recomputeDriverSalaryRows(tx, session.firmId, refsOf("DRIVER_SALARY"), id);
+      await recomputeDriverAdvances(tx, session.firmId, refsOf("DRIVER_ADVANCE"), id);
+      await recomputeStaffLoans(tx, session.firmId, refsOf("STAFF_LOAN"), id);
       await tx.voucher.update({ where: { id }, data: { deletedAt: new Date() } });
       // driver settlements this voucher had settled become payable again
       await tx.driverSettlement.updateMany({
@@ -1315,6 +1406,11 @@ export async function deleteVoucher(
 }
 
 // ---------- allocation candidates ----------
+
+const formatDateIso = (d: Date) => {
+  const t = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  return `${String(t.getUTCDate()).padStart(2, "0")}/${String(t.getUTCMonth() + 1).padStart(2, "0")}/${t.getUTCFullYear()}`;
+};
 
 export interface AllocationCandidate {
   refId: string;
@@ -1451,6 +1547,9 @@ export async function getAllocationCandidates(input: {
               "VEHICLE_EXPENSE",
               "STAFF_ADVANCE",
               "DRIVER_SETTLEMENT",
+      "DRIVER_SALARY",
+      "STAFF_LOAN",
+      "DRIVER_ADVANCE",
               "ADBLUE_PURCHASE",
             ]
       : [input.moduleLink];
@@ -1801,6 +1900,97 @@ export async function getAllocationCandidates(input: {
             tdsPct: 0,
             module: moduleLink,
           });
+      }
+    } else if (moduleLink === "DRIVER_SALARY") {
+      // pending driver salary months (Driver Management → Salary) — a PAYMENT
+      // settles them; paying from that screen creates the same voucher
+      if (input.voucherType === "PAYMENT") {
+        const months = await tx.driverSalary.findMany({
+          where: { ...scope, paymentStatus: { not: "PAID" } },
+          orderBy: { month: "asc" },
+        });
+        const drivers = months.length
+          ? await tx.driver.findMany({
+              where: { id: { in: months.map((m) => m.driverId) } },
+              select: { id: true, partyId: true, driverCode: true, name: true },
+            })
+          : [];
+        const driverById = new Map(drivers.map((d) => [d.id, d]));
+        const mine = months.filter((m) => !partyId || driverById.get(m.driverId)?.partyId === partyId);
+        const pos = await refPositions(tx, {
+          firmId: session.firmId,
+          fyId: session.fyId,
+          refType: moduleLink,
+          excludeVoucherId: voucherId,
+          docs: mine.map((m) => ({ id: m.id, original: Number(m.netPayable) })),
+        });
+        for (const m of mine) {
+          const outstanding = pos.get(m.id)?.outstanding ?? 0;
+          if (outstanding > 0.009)
+            out.push({
+              refId: m.id,
+              refNo: `DSAL-${m.month} ${driverById.get(m.driverId)?.driverCode ?? ""}`.trim(),
+              // a salary month is dated at its month end (no date column of its own)
+              date: new Date(Number(m.month.slice(0, 4)), Number(m.month.slice(5, 7)), 0).toISOString(),
+              billAmt: Number(m.netPayable),
+              outstanding,
+              tdsPct: 0,
+              module: moduleLink,
+            });
+        }
+      }
+    } else if (moduleLink === "DRIVER_ADVANCE") {
+      // a driver advance no trip sheet has consumed: received back in cash
+      if (input.voucherType === "RECEIPT") {
+        const advances = await tx.driverAdvance.findMany({
+          where: { ...scope, tripId: null },
+          orderBy: { date: "asc" },
+        });
+        const drivers = advances.length
+          ? await tx.driver.findMany({
+              where: { id: { in: advances.map((a) => a.driverId) } },
+              select: { id: true, partyId: true, driverCode: true },
+            })
+          : [];
+        const driverById = new Map(drivers.map((d) => [d.id, d]));
+        const mine = advances.filter((a) => !partyId || driverById.get(a.driverId)?.partyId === partyId);
+        const received = await driverAdvanceReceived(tx, session.firmId, mine.map((a) => a.id), voucherId);
+        for (const a of mine) {
+          const outstanding = round2(Number(a.amount) - (received.get(a.id) ?? 0));
+          if (outstanding > 0.009)
+            out.push({
+              refId: a.id,
+              refNo: a.voucherRef?.trim() || a.tripRef?.trim() || `DADV-${formatDateIso(a.date)} ${driverById.get(a.driverId)?.driverCode ?? ""}`.trim(),
+              date: a.date.toISOString(),
+              billAmt: Number(a.amount),
+              outstanding,
+              tdsPct: 0,
+              module: moduleLink,
+            });
+        }
+      }
+    } else if (moduleLink === "STAFF_LOAN") {
+      // a staff loan is money owed back: recovered on payroll, on a salary
+      // payment voucher, or in cash here
+      if (input.voucherType === "RECEIPT") {
+        const loans = await tx.staffLoan.findMany({
+          where: { ...scope, ...(partyId ? { partyId } : {}) },
+          orderBy: { date: "asc" },
+        });
+        const rec = await staffLoanRecovered(tx, session.firmId, loans.map((l) => l.id), voucherId);
+        for (const l of loans) {
+          const outstanding = round2(Number(l.amount) - (rec.get(l.id) ?? 0));
+          if (outstanding > 0.009)
+            out.push({
+              refId: l.id,
+              refNo: l.loanNo,
+              date: l.date.toISOString(),
+              billAmt: Number(l.amount),
+              outstanding,
+              tdsPct: 0,
+              module: moduleLink,
+            });
+        }
       }
     } else if (moduleLink === "DRIVER_SETTLEMENT") {
       // a pending trip settlement balance: positive = the company pays the

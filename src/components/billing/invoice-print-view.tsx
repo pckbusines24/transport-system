@@ -422,7 +422,6 @@ export function InvoicePrintView({
                 <tbody>
                   {(
                     [
-                      ["Taxable Value", data.rcm.taxableValue],
                       ...(data.rcm.igst > 0
                         ? ([[`IGST @ ${data.rcm.pct}%`, data.rcm.igst]] as [string, number][])
                         : ([
@@ -464,10 +463,8 @@ export function InvoicePrintView({
             <tbody>
               {(
                 [
-                  ["Total Weight (Charged)", String(totalChargeWt)],
                   ["Total Freight", formatMoney(totals.total)],
                   ["Additional Charges", formatMoney(chargesTotal)],
-                  ["Taxable Value", formatMoney(totals.grandTotal)],
                   ...(data.gstApplied
                     ? ([
                         [`CGST @ ${data.gstPct / 2}%`, formatMoney(totals.cgstAmt)],

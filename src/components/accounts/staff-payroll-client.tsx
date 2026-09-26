@@ -380,7 +380,26 @@ export function StaffPayrollClient({
 
   // pay pending salary from details
   const [payFor, setPayFor] = React.useState<{ salaryId: string; month: string; outstanding: number; running?: boolean } | null>(null);
-  const [pay, setPay] = React.useState({ dateText: formatDate(new Date()), headId: null as string | null, amount: 0 });
+  const [pay, setPay] = React.useState({
+    dateText: formatDate(new Date()),
+    headId: null as string | null,
+    amount: 0,
+    // recover against open advances / loans on this payment (no cash)
+    recAdv: {} as Record<string, number>,
+    recLoan: {} as Record<string, number>,
+  });
+  const recoveryTotal = React.useMemo(
+    () =>
+      Math.round(
+        (Object.values(pay.recAdv).reduce((s, n) => s + (n || 0), 0) +
+          Object.values(pay.recLoan).reduce((s, n) => s + (n || 0), 0)) * 100
+      ) / 100,
+    [pay.recAdv, pay.recLoan]
+  );
+  const recoveryInput = () => ({
+    advances: Object.entries(pay.recAdv).filter(([, n]) => n > 0).map(([id, amount]) => ({ id, amount })),
+    loans: Object.entries(pay.recLoan).filter(([, n]) => n > 0).map(([id, amount]) => ({ id, amount })),
+  });
   const submitPay = async () => {
     if (!payFor || !pay.headId) {
       toast({ variant: "destructive", title: "Select the bank/cash head" });
@@ -394,18 +413,21 @@ export function StaffPayrollClient({
             paymentDate: textToIso(pay.dateText),
             paymentHeadId: pay.headId,
             amount: pay.amount,
+            recovery: recoveryInput(),
           })
         : await payStaffSalary({
             salaryId: payFor.salaryId,
             paymentDate: textToIso(pay.dateText),
             paymentHeadId: pay.headId,
             amount: pay.amount,
+            recovery: recoveryInput(),
           });
       if (res.ok) {
         toast({
-          title: `Salary ${payFor.month}: ${formatMoney(res.paid)} paid`,
+          title: `Salary ${payFor.month}: ${formatMoney(res.paid)} paid${res.recovered > 0.009 ? ` · ${formatMoney(res.recovered)} adjusted against advance / loan` : ""}`,
           description: res.remaining > 0.009 ? `${formatMoney(res.remaining)} still pending` : "Fully paid",
         });
+        setPay((p) => ({ ...p, recAdv: {}, recLoan: {} }));
         setPayFor(null);
         if (details) await openDetails(details.partyId);
         router.refresh();
@@ -801,7 +823,7 @@ export function StaffPayrollClient({
                           size="sm"
                           className="h-6 px-2 text-xs"
                           onClick={() => {
-                            setPay((p) => ({ ...p, amount: last.runningBalance }));
+                            setPay((p) => ({ ...p, amount: last.runningBalance, recAdv: {}, recLoan: {} }));
                             setPayFor({ salaryId: last.id, month: `running balance up to ${last.month}`, outstanding: last.runningBalance, running: true });
                           }}
                         >
@@ -843,7 +865,7 @@ export function StaffPayrollClient({
                           className="h-6 px-2 text-xs"
                           onClick={() => {
                             const outstanding = Math.round((s.netSalary - s.voucherSettled) * 100) / 100;
-                            setPay((p) => ({ ...p, amount: outstanding }));
+                            setPay((p) => ({ ...p, amount: outstanding, recAdv: {}, recLoan: {} }));
                             setPayFor({ salaryId: s.id, month: s.month, outstanding });
                           }}
                         >
@@ -1004,7 +1026,7 @@ export function StaffPayrollClient({
 
       {/* pay salary dialog */}
       <Dialog open={!!payFor} onOpenChange={(o) => !o && setPayFor(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Pay Salary — {payFor?.month}</DialogTitle>
           </DialogHeader>
@@ -1017,8 +1039,76 @@ export function StaffPayrollClient({
               <Label className="text-xs">Paid From (Bank / Cash)</Label>
               <MasterCombobox options={bankOptions} value={pay.headId} onChange={(v) => setPay((p) => ({ ...p, headId: v }))} placeholder="Select head..." />
             </div>
+            {(() => {
+              const openAdv = (details?.advances ?? []).filter((a) => a.balance > 0.009);
+              const openLoans = (details?.loans ?? []).filter((l) => l.outstanding > 0.009);
+              if (!openAdv.length && !openLoans.length) return null;
+              const outstanding = payFor?.outstanding ?? 0;
+              return (
+                <div className="space-y-2 rounded-md border p-2">
+                  <div className="text-xs font-semibold uppercase text-muted-foreground">
+                    Adjust against advance / loan (no cash)
+                  </div>
+                  {openAdv.map((a) => (
+                    <div key={a.id} className="grid grid-cols-[1fr_7rem] items-center gap-2 text-xs">
+                      <span>
+                        Advance {a.advanceNo} <span className="text-muted-foreground">· balance {formatMoney(a.balance)}</span>
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        className="h-7 text-right"
+                        placeholder="0"
+                        value={pay.recAdv[a.id] ? String(pay.recAdv[a.id]) : ""}
+                        onChange={(e) => {
+                          const n = Math.min(Number(e.target.value) || 0, a.balance);
+                          setPay((p) => {
+                            const recAdv = { ...p.recAdv, [a.id]: n };
+                            const rec =
+                              Object.values(recAdv).reduce((s, v) => s + (v || 0), 0) +
+                              Object.values(p.recLoan).reduce((s, v) => s + (v || 0), 0);
+                            return { ...p, recAdv, amount: Math.max(0, Math.round((outstanding - rec) * 100) / 100) };
+                          });
+                        }}
+                      />
+                    </div>
+                  ))}
+                  {openLoans.map((l) => (
+                    <div key={l.id} className="grid grid-cols-[1fr_7rem] items-center gap-2 text-xs">
+                      <span>
+                        Loan {l.loanNo} <span className="text-muted-foreground">· outstanding {formatMoney(l.outstanding)}{l.emiAmount ? ` · EMI ${formatMoney(l.emiAmount)}` : ""}</span>
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        className="h-7 text-right"
+                        placeholder="0"
+                        value={pay.recLoan[l.id] ? String(pay.recLoan[l.id]) : ""}
+                        onChange={(e) => {
+                          const n = Math.min(Number(e.target.value) || 0, l.outstanding);
+                          setPay((p) => {
+                            const recLoan = { ...p.recLoan, [l.id]: n };
+                            const rec =
+                              Object.values(p.recAdv).reduce((s, v) => s + (v || 0), 0) +
+                              Object.values(recLoan).reduce((s, v) => s + (v || 0), 0);
+                            return { ...p, recLoan, amount: Math.max(0, Math.round((outstanding - rec) * 100) / 100) };
+                          });
+                        }}
+                      />
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t pt-1 text-xs">
+                    <span>Outstanding {formatMoney(outstanding)} − recoveries {formatMoney(recoveryTotal)}</span>
+                    <b className="tabular-nums">= cash {formatMoney(Math.max(0, outstanding - recoveryTotal))}</b>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="space-y-1">
-              <Label className="text-xs">Amount (outstanding {formatMoney(payFor?.outstanding ?? 0)} — reduce for a part payment)</Label>
+              <Label className="text-xs">
+                Cash to pay (outstanding {formatMoney(payFor?.outstanding ?? 0)}
+                {recoveryTotal > 0 ? ` − recoveries ${formatMoney(recoveryTotal)}` : ""} — reduce for a part payment)
+              </Label>
               <Input
                 type="number"
                 step="0.01"

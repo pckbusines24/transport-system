@@ -603,14 +603,28 @@ export async function payDriverSalaryRunning(
         });
       }
 
-      // settle salaries FIFO with (shortage adjust + money paid)
+      // settle salaries FIFO with (shortage adjust + money paid) — one
+      // allocation per month on the voucher, shortage share first, so the
+      // voucher module and a later delete see exactly what each month got
       let toSettle = round2(d.shortageAdjust + d.paymentAmount);
+      let shortLeft = round2(d.shortageAdjust);
+      const monthAllocs: { refType: "DRIVER_SALARY"; refId: string; refNo: string; billAmt: number; amount: number; deduction: number }[] = [];
       for (const sal of salaries) {
         if (toSettle <= 0) break;
         const outstanding = round2(toNum(String(sal.netPayable)) - toNum(String(sal.paidAmount)));
         if (outstanding <= 0) continue;
         const take = Math.min(outstanding, toSettle);
         toSettle = round2(toSettle - take);
+        const ded = Math.min(take, shortLeft);
+        shortLeft = round2(shortLeft - ded);
+        monthAllocs.push({
+          refType: "DRIVER_SALARY",
+          refId: sal.id,
+          refNo: `DSAL-${sal.month}`,
+          billAmt: toNum(String(sal.netPayable)),
+          amount: round2(take - ded),
+          deduction: ded,
+        });
         await tx.driverSalary.update({
           where: { id: sal.id },
           data: {
@@ -634,17 +648,10 @@ export async function payDriverSalaryRunning(
         paid: d.paymentAmount,
         deduction: d.shortageAdjust,
         moduleLink: "OTHERS",
-        allocations: [
-          {
-            refType: "DRIVER_SALARY",
-            refId: fifoTarget.id,
-            refNo: d.refNo?.trim() || `DSAL-${latest.month}`,
-            billAmt: running,
-            amount: d.paymentAmount,
-            deduction: d.shortageAdjust,
-            remarks: `Driver salary running balance up to ${latest.month}`,
-          },
-        ],
+        allocations: monthAllocs.map((m) => ({
+          ...m,
+          remarks: `Driver salary running balance up to ${latest.month}${d.refNo?.trim() ? ` — ref ${d.refNo.trim()}` : ""}`,
+        })),
         narration: `Driver salary paid (running balance) — ${driver.name}${d.remarks ? " — " + d.remarks : ""}`,
         partyNarration: `Salary paid (running balance up to ${latest.month})`,
       });

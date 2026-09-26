@@ -5,7 +5,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { formatDate, formatMoney, toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
-import { settledByRef } from "@/lib/settlement";
+import { brokerPartySettlement, payableSettlement } from "@/lib/settlement";
 import { brokerBalanceStatus } from "@/lib/broker-status";
 import { firmImageUrl } from "@/lib/branding";
 import type { BrokerAdvance } from "@/components/broker/broker-calc";
@@ -39,36 +39,68 @@ export default async function BrokerSlipPrintPage({
         tx.party.findMany(),
         tx.city.findMany(),
         tx.vehicle.findMany(),
-        // owner-side settlements made through Payment Vouchers — the stored
-        // vPaidAmount/vPaymentStatus never see them, but the printed slip must
-        settledByRef(tx, {
+        // owner-side settlement through Payment Vouchers, with its breakdown —
+        // the stored v-columns stay 0 for voucher-era payments, but the
+        // printed slip must show paid / shortage / round-off like the party side
+        payableSettlement(tx, {
           firmId: slip.firmId,
-          fyId: slip.fyId,
-          refTypes: ["BROKER_ENTRY"],
-          refIds: [slip.id],
+          refType: "BROKER_ENTRY",
+          docs: [
+            {
+              id: slip.id,
+              balance: round2(toNum(slip.vNetAmt) - toNum(slip.vAdvance)),
+              ownPaid: toNum(slip.vPaidAmount),
+              ownShortage: toNum(slip.vShortage),
+              ownRoundOff: toNum(slip.vRoundOff),
+            },
+          ],
         }),
-        // party-side settlements made through Receipt Vouchers
-        settledByRef(tx, {
+        // party-side settlement: own block + Receipt Vouchers
+        brokerPartySettlement(tx, {
           firmId: slip.firmId,
-          fyId: slip.fyId,
-          refTypes: ["BROKER_SLIP_PARTY"],
-          refIds: [slip.id],
+          docs: [
+            {
+              id: slip.id,
+              pNetAmt: toNum(slip.pNetAmt),
+              pAdvance: toNum(slip.pAdvance),
+              pPaidAmount: toNum(slip.pPaidAmount),
+              pShortage: toNum(slip.pShortage),
+              pRoundOff: toNum(slip.pRoundOff),
+            },
+          ],
         }),
       ],
     );
+    const v = vAlloc.get(slip.id);
+    const p = pAlloc.get(slip.id);
     return {
       slip,
       firm,
       parties,
       cities,
       vehicles,
-      vSettled: vAlloc.get(slip.id) ?? 0,
-      pSettled: pAlloc.get(slip.id) ?? 0,
+      vSettled: round2((v?.voucherPaid ?? 0) + (v?.voucherTds ?? 0) + (v?.voucherOther ?? 0)),
+      vVoucherShortage: v?.voucherShortage ?? 0,
+      vVoucherRoundOff: v?.voucherRoundOff ?? 0,
+      vOutstanding: v?.outstanding ?? null,
+      pSettled: round2((p?.voucherPaid ?? 0) + (p?.voucherTds ?? 0) + (p?.voucherOther ?? 0)),
+      pVoucherShortage: p?.voucherShortage ?? 0,
+      pVoucherRoundOff: p?.voucherRoundOff ?? 0,
+      pOutstanding: p?.outstanding ?? null,
     };
   });
 
   if (!data) notFound();
-  const { slip, firm, parties, cities, vehicles, vSettled, pSettled } = data;
+  const {
+    slip, firm, parties, cities, vehicles,
+    vSettled, vVoucherShortage, vVoucherRoundOff, vOutstanding,
+    pSettled, pVoucherShortage, pVoucherRoundOff, pOutstanding,
+  } = data;
+  // combined figures: the slip's own block + whatever the settlement voucher carried
+  const pShortageAll = round2(toNum(slip.pShortage) + pVoucherShortage);
+  const pRoundOffAll = round2(toNum(slip.pRoundOff) + pVoucherRoundOff);
+  const vShortageAll = round2(toNum(slip.vShortage) + vVoucherShortage);
+  const vRoundOffAll = round2(toNum(slip.vRoundOff) + vVoucherRoundOff);
   // the logo uploaded in Firm Settings, top-left of the header like the chalan print
   const logoUrl = firmImageUrl(firm, "logo");
   const partyName = (id: string | null) =>
@@ -95,12 +127,12 @@ export default async function BrokerSlipPrintPage({
   const pStatus = brokerBalanceStatus({
     side: "P",
     paymentStatus:
-      slip.pPaymentStatus === "RECEIVED" || pSettled > 0.009
+      slip.pPaymentStatus === "RECEIVED" || (pOutstanding !== null && pOutstanding <= 0.009) || pSettled > 0.009
         ? "RECEIVED"
         : slip.pPaymentStatus,
     paidAmount: pLivePaid,
-    roundOff: toNum(slip.pRoundOff),
-    shortage: toNum(slip.pShortage),
+    roundOff: pRoundOffAll,
+    shortage: pShortageAll,
     balance: pLiveBalance,
   });
   // live owner-side position: own-screen payment PLUS voucher allocations,
@@ -110,12 +142,12 @@ export default async function BrokerSlipPrintPage({
   const vStatus = brokerBalanceStatus({
     side: "V",
     paymentStatus:
-      vLivePaid + toNum(slip.vRoundOff) + toNum(slip.vShortage) > 0.009
+      (vOutstanding !== null && vOutstanding <= 0.009) || vLivePaid + vRoundOffAll + vShortageAll > 0.009
         ? "PAID"
         : slip.vPaymentStatus,
     paidAmount: vLivePaid,
-    roundOff: toNum(slip.vRoundOff),
-    shortage: toNum(slip.vShortage),
+    roundOff: vRoundOffAll,
+    shortage: vShortageAll,
     balance: vLiveBalance,
   });
 
@@ -239,8 +271,8 @@ export default async function BrokerSlipPrintPage({
     const paid = isP ? pLivePaid : vLivePaid;
     const paymentDate = isP ? slip.pPaymentDate : slip.vPaymentDate;
     // deducted at settlement — shown so the printed balance reconciles
-    const shortage = isP ? toNum(slip.pShortage) : toNum(slip.vShortage);
-    const roundOff = isP ? toNum(slip.pRoundOff) : toNum(slip.vRoundOff);
+    const shortage = isP ? pShortageAll : vShortageAll;
+    const roundOff = isP ? pRoundOffAll : vRoundOffAll;
 
     return (
       <div className="mx-auto max-w-[190mm] break-after-page border border-black p-4 text-sm last:break-after-auto">
