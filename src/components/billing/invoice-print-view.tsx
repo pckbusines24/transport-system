@@ -329,11 +329,16 @@ export function InvoicePrintView({
 
       {/* LR details table — expands with the number of LRs */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[9px]">
+        <table className="w-full table-fixed border-collapse text-[10px]">
           <thead>
             <tr>
               {columns.map((c) => (
-                <th key={c.header} className={`${labelCell} text-left`}>
+                <th
+                  key={c.header}
+                  className={`${labelCell} whitespace-normal break-words text-left align-top${
+                    c.header === "Sr." ? " w-[7mm]" : c.header === "LR / C.Note No" ? " w-[15mm]" : ""
+                  }`}
+                >
                   {c.header}
                 </th>
               ))}
@@ -344,7 +349,12 @@ export function InvoicePrintView({
             {data.lrs.map((lr, i) => (
               <tr key={lr.id}>
                 {columns.map((c) => (
-                  <td key={c.header} className={`${cell}${c.numeric ? " text-right" : ""}`}>
+                  <td
+                    key={c.header}
+                    className={`${cell} whitespace-normal break-words align-top${c.numeric ? " text-right" : ""}${
+                      c.header === "LR / C.Note No" ? " break-all" : ""
+                    }`}
+                  >
                     {c.value(lr, i)}
                   </td>
                 ))}
@@ -465,6 +475,7 @@ export function InvoicePrintView({
                 [
                   ["Total Freight", formatMoney(totals.total)],
                   ["Additional Charges", formatMoney(chargesTotal)],
+                  ["Taxable Value", formatMoney(totals.grandTotal)],
                   ...(data.gstApplied
                     ? ([
                         [`CGST @ ${data.gstPct / 2}%`, formatMoney(totals.cgstAmt)],
