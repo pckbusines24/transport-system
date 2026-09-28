@@ -43,6 +43,8 @@ export interface FnfPreview {
   shortagePending: number;
   advancePending: number; // PENDING driver advances not yet trip-adjusted
   plusMinusBalance: number; // signed running +/- balance (negative = driver owes)
+  /** the open +/- rows behind that balance — where the figure comes from */
+  plusMinusRows: { date: string; tripRef: string; amount: number; remaining: number }[];
   alreadySettled: string | null; // existing settlement no, if any
 }
 
@@ -94,6 +96,14 @@ export async function getFnfPreview(driverId: string): Promise<FnfPreview | null
           0
         )
       ),
+      plusMinusRows: settlements
+        .map((r) => ({
+          date: r.date.toISOString(),
+          tripRef: r.tripRef ?? "",
+          amount: toNum(String(r.amount)),
+          remaining: signedRemainder(toNum(String(r.amount)), settPaid.get(r.id) ?? 0),
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
       alreadySettled: existing?.settlementNo ?? null,
     };
   });
@@ -198,8 +208,18 @@ export async function finalizeDriverFnf(
         return { ok: false as const, error: `Negative-balance adjustment exceeds the outstanding negative balance (${negativeAvailable}).` };
       }
 
+      // ONE formula, shared with the screen:
+      //   Final = Gross Salary + Positive +/- Balance + Other Payments
+      //         − Shortage Adj − Advance Adj − Negative +/- Adj − Other Recoveries
+      // A positive running balance is money the company owes the driver
+      // (Driver Settlement / Accounts Payable already carry it) — the F&F pays
+      // it out here and closes those rows; a negative one is recovered through
+      // negativeAdjust. Ignoring the positive side left it pending forever
+      // while the driver was marked settled.
+      const positiveBalance = plusMinus > 0 ? plusMinus : 0;
       const finalPayable = round2(
-        grossSalary -
+        grossSalary +
+          positiveBalance -
           d.shortageAdjust -
           d.advanceAdjust -
           d.negativeAdjust -
@@ -315,7 +335,9 @@ export async function finalizeDriverFnf(
           where: { id: { in: settlements.map((s) => s.id) } },
           data: { status: "SETTLED", settledDate: date, voucherNo: settlementNo },
         });
-        const remainder = round2(plusMinus + d.negativeAdjust); // negative balance shrinks toward 0
+        // positive balance is paid in this settlement (in finalPayable) — no
+        // carry-forward; a negative one carries what was not adjusted
+        const remainder = plusMinus > 0 ? 0 : round2(plusMinus + d.negativeAdjust);
         if (Math.abs(remainder) >= 0.01) {
           await tx.driverSettlement.create({
             data: {

@@ -37,6 +37,9 @@ import {
   payDriverSalaryRunning,
   processDriverSalary,
   saveDriverShortage,
+  deleteDriverShortage,
+  getShortageAdjustments,
+  type ShortageAdjustmentDetail,
 } from "@/app/(app)/vehicle/driver-salary/actions";
 
 export interface DriverSalaryRow {
@@ -65,9 +68,12 @@ export interface DriverSalaryRow {
 interface ShortageRow {
   id: string;
   date: string;
+  driverId: string;
   driver: string;
   tripRef: string;
   amount: number;
+  /** already consumed by a salary / settlement — the lock */
+  adjustedAmount: number;
   status: string;
   remarks: string;
 }
@@ -157,7 +163,10 @@ export function DriverSalaryClient({
   }, [rows]);
 
   const [shortOpen, setShortOpen] = React.useState(false);
+  const [shortView, setShortView] = React.useState<ShortageAdjustmentDetail | null>(null);
   const [short, setShort] = React.useState({
+    id: null as string | null,
+    minAmount: 0,
     dateText: formatDate(new Date()),
     driverId: null as string | null,
     tripRef: "",
@@ -386,16 +395,92 @@ export function DriverSalaryClient({
               meta: { numeric: true } satisfies DataTableColumnMeta<ShortageRow>,
             },
             {
+              accessorKey: "adjustedAmount",
+              header: "Adjusted",
+              cell: ({ row }) => formatMoney(row.original.adjustedAmount),
+              meta: { numeric: true } satisfies DataTableColumnMeta<ShortageRow>,
+            },
+            {
+              id: "balance",
+              header: "Balance",
+              cell: ({ row }) => formatMoney(Math.max(0, row.original.amount - row.original.adjustedAmount)),
+              meta: { numeric: true } satisfies DataTableColumnMeta<ShortageRow>,
+            },
+            {
               accessorKey: "status",
               header: "Status",
-              cell: ({ row }) =>
-                row.original.status === "PENDING" ? (
-                  <Badge variant="outline">PENDING</Badge>
-                ) : (
-                  <Badge>ADJUSTED</Badge>
-                ),
+              cell: ({ row }) => {
+                const adj = row.original.adjustedAmount;
+                if (adj <= 0.009) return <Badge variant="outline">PENDING</Badge>;
+                if (adj < row.original.amount - 0.009) return <Badge variant="warning">PARTLY ADJUSTED</Badge>;
+                return <Badge>ADJUSTED</Badge>;
+              },
             },
             { accessorKey: "remarks", header: "Remarks" },
+            {
+              id: "actions",
+              header: "Action",
+              cell: ({ row }) => {
+                const r = row.original;
+                const adj = r.adjustedAmount;
+                const full = adj >= r.amount - 0.009 && adj > 0.009;
+                const partly = adj > 0.009 && !full;
+                const openEdit = () => {
+                  setShort({
+                    id: r.id,
+                    minAmount: adj,
+                    dateText: formatDate(r.date),
+                    driverId: r.driverId,
+                    tripRef: r.tripRef,
+                    amount: r.amount,
+                    remarks: r.remarks,
+                  });
+                  setShortOpen(true);
+                };
+                const view = async () => {
+                  const res = await getShortageAdjustments(r.id);
+                  if (res.ok) setShortView(res.data);
+                  else toast({ variant: "destructive", title: "Failed", description: res.error });
+                };
+                return (
+                  <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    {adj > 0.009 && (
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={view}>
+                        View Adjustment
+                      </Button>
+                    )}
+                    {!full && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        title={partly ? `${formatMoney(adj)} already adjusted — amount cannot go below it` : undefined}
+                        onClick={openEdit}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {adj <= 0.009 && canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-destructive"
+                        onClick={async () => {
+                          if (!confirm(`Delete shortage of ${formatMoney(r.amount)} (${r.driver})?`)) return;
+                          const res = await deleteDriverShortage(r.id);
+                          if (res.ok) {
+                            toast({ title: "Shortage deleted; recovery and driver debit reversed" });
+                            router.refresh();
+                          } else toast({ variant: "destructive", title: "Delete failed", description: res.error });
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+                );
+              },
+            },
           ] satisfies ColumnDef<ShortageRow>[]}
           data={shortages}
           emptyMessage="No shortages recorded."
@@ -744,9 +829,11 @@ export function DriverSalaryClient({
       <Dialog open={shortOpen} onOpenChange={setShortOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Record Driver Shortage</DialogTitle>
+            <DialogTitle>{short.id ? "Edit" : "Record"} Driver Shortage</DialogTitle>
             <DialogDescription>
-              Stays pending until adjusted in a salary (with your Yes) or left outstanding.
+              {short.minAmount > 0
+                ? `${formatMoney(short.minAmount)} of this shortage is already adjusted — the amount cannot go below it and the driver cannot change.`
+                : "Stays pending until adjusted in a salary (with your Yes) or left outstanding."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -765,6 +852,7 @@ export function DriverSalaryClient({
                 value={short.driverId}
                 onChange={(v) => setShort((f) => ({ ...f, driverId: v }))}
                 placeholder="Select driver..."
+                disabled={short.minAmount > 0}
               />
             </div>
             <div className="space-y-1">
@@ -796,11 +884,12 @@ export function DriverSalaryClient({
           <DialogFooter>
             <Button variant="outline" onClick={() => setShortOpen(false)} disabled={busy}>Cancel</Button>
             <Button
-              disabled={busy || !short.driverId || short.amount <= 0}
+              disabled={busy || !short.driverId || short.amount <= 0 || short.amount < short.minAmount - 0.009}
               onClick={async () => {
                 setBusy(true);
                 try {
                   const res = await saveDriverShortage({
+                    id: short.id,
                     date: textToIso(short.dateText),
                     driverId: short.driverId ?? "",
                     tripRef: short.tripRef,
@@ -808,9 +897,9 @@ export function DriverSalaryClient({
                     remarks: short.remarks,
                   });
                   if (res.ok) {
-                    toast({ title: "Shortage recorded" });
+                    toast({ title: short.id ? "Shortage updated" : "Shortage recorded" });
                     setShortOpen(false);
-                    setShort({ dateText: formatDate(new Date()), driverId: null, tripRef: "", amount: 0, remarks: "" });
+                    setShort({ id: null, minAmount: 0, dateText: formatDate(new Date()), driverId: null, tripRef: "", amount: 0, remarks: "" });
                     router.refresh();
                   } else toast({ variant: "destructive", title: "Failed", description: res.error });
                 } finally {
@@ -818,9 +907,56 @@ export function DriverSalaryClient({
                 }
               }}
             >
-              {busy ? "Saving..." : "Save Shortage"}
+              {busy ? "Saving..." : short.id ? "Update Shortage" : "Save Shortage"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* shortage adjustment drill-down */}
+      <Dialog open={!!shortView} onOpenChange={(o) => !o && setShortView(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Shortage Adjustment — {shortView?.driver}</DialogTitle>
+            <DialogDescription>Where this shortage was adjusted. Reverse the adjustment there to edit or delete the shortage.</DialogDescription>
+          </DialogHeader>
+          {shortView && (
+            <div className="space-y-3 text-sm">
+              <div className="grid gap-1 sm:grid-cols-3">
+                <div>Shortage Date: <b>{formatDate(shortView.date)}</b></div>
+                <div>Trip Ref: <b>{shortView.tripRef || "—"}</b></div>
+                <div>Status: <b>{shortView.status}</b></div>
+                <div>Original: <b className="tabular-nums">{formatMoney(shortView.amount)}</b></div>
+                <div>Adjusted: <b className="tabular-nums">{formatMoney(shortView.adjusted)}</b></div>
+                <div>Balance: <b className="tabular-nums">{formatMoney(shortView.balance)}</b></div>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="py-1">Date</th>
+                    <th className="py-1">Adjustment Type</th>
+                    <th className="py-1">Reference</th>
+                    <th className="py-1 text-right">Amount</th>
+                    <th className="py-1">Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shortView.adjustments.map((a, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="py-1">{a.date ? formatDate(a.date) : "—"}</td>
+                      <td className="py-1">{a.type}</td>
+                      <td className="py-1">{a.reference}</td>
+                      <td className="py-1 text-right tabular-nums">{formatMoney(a.amount)}</td>
+                      <td className="py-1">{a.detail}</td>
+                    </tr>
+                  ))}
+                  {!shortView.adjustments.length && (
+                    <tr><td colSpan={5} className="py-2 text-muted-foreground">No adjustment records found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

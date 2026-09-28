@@ -230,9 +230,28 @@ export async function OutstandingPayableTab({
             },
             orderBy: { date: "asc" },
           });
-    const driverRows = driverSetts.length
-      ? await tx.driver.findMany({ select: { id: true, partyId: true, name: true } })
-      : [];
+    // driver salary months: payable until paid (dashboard-tile parity — the
+    // Payables tile lists them as DRIVER SALARY). paidAmount is derived from
+    // the live payment-voucher allocations, so it is the whole settled figure
+    // here; the voucher allocations must NOT be added on top of it.
+    const driverSalaries =
+      source && source !== "DRIVER_SALARY"
+        ? []
+        : await tx.driverSalary.findMany({
+            where: {
+              firmId: session.firmId,
+              deletedAt: null,
+              month: {
+                ...(searchParams.date_from ? { gte: searchParams.date_from.slice(0, 7) } : {}),
+                ...(effMonthLte ? { lte: effMonthLte } : {}),
+              },
+            },
+            orderBy: { month: "asc" },
+          });
+    const driverRows =
+      driverSetts.length || driverSalaries.length
+        ? await tx.driver.findMany({ select: { id: true, partyId: true, name: true } })
+        : [];
     // +/- rows of one driver net into a single position (same as the running
     // balance on the settlement tab); only a POSITIVE net is a payable
     const driverNet = await driverNetPositions(tx, {
@@ -240,8 +259,8 @@ export async function OutstandingPayableTab({
       fyId: session.fyId,
       docs: driverSetts,
     });
-    return { chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverRows, driverNet };
-  }).then(({ chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverRows, driverNet }) => {
+    return { chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverRows, driverNet, driverSalaries };
+  }).then(({ chalans, slips, salaries, office, vehicle, adblue, hires, parties, paidByRef, advances, advParties, driverRows, driverNet, driverSalaries }) => {
     const partyById = new Map(parties.map((p) => [p.id, p]));
     const status = (total: number, outstanding: number) =>
       outstanding <= 0.009 ? "PAID" : outstanding < total - 0.009 ? "PARTLY PAID" : "UNPAID";
@@ -442,12 +461,36 @@ export async function OutstandingPayableTab({
         };
       });
 
+    // driver salary: same figures and month-end date as the dashboard tile
+    const driverSalaryRows = driverSalaries
+      .filter((m) => !searchParams.party || drvById.get(m.driverId)?.partyId === searchParams.party)
+      .map((m) => {
+        const gross = toNum(m.netPayable);
+        const paid = toNum(m.paidAmount);
+        const outstanding = Math.round((gross - paid) * 100) / 100;
+        const [y, mm] = m.month.split("-").map(Number);
+        const monthEnd = new Date(y, mm, 0);
+        return {
+          refNo: `DSAL-${m.month}`,
+          date: (Number.isNaN(monthEnd.getTime()) ? m.createdAt : monthEnd).toISOString(),
+          kind: "DRIVER_SALARY",
+          partyType: "Driver",
+          party: drvById.get(m.driverId)?.name ?? "",
+          gross,
+          paid,
+          outstanding,
+          status: status(gross, outstanding),
+          link: "vehicle/driver-management?tab=salary",
+        };
+      });
+
     return {
       parties,
       rows: [
         ...chalanRows,
         ...slipRows,
         ...salaryRows,
+        ...driverSalaryRows,
         ...officeRows,
         ...vehicleRows,
         ...adblueRows,
@@ -481,6 +524,7 @@ export async function OutstandingPayableTab({
         { value: "CHALAN", label: "Chalan (Freight Payable)" },
         { value: "BROKER_SLIP", label: "Broker Slip (Owner Payable)" },
         { value: "SALARY", label: "Staff Salary" },
+        { value: "DRIVER_SALARY", label: "Driver Salary" },
         { value: "OFFICE_EXPENSE", label: "Office Expense" },
         { value: "VEHICLE_EXPENSE", label: "Vehicle Expense" },
         { value: "ADBLUE", label: "AdBlue / Urea Purchase" },

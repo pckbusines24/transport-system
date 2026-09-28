@@ -120,9 +120,12 @@ export function DriverFnfClient({
   }, [open, form.driverId]);
 
   const negativeAvailable = preview && preview.plusMinusBalance < 0 ? Math.abs(preview.plusMinusBalance) : 0;
+  const positiveBalance = preview && preview.plusMinusBalance > 0 ? preview.plusMinusBalance : 0;
+  // same formula as the server: positive +/- balance is paid, negative is recovered
   const finalPayable = preview
     ? r2(
-        preview.runningSalary -
+        preview.runningSalary +
+          positiveBalance -
           form.shortageAdjust -
           form.advanceAdjust -
           form.negativeAdjust -
@@ -294,6 +297,24 @@ export function DriverFnfClient({
                   </div>
                 ))}
               </div>
+              {preview.plusMinusRows.length > 0 && (
+                <div className="rounded-md border p-2 text-xs">
+                  <div className="mb-1 font-semibold">
+                    +/- Balance source — {preview.plusMinusBalance >= 0 ? "payable to driver, added to the settlement" : "recoverable from driver, deducted"}
+                  </div>
+                  {preview.plusMinusRows.map((r, i) => (
+                    <div key={i} className="flex justify-between border-t py-0.5 first:border-0">
+                      <span>
+                        {formatDate(r.date)} · Trip {r.tripRef || "—"}
+                      </span>
+                      <span className="tabular-nums">
+                        {formatMoney(r.amount)}
+                        {Math.abs(r.remaining - r.amount) > 0.009 ? ` (remaining ${formatMoney(r.remaining)})` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-3">
                 {(
@@ -361,6 +382,7 @@ export function DriverFnfClient({
                 {(
                   [
                     ["Gross Salary", preview.runningSalary],
+                    ["Add: Positive +/- Balance", positiveBalance],
                     ["Less: Shortage Deduction", -form.shortageAdjust],
                     ["Less: Driver Advance Adjustment", -form.advanceAdjust],
                     ["Less: Negative Balance Adjustment", -form.negativeAdjust],

@@ -942,22 +942,37 @@ export function StaffPayrollClient({
                   {details.loans.length === 0 && (
                     <div className="text-xs text-muted-foreground">No loans.</div>
                   )}
+                  {details.loans.length > 0 && (
+                    <div className="grid grid-cols-[1fr_6rem_6rem_6rem_auto] gap-x-2 border-b pb-1 text-[10px] uppercase text-muted-foreground">
+                      <span>Loan</span>
+                      <span className="text-right">Loan Amount</span>
+                      <span className="text-right">Recovered / Adjusted</span>
+                      <span className="text-right">Outstanding</span>
+                      <span className="text-right">Status</span>
+                    </div>
+                  )}
                   {details.loans.map((l) => (
                     <div key={l.id} className="border-b py-1 text-xs last:border-0">
-                      <div className="flex justify-between">
+                      <div className="grid grid-cols-[1fr_6rem_6rem_6rem_auto] items-center gap-x-2">
                         <span className="font-medium">
                           {l.loanNo} — {formatDate(l.date)}
+                          {l.emiAmount > 0 ? <span className="font-normal text-muted-foreground"> · EMI {formatMoney(l.emiAmount)}</span> : ""}
                         </span>
-                        <span className="tabular-nums">{formatMoney(l.amount)}</span>
-                      </div>
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>
-                          Recovered {formatMoney(l.recovered)}
-                          {l.emiAmount > 0 ? ` · EMI ${formatMoney(l.emiAmount)}` : ""}
+                        {/* original loan — history only, never the amount still owed */}
+                        <span className="text-right tabular-nums text-muted-foreground">{formatMoney(l.amount)}</span>
+                        <span className="text-right tabular-nums">{formatMoney(l.recovered)}</span>
+                        {/* the figure that matters: what is still to come back */}
+                        <span className={`text-right tabular-nums ${l.outstanding > 0.009 ? "font-semibold" : "text-muted-foreground"}`}>
+                          {formatMoney(l.outstanding)}
                         </span>
-                        <span className="flex items-center gap-1">
-                          Outstanding {formatMoney(l.outstanding)}{" "}
-                          {l.status === "CLOSED" ? <Badge variant="secondary">Closed</Badge> : <Badge>Open</Badge>}
+                        <span className="flex items-center justify-end gap-1">
+                          {l.outstanding <= 0.009 ? (
+                            <Badge variant="secondary">Closed</Badge>
+                          ) : l.recovered > 0.009 ? (
+                            <Badge variant="warning">Partly Recovered</Badge>
+                          ) : (
+                            <Badge>Open</Badge>
+                          )}
                           <Button
                             variant="destructive"
                             size="sm"

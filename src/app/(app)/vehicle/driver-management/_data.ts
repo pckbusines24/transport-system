@@ -118,9 +118,11 @@ export async function loadSalaryTab(filters: DriverFilters) {
     shortages: shortages.map((s) => ({
       id: s.id,
       date: s.date.toISOString(),
+      driverId: s.driverId,
       driver: driverName.get(s.driverId) ?? "",
       tripRef: s.tripRef ?? "",
       amount: toNum(String(s.amount)),
+      adjustedAmount: toNum(String(s.adjustedAmount)),
       status: s.status,
       remarks: s.remarks ?? "",
     })),

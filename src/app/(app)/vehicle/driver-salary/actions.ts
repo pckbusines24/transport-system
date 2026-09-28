@@ -7,7 +7,7 @@ import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { ensureAccountHead, postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
-import { recoverShortage } from "@/lib/shortage";
+import { recoverShortage, releaseShortage } from "@/lib/shortage";
 import { resolveRelativeOwner } from "@/lib/relative-owner";
 import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
@@ -51,6 +51,7 @@ function stripSalaryAdvTag(remarks: string | null, salaryId: string): string | n
 // ---------------------------------------------------------------- shortage entry
 
 const shortageSchema = z.object({
+  id: z.string().nullish(),
   date: z.string().min(1, "Date is required"),
   driverId: z.string().min(1, "Driver is required"),
   tripRef: z.string().nullish(),
@@ -65,30 +66,75 @@ export async function saveDriverShortage(
   const parsed = shortageSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const d = parsed.data;
-  await authorize(session, "driver", "create");
+  await authorize(session, "driver", d.id ? "edit" : "create");
   try {
     await withTenant(session.tenantId, async (tx) => {
-      const created = await tx.driverShortage.create({
-        data: {
-          tenantId: session.tenantId,
-          firmId: session.firmId,
-          fyId: session.fyId,
-          date: new Date(`${d.date}T00:00:00`),
-          driverId: d.driverId,
-          tripRef: d.tripRef?.trim() || null,
-          amount: d.amount,
-          remarks: d.remarks || null,
-        },
-      });
+      const date = new Date(`${d.date}T00:00:00`);
+      let row: { id: string; date: Date };
+      let before: Awaited<ReturnType<typeof tx.driverShortage.findFirst>> = null;
+      if (d.id) {
+        before = await tx.driverShortage.findFirst({
+          where: { id: d.id, firmId: session.firmId, deletedAt: null },
+        });
+        if (!before) throw new Error("Shortage not found.");
+        const adjusted = toNum(String(before.adjustedAmount));
+        const original = toNum(String(before.amount));
+        // adjustment lock — the salary / settlement that consumed it is posted
+        if (adjusted >= original - 0.009) {
+          throw new Error(
+            "This shortage has already been adjusted and cannot be edited. Please reverse the adjustment before making changes."
+          );
+        }
+        if (adjusted > 0.009) {
+          // controlled edit: the adjusted part is spoken for
+          if (d.driverId !== before.driverId) {
+            throw new Error(`${adjusted.toFixed(2)} of this shortage is already adjusted — the driver cannot be changed.`);
+          }
+          if (d.amount < adjusted - 0.009) {
+            throw new Error(
+              `${adjusted.toFixed(2)} of this shortage is already adjusted — the amount cannot go below that.`
+            );
+          }
+        }
+        // re-record: the recovery and the driver debit are torn down and
+        // posted afresh with the new figures (adjusted amount / links stay)
+        await releaseShortage(tx, "DRIVER", before.id);
+        await reverseLedger(tx, "DRIVER_SHORTAGE", before.id);
+        const updated = await tx.driverShortage.update({
+          where: { id: before.id },
+          data: {
+            date,
+            driverId: d.driverId,
+            tripRef: d.tripRef?.trim() || null,
+            amount: d.amount,
+            remarks: d.remarks || null,
+            status: adjusted >= d.amount - 0.009 ? "ADJUSTED" : "PENDING",
+          },
+        });
+        row = updated;
+      } else {
+        row = await tx.driverShortage.create({
+          data: {
+            tenantId: session.tenantId,
+            firmId: session.firmId,
+            fyId: session.fyId,
+            date,
+            driverId: d.driverId,
+            tripRef: d.tripRef?.trim() || null,
+            amount: d.amount,
+            remarks: d.remarks || null,
+          },
+        });
+      }
       // Recording a driver shortage IS the recovery: the driver is answerable
       // for it, so it comes back off the shortage ledger here and the driver is
       // debited. Deducting it later in salary / F&F must NOT post again.
       const driver = await tx.driver.findUnique({ where: { id: d.driverId } });
       const refNo = d.tripRef?.trim() || `SHT-${driver?.driverCode ?? ""}`;
       await recoverShortage(tx, session, {
-        date: created.date,
+        date: row.date,
         module: "DRIVER",
-        refId: created.id,
+        refId: row.id,
         refNo,
         source: "DRIVER",
         partyKind: "DRIVER",
@@ -101,9 +147,9 @@ export async function saveDriverShortage(
       if (driver?.partyId) {
         await postLedger(tx, session, [
           {
-            date: created.date,
+            date: row.date,
             refType: "DRIVER_SHORTAGE",
-            refId: created.id,
+            refId: row.id,
             refNo,
             partyId: driver.partyId,
             side: "DEBIT",
@@ -114,15 +160,128 @@ export async function saveDriverShortage(
       }
       await audit(tx, session, {
         entity: "DriverShortage",
-        entityId: created.id,
-        action: "CREATE",
-        after: created,
+        entityId: row.id,
+        action: d.id ? "UPDATE" : "CREATE",
+        before: before ?? undefined,
+        after: row,
       });
     });
     revalidatePath(REVALIDATE);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
+  }
+}
+
+/** Delete a shortage that nothing has adjusted yet; its recovery and driver debit are reversed. */
+export async function deleteDriverShortage(
+  id: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = requireSession();
+  await authorize(session, "driver", "delete");
+  try {
+    await withTenant(session.tenantId, async (tx) => {
+      const before = await tx.driverShortage.findFirst({
+        where: { id, firmId: session.firmId, deletedAt: null },
+      });
+      if (!before) throw new Error("Shortage not found.");
+      if (toNum(String(before.adjustedAmount)) > 0.009 || before.status === "ADJUSTED") {
+        throw new Error(
+          "This shortage has already been adjusted and cannot be deleted. Please reverse the adjustment first."
+        );
+      }
+      await releaseShortage(tx, "DRIVER", id);
+      await reverseLedger(tx, "DRIVER_SHORTAGE", id);
+      await tx.driverShortage.update({ where: { id }, data: { deletedAt: new Date() } });
+      await audit(tx, session, { entity: "DriverShortage", entityId: id, action: "DELETE", before });
+    });
+    revalidatePath(REVALIDATE);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
+  }
+}
+
+export interface ShortageAdjustmentDetail {
+  date: string;
+  driver: string;
+  tripRef: string;
+  amount: number;
+  adjusted: number;
+  balance: number;
+  status: string;
+  adjustments: { date: string | null; type: string; reference: string; amount: number; detail: string }[];
+}
+
+/** Drill-down: where a shortage was adjusted (salary month, payment voucher, F&F). */
+export async function getShortageAdjustments(
+  id: string
+): Promise<{ ok: true; data: ShortageAdjustmentDetail } | { ok: false; error: string }> {
+  const session = requireSession();
+  await authorize(session, "driver", "view");
+  try {
+    const data = await withTenant(session.tenantId, async (tx) => {
+      const sh = await tx.driverShortage.findFirst({ where: { id, firmId: session.firmId, deletedAt: null } });
+      if (!sh) throw new Error("Shortage not found.");
+      const driver = await tx.driver.findUnique({ where: { id: sh.driverId }, select: { name: true } });
+      const amount = toNum(String(sh.amount));
+      const adjusted = toNum(String(sh.adjustedAmount));
+      const adjustments: ShortageAdjustmentDetail["adjustments"] = [];
+      if (sh.salaryId) {
+        const sal = await tx.driverSalary.findFirst({ where: { id: sh.salaryId } });
+        if (sal) {
+          const atProcess = toNum(String(sal.shortageDeduction));
+          // payment vouchers on that month carry the shortage adjusted at pay time
+          const payAllocs = await tx.voucherAllocation.findMany({
+            where: { refType: "DRIVER_SALARY", refId: sal.id, deduction: { gt: 0 }, voucher: { deletedAt: null } },
+            select: { deduction: true, voucher: { select: { voucherNo: true, voucherDate: true } } },
+          });
+          if (atProcess > 0.009) {
+            adjustments.push({
+              date: sal.paymentDate?.toISOString() ?? null,
+              type: "Driver Salary (deducted when processed)",
+              reference: `DSAL-${sal.month}`,
+              amount: Math.min(atProcess, adjusted),
+              detail: `Salary month ${sal.month} — net payable ${toNum(String(sal.netPayable)).toFixed(2)} (${sal.paymentStatus})`,
+            });
+          }
+          for (const a of payAllocs) {
+            adjustments.push({
+              date: a.voucher.voucherDate.toISOString(),
+              type: "Driver Salary payment (adjusted at pay time)",
+              reference: a.voucher.voucherNo,
+              amount: toNum(String(a.deduction)),
+              detail: `Payment voucher on salary month ${sal.month}`,
+            });
+          }
+        }
+      }
+      const fnf = await tx.driverFnf.findFirst({
+        where: { driverId: sh.driverId, deletedAt: null, shortageAdjust: { gt: 0 } },
+      });
+      if (fnf) {
+        adjustments.push({
+          date: fnf.date.toISOString(),
+          type: "Driver Final Settlement (F&F)",
+          reference: fnf.settlementNo,
+          amount: toNum(String(fnf.shortageAdjust)),
+          detail: "Shortages of this driver adjusted in the full & final settlement (oldest first)",
+        });
+      }
+      return {
+        date: sh.date.toISOString(),
+        driver: driver?.name ?? "",
+        tripRef: sh.tripRef ?? "",
+        amount,
+        adjusted,
+        balance: round2(amount - adjusted),
+        status: adjusted <= 0.009 ? "PENDING" : adjusted >= amount - 0.009 ? "ADJUSTED" : "PARTLY ADJUSTED",
+        adjustments,
+      };
+    });
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed" };
   }
 }
 

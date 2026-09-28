@@ -121,36 +121,52 @@ interface LrColumn {
   value: (lr: InvoiceViewLr, index: number) => React.ReactNode;
   /** blank-detection for optional columns; defaults to the rendered value */
   raw?: (lr: InvoiceViewLr) => string;
+  /**
+   * Fixed print width (table-layout: fixed). Columns WITHOUT a width share
+   * the remaining space — only Consignee has none, so it takes everything the
+   * fixed columns leave. Widths are sized for the content they hold at the
+   * table's font size (7 chars for an LR no, a dd/mm/yyyy date, 12 chars for
+   * a reference number) so they never grow with the data.
+   */
+  width?: string;
+  /** never break inside the value (dates, numbers, vehicle numbers) */
+  nowrap?: boolean;
 }
 
 const LR_COLUMNS: LrColumn[] = [
-  { header: "Sr.", value: (_lr, i) => i + 1 },
-  { header: "LR / C.Note No", value: (lr) => lr.lrNo },
-  { header: "Dispatch Date", value: (lr) => lr.lrDate },
-  { header: "From Station", value: (lr) => lr.source },
-  { header: "To Station", value: (lr) => lr.dest },
-  { header: "OBD No", optional: true, value: (lr) => lr.obdNo, raw: (lr) => lr.obdNo },
-  { header: "PO No", optional: true, value: (lr) => lr.poNumber, raw: (lr) => lr.poNumber },
+  { header: "Sr.", width: "w-[6mm]", value: (_lr, i) => i + 1 },
+  // 7 characters on one line; anything longer breaks inside the cell
+  { header: "LR / C.Note No", width: "w-[15mm]", value: (lr) => lr.lrNo },
+  { header: "Dispatch Date", width: "w-[17mm]", nowrap: true, value: (lr) => lr.lrDate },
+  { header: "From Station", width: "w-[17mm]", value: (lr) => lr.source },
+  { header: "To Station", width: "w-[17mm]", value: (lr) => lr.dest },
+  // reference numbers: 12 characters on one line, wrap only beyond that
+  { header: "OBD No", optional: true, width: "w-[21mm]", value: (lr) => lr.obdNo, raw: (lr) => lr.obdNo },
+  { header: "PO No", optional: true, width: "w-[21mm]", value: (lr) => lr.poNumber, raw: (lr) => lr.poNumber },
   {
     header: "Gate Entry No",
     optional: true,
+    width: "w-[21mm]",
     value: (lr) => lr.gateEntryNo,
     raw: (lr) => lr.gateEntryNo,
   },
-  { header: "Invoice No", optional: true, value: (lr) => lr.invoiceNo, raw: (lr) => lr.invoiceNo },
-  { header: "Vehicle No", value: (lr) => lr.vehicle },
-  { header: "Material", optional: true, value: (lr) => lr.material, raw: (lr) => lr.material },
+  { header: "Invoice No", optional: true, width: "w-[21mm]", value: (lr) => lr.invoiceNo, raw: (lr) => lr.invoiceNo },
+  { header: "Vehicle No", width: "w-[18mm]", nowrap: true, value: (lr) => lr.vehicle },
+  { header: "Material", optional: true, width: "w-[15mm]", value: (lr) => lr.material, raw: (lr) => lr.material },
+  // no width: takes all the space the fixed columns leave
   { header: "Consignee", optional: true, value: (lr) => lr.consignee, raw: (lr) => lr.consignee },
   {
     header: "Delivery Date",
     optional: true,
+    width: "w-[17mm]",
+    nowrap: true,
     value: (lr) => lr.unloadDate,
     raw: (lr) => lr.unloadDate,
   },
-  { header: "Net Wt", numeric: true, value: (lr) => lr.actualWt },
-  { header: "Charged Wt", numeric: true, value: (lr) => lr.chargeWt },
-  { header: "Rate", numeric: true, value: (lr) => lr.rate },
-  { header: "Freight Amt", numeric: true, value: (lr) => formatMoney(lr.amount) },
+  { header: "Net Wt", numeric: true, width: "w-[12mm]", nowrap: true, value: (lr) => lr.actualWt },
+  { header: "Charged Wt", numeric: true, width: "w-[13mm]", nowrap: true, value: (lr) => lr.chargeWt },
+  { header: "Rate", numeric: true, width: "w-[11mm]", nowrap: true, value: (lr) => lr.rate },
+  { header: "Freight Amt", numeric: true, width: "w-[19mm]", nowrap: true, value: (lr) => formatMoney(lr.amount) },
 ];
 
 /** Headers of the three columns the totals row fills in itself. */
@@ -329,14 +345,14 @@ export function InvoicePrintView({
 
       {/* LR details table — expands with the number of LRs */}
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed border-collapse text-[10px]">
+        <table className="w-full table-fixed border-collapse text-[10.5px] leading-[1.25]">
           <thead>
             <tr>
               {columns.map((c) => (
                 <th
                   key={c.header}
-                  className={`${labelCell} whitespace-normal break-words text-left align-top${
-                    c.header === "Sr." ? " w-[7mm]" : c.header === "LR / C.Note No" ? " w-[15mm]" : ""
+                  className={`${labelCell} whitespace-normal break-words text-left align-top${c.width ? ` ${c.width}` : ""}${
+                    c.numeric ? " text-right" : ""
                   }`}
                 >
                   {c.header}
@@ -351,9 +367,9 @@ export function InvoicePrintView({
                 {columns.map((c) => (
                   <td
                     key={c.header}
-                    className={`${cell} whitespace-normal break-words align-top${c.numeric ? " text-right" : ""}${
-                      c.header === "LR / C.Note No" ? " break-all" : ""
-                    }`}
+                    className={`${cell} align-top${c.numeric ? " text-right" : ""}${
+                      c.nowrap ? " whitespace-nowrap" : " whitespace-normal break-words"
+                    }${c.header === "LR / C.Note No" ? " break-all" : ""}`}
                   >
                     {c.value(lr, i)}
                   </td>
