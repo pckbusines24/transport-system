@@ -344,8 +344,16 @@ export function InvoicePrintView({
       </table>
 
       {/* LR details table — expands with the number of LRs */}
+      {/*
+        min-w-[277mm]: the fixed column widths add up to nearly the full
+        landscape sheet. In a preview dialog narrower than that, table-fixed
+        squeezed the one unsized column (Consignee) to zero and its text
+        wrapped one letter per line over Delivery Date. Holding the sheet
+        width makes the preview scroll sideways instead; on paper the sheet
+        IS 277mm, so print output is unchanged.
+      */}
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed border-collapse text-[10.5px] leading-[1.25]">
+        <table className="w-full min-w-[277mm] table-fixed border-collapse text-[10.5px] leading-[1.25]">
           <thead>
             <tr>
               {columns.map((c) => (
