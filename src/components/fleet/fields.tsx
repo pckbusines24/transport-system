@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import {
   AccountHeadCreateDialog,
+  BankCashCreateDialog,
   PartyCreateDialog,
   VehicleCreateDialog,
   CityCreateDialog,
@@ -313,7 +314,7 @@ export function BankCashCombobox({
       className={className}
       createLabel="+ Create bank / cash account"
       renderCreateDialog={(closeAndSelect) => (
-        <PartyCreateDialog
+        <BankCashCreateDialog
           open
           defaultGroup={mode ?? "BANK"}
           onOpenChange={(o: boolean) => {

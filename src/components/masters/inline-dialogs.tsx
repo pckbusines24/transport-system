@@ -265,3 +265,52 @@ export function AccountHeadCreateDialog({
     />
   );
 }
+
+/**
+ * Bank / Cash / Card account — the Accounts (Bank / Cash / Card) master form,
+ * not the generic Party form: head name, type, bank details, opening balance.
+ * Saves through saveParty like that master (accounts ARE parties in the
+ * BANK / CASH / CARD ledger groups).
+ */
+export function BankCashCreateDialog({
+  defaultGroup = "BANK",
+  ...props
+}: InlineCreateDialogProps & { defaultGroup?: "BANK" | "CASH" | "CARD" }) {
+  return (
+    <InlineMasterDialog
+      {...props}
+      entity="Account"
+      kind="party"
+      fields={[
+        { name: "name", label: "Head Name *", type: "text", uppercase: true },
+        {
+          name: "ledgerGroup",
+          label: "Type *",
+          type: "radio",
+          options: [
+            { value: "BANK", label: "Bank" },
+            { value: "CASH", label: "Cash" },
+            { value: "CARD", label: "Card (fuel / fleet)" },
+          ],
+        },
+        { name: "alias", label: "Description", type: "text", span2: true },
+        { name: "bankName", label: "Bank Name", type: "text", visibleIf: (f: FormState) => f.ledgerGroup === "BANK" },
+        { name: "bankAccount", label: "Account No", type: "text", visibleIf: (f: FormState) => f.ledgerGroup === "BANK" },
+        { name: "bankIfsc", label: "IFSC", type: "text", uppercase: true, visibleIf: (f: FormState) => f.ledgerGroup === "BANK" },
+        { name: "openingBalance", label: "Opening Balance (FY start)", type: "number" },
+        {
+          name: "openingSide",
+          label: "Opening Side",
+          type: "radio",
+          options: [
+            { value: "DEBIT", label: "Debit (balance with us)" },
+            { value: "CREDIT", label: "Credit (owed / OD used)" },
+          ],
+        },
+        { name: "isActive", label: "Active", type: "switch" },
+      ]}
+      initial={{ name: "", ledgerGroup: defaultGroup, openingBalance: 0, isActive: true }}
+      save={saveParty}
+    />
+  );
+}
