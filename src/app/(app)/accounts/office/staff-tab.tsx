@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function StaffPayrollTab() {
   const session = requireSession();
 
-  const { staff, profiles, advances, loans, salaries, banks, salSettled, advSettled } =
+  const { staff, profiles, advances, loans, salaries, banks, salSettled, advSettled, loanSettled } =
     await withTenant(session.tenantId, async (tx) => {
       // FY continuity: the staff account is lifetime — open advances/loans and
       // salary dues from earlier years stay visible until squared off
@@ -28,7 +28,7 @@ export async function StaffPayrollTab() {
       ]);
       // voucher-side settlements count too, or a voucher-paid salary reads as
       // pending and a receipt-repaid advance still shows a balance
-      const [salSettled, advSettled] = await Promise.all([
+      const [salSettled, advSettled, loanSettled] = await Promise.all([
         settledByRef(tx, {
           firmId: session.firmId,
           fyId: session.fyId,
@@ -41,8 +41,17 @@ export async function StaffPayrollTab() {
           refTypes: ["STAFF_ADVANCE"],
           refIds: advances.map((a) => a.id),
         }),
+        // a loan repaid by receipt voucher (or adjusted while paying salary)
+        // is recovered just like a salary deduction — the profile's loan
+        // register already counts these; the list must agree with it
+        settledByRef(tx, {
+          firmId: session.firmId,
+          fyId: session.fyId,
+          refTypes: ["STAFF_LOAN"],
+          refIds: loans.map((l) => l.id),
+        }),
       ]);
-      return { staff, profiles, advances, loans, salaries, banks, salSettled, advSettled };
+      return { staff, profiles, advances, loans, salaries, banks, salSettled, advSettled, loanSettled };
     });
 
   const profileByParty = new Map(profiles.map((p) => [p.partyId, p]));
@@ -59,7 +68,8 @@ export async function StaffPayrollTab() {
     );
     const loanTotal = round2(myLoans.reduce((s, l) => s + toNum(String(l.amount)), 0));
     const loanRecovered = round2(
-      mySalaries.reduce((s, r) => s + (r.loanId ? toNum(String(r.loanRecovery)) : 0), 0)
+      mySalaries.reduce((s, r) => s + (r.loanId ? toNum(String(r.loanRecovery)) : 0), 0) +
+        myLoans.reduce((s, l) => s + (loanSettled.get(l.id) ?? 0), 0)
     );
     // settled = own payment + voucher allocations, the payables-register rule
     const salSettledOf = (r: (typeof mySalaries)[number]) =>

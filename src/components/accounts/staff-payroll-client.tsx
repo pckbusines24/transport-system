@@ -943,50 +943,73 @@ export function StaffPayrollClient({
                     <div className="text-xs text-muted-foreground">No loans.</div>
                   )}
                   {details.loans.length > 0 && (
-                    <div className="grid grid-cols-[1fr_6rem_6rem_6rem_auto] gap-x-2 border-b pb-1 text-[10px] uppercase text-muted-foreground">
-                      <span>Loan</span>
-                      <span className="text-right">Loan Amount</span>
-                      <span className="text-right">Recovered / Adjusted</span>
-                      <span className="text-right">Outstanding</span>
-                      <span className="text-right">Status</span>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b text-[10px] uppercase text-muted-foreground">
+                            <th className="py-1 pr-2 text-left font-medium">Loan</th>
+                            <th className="py-1 px-2 text-right font-medium">Amount</th>
+                            <th className="py-1 px-2 text-right font-medium">Recovered</th>
+                            <th className="py-1 px-2 text-right font-medium">Outstanding</th>
+                            <th className="py-1 pl-2 text-right font-medium">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {details.loans.map((l) => (
+                            <tr key={l.id} className="border-b last:border-0">
+                              <td className="py-1.5 pr-2 align-middle">
+                                <div className="font-medium whitespace-nowrap">{l.loanNo}</div>
+                                <div className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                  {formatDate(l.date)}
+                                  {l.emiAmount > 0 ? ` · EMI ${formatMoney(l.emiAmount)}` : ""}
+                                </div>
+                              </td>
+                              {/* original loan — history only, never the amount still owed */}
+                              <td className="py-1.5 px-2 text-right align-middle tabular-nums text-muted-foreground whitespace-nowrap">
+                                {formatMoney(l.amount)}
+                              </td>
+                              <td className="py-1.5 px-2 text-right align-middle tabular-nums whitespace-nowrap">
+                                {formatMoney(l.recovered)}
+                              </td>
+                              {/* the figure that matters: what is still to come back */}
+                              <td
+                                className={`py-1.5 px-2 text-right align-middle tabular-nums whitespace-nowrap ${
+                                  l.outstanding > 0.009 ? "font-semibold" : "text-muted-foreground"
+                                }`}
+                              >
+                                {formatMoney(l.outstanding)}
+                              </td>
+                              <td className="py-1.5 pl-2 align-middle">
+                                <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                                  {l.outstanding <= 0.009 ? (
+                                    <Badge variant="secondary">Closed</Badge>
+                                  ) : l.recovered > 0.009 ? (
+                                    <Badge variant="warning">Partly Recovered</Badge>
+                                  ) : (
+                                    <Badge>Open</Badge>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    disabled={busy || l.recovered > 0}
+                                    title={
+                                      l.recovered > 0
+                                        ? "Recovered through salary / voucher — remove those first"
+                                        : undefined
+                                    }
+                                    onClick={() => void removeRecord("loan", l.id, `Loan ${l.loanNo}`)}
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
-                  {details.loans.map((l) => (
-                    <div key={l.id} className="border-b py-1 text-xs last:border-0">
-                      <div className="grid grid-cols-[1fr_6rem_6rem_6rem_auto] items-center gap-x-2">
-                        <span className="font-medium">
-                          {l.loanNo} — {formatDate(l.date)}
-                          {l.emiAmount > 0 ? <span className="font-normal text-muted-foreground"> · EMI {formatMoney(l.emiAmount)}</span> : ""}
-                        </span>
-                        {/* original loan — history only, never the amount still owed */}
-                        <span className="text-right tabular-nums text-muted-foreground">{formatMoney(l.amount)}</span>
-                        <span className="text-right tabular-nums">{formatMoney(l.recovered)}</span>
-                        {/* the figure that matters: what is still to come back */}
-                        <span className={`text-right tabular-nums ${l.outstanding > 0.009 ? "font-semibold" : "text-muted-foreground"}`}>
-                          {formatMoney(l.outstanding)}
-                        </span>
-                        <span className="flex items-center justify-end gap-1">
-                          {l.outstanding <= 0.009 ? (
-                            <Badge variant="secondary">Closed</Badge>
-                          ) : l.recovered > 0.009 ? (
-                            <Badge variant="warning">Partly Recovered</Badge>
-                          ) : (
-                            <Badge>Open</Badge>
-                          )}
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            className="h-5 px-1.5 text-[10px]"
-                            disabled={busy || l.recovered > 0}
-                            title={l.recovered > 0 ? "Recovered through salary — edit those salaries first" : undefined}
-                            onClick={() => void removeRecord("loan", l.id, `Loan ${l.loanNo}`)}
-                          >
-                            Delete
-                          </Button>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
 
