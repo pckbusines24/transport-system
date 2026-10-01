@@ -359,9 +359,7 @@ export function InvoicePrintView({
               {columns.map((c) => (
                 <th
                   key={c.header}
-                  className={`${labelCell} whitespace-normal break-words text-left align-top${c.width ? ` ${c.width}` : ""}${
-                    c.numeric ? " text-right" : ""
-                  }`}
+                  className={`${labelCell} whitespace-normal break-words px-1.5 py-1 text-center align-middle${c.width ? ` ${c.width}` : ""}`}
                 >
                   {c.header}
                 </th>
@@ -372,10 +370,12 @@ export function InvoicePrintView({
           <tbody>
             {data.lrs.map((lr, i) => (
               <tr key={lr.id}>
+                {/* a little inset on every side and centred both ways, so a
+                    value never sits on the cell border when printed */}
                 {columns.map((c) => (
                   <td
                     key={c.header}
-                    className={`${cell} align-top${c.numeric ? " text-right" : ""}${
+                    className={`${cell} px-1.5 py-1 text-center align-middle${
                       c.nowrap ? " whitespace-nowrap" : " whitespace-normal break-words"
                     }${c.header === "LR / C.Note No" ? " break-all" : ""}`}
                   >
