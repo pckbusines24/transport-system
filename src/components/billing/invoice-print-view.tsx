@@ -134,10 +134,12 @@ interface LrColumn {
 }
 
 const LR_COLUMNS: LrColumn[] = [
-  { header: "Sr.", width: "w-[6mm]", value: (_lr, i) => i + 1 },
+  { header: "Sr.", width: "w-[7mm]", value: (_lr, i) => i + 1 },
   // 7 characters on one line; anything longer breaks inside the cell
   { header: "LR / C.Note No", width: "w-[15mm]", value: (lr) => lr.lrNo },
-  { header: "Dispatch Date", width: "w-[17mm]", nowrap: true, value: (lr) => lr.lrDate },
+  // nowrap columns are sized for their widest value PLUS the cell inset: a
+  // dd/mm/yyyy date or a 10-char vehicle number must clear both borders
+  { header: "Dispatch Date", width: "w-[20mm]", nowrap: true, value: (lr) => lr.lrDate },
   { header: "From Station", width: "w-[17mm]", value: (lr) => lr.source },
   { header: "To Station", width: "w-[17mm]", value: (lr) => lr.dest },
   // reference numbers: 12 characters on one line, wrap only beyond that
@@ -151,20 +153,20 @@ const LR_COLUMNS: LrColumn[] = [
     raw: (lr) => lr.gateEntryNo,
   },
   { header: "Invoice No", optional: true, width: "w-[21mm]", value: (lr) => lr.invoiceNo, raw: (lr) => lr.invoiceNo },
-  { header: "Vehicle No", width: "w-[18mm]", nowrap: true, value: (lr) => lr.vehicle },
-  { header: "Material", optional: true, width: "w-[15mm]", value: (lr) => lr.material, raw: (lr) => lr.material },
+  { header: "Vehicle No", width: "w-[22mm]", nowrap: true, value: (lr) => lr.vehicle },
+  { header: "Material", optional: true, width: "w-[17mm]", value: (lr) => lr.material, raw: (lr) => lr.material },
   // no width: takes all the space the fixed columns leave
   { header: "Consignee", optional: true, value: (lr) => lr.consignee, raw: (lr) => lr.consignee },
   {
     header: "Delivery Date",
     optional: true,
-    width: "w-[17mm]",
+    width: "w-[20mm]",
     nowrap: true,
     value: (lr) => lr.unloadDate,
     raw: (lr) => lr.unloadDate,
   },
   { header: "Net Wt", numeric: true, width: "w-[12mm]", nowrap: true, value: (lr) => lr.actualWt },
-  { header: "Charged Wt", numeric: true, width: "w-[13mm]", nowrap: true, value: (lr) => lr.chargeWt },
+  { header: "Charged Wt", numeric: true, width: "w-[14mm]", nowrap: true, value: (lr) => lr.chargeWt },
   { header: "Rate", numeric: true, width: "w-[11mm]", nowrap: true, value: (lr) => lr.rate },
   { header: "Freight Amt", numeric: true, width: "w-[19mm]", nowrap: true, value: (lr) => formatMoney(lr.amount) },
 ];
