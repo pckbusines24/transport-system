@@ -25,6 +25,18 @@ export interface TallyExportRow {
   done: number;
 }
 
+type DocStatus = "NEW" | "PARTIAL" | "CHANGED" | "EXPORTED";
+
+function statusOf(r: TallyExportRow): DocStatus {
+  if (r.fresh === r.voucherCount) return "NEW";
+  if (r.changed > 0) return "CHANGED";
+  if (r.fresh > 0) return "PARTIAL";
+  return "EXPORTED";
+}
+
+/** List order: still to send first, fully exported last. */
+const STATUS_RANK: Record<DocStatus, number> = { NEW: 0, PARTIAL: 1, CHANGED: 2, EXPORTED: 3 };
+
 function download(fileName: string, xml: string) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
@@ -48,6 +60,11 @@ export function TallyExportClient({
   const { toast } = useToast();
   const [busy, setBusy] = React.useState(false);
   const [includeExported, setIncludeExported] = React.useState(false);
+  // grouped by status; the builders' date order is kept inside each group
+  const sortedRows = React.useMemo(
+    () => [...rows].sort((a, b) => STATUS_RANK[statusOf(a)] - STATUS_RANK[statusOf(b)]),
+    [rows]
+  );
   // default selection: everything that has something new/changed to send
   const [selected, setSelected] = React.useState<Set<string>>(
     () => new Set(rows.filter((r) => r.fresh + r.changed > 0).map((r) => r.docId))
@@ -80,7 +97,14 @@ export function TallyExportClient({
         toast({
           title: `${res.exported} vouchers exported`,
           description:
-            res.skipped > 0 ? `${res.skipped} were already exported — skipped` : undefined,
+            [
+              res.skipped > 0 ? `${res.skipped} were already exported — skipped.` : "",
+              res.legacyChanged > 0
+                ? `${res.legacyChanged} edited chalan advance(s) were first exported before update tracking — delete the old copy in Tally by hand.`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined,
         });
         router.refresh();
       } else {
@@ -107,9 +131,10 @@ export function TallyExportClient({
   };
 
   const status = (r: TallyExportRow) => {
-    if (r.fresh === r.voucherCount) return <Badge variant="outline">NEW</Badge>;
-    if (r.changed > 0) return <Badge variant="destructive">CHANGED</Badge>;
-    if (r.fresh > 0) return <Badge variant="secondary">PARTIAL</Badge>;
+    const s = statusOf(r);
+    if (s === "NEW") return <Badge variant="outline">NEW</Badge>;
+    if (s === "CHANGED") return <Badge variant="destructive">CHANGED</Badge>;
+    if (s === "PARTIAL") return <Badge variant="secondary">PARTIAL</Badge>;
     return (
       <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400">
         EXPORTED
@@ -157,7 +182,7 @@ export function TallyExportClient({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {sortedRows.map((r) => (
               <tr key={r.docId} className="border-b hover:bg-muted/40">
                 <td className="px-3 py-2">
                   <Checkbox

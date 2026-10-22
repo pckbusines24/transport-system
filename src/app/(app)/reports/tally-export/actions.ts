@@ -5,7 +5,13 @@ import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
-import { buildMastersXml, buildVouchersXml, voucherHash } from "@/lib/tally";
+import {
+  buildMastersXml,
+  buildVouchersXml,
+  voucherHash,
+  type TallyVoucher,
+  type TallyVoucherDelete,
+} from "@/lib/tally";
 import { buildModuleDocs, type TallyModule } from "./build";
 
 const moduleSchema = z.enum(["CHALAN", "BILLING", "SLIP", "VOUCHERS", "EXPENSES", "OFFICE"]);
@@ -32,7 +38,7 @@ const toRange = (from?: string | null, to?: string | null) => ({
 export async function runTallyExport(
   input: unknown
 ): Promise<
-  | { ok: true; xml: string; fileName: string; exported: number; skipped: number }
+  | { ok: true; xml: string; fileName: string; exported: number; skipped: number; legacyChanged: number }
   | { ok: false; error: string }
 > {
   const session = requireSession();
@@ -58,28 +64,50 @@ export async function runTallyExport(
           await tx.tallyExportEntry.findMany({
             where: { firmId: session.firmId, key: { in: keys } },
           })
-        ).map((r) => [r.key, r.hash])
+        ).map((r) => [r.key, r])
       );
 
       const out: (typeof wanted)[number]["vouchers"] = [];
+      const deletes: TallyVoucherDelete[] = [];
       let skipped = 0;
+      // REMOTEID vouchers already in Tally from before REMOTEID tracking —
+      // Tally can't match them, so the edit goes as a fresh Create and the
+      // old copy must be deleted in Tally by hand
+      let legacyChanged = 0;
       for (const d of wanted) {
         for (const raw of d.vouchers) {
           // Tally's VOUCHERNUMBER carries the SOURCE document's own number
           // (chalan no / invoice no / voucher no) so Tally never assigns a
           // manual number of its own
-          const v = { ...raw, voucherNo: raw.voucherNo ?? d.refNo };
+          let v: TallyVoucher = { ...raw, voucherNo: raw.voucherNo ?? d.refNo };
           const hash = voucherHash(v);
           const prev = registry.get(v.key);
-          if (!data.includeExported && prev === hash) {
+          if (!data.includeExported && prev?.hash === hash) {
             skipped += 1; // unchanged and already in Tally — never send twice
             continue;
           }
+          if (v.remoteId && prev) {
+            if (!prev.remoteId) {
+              if (prev.hash !== hash) legacyChanged += 1;
+            } else if (prev.vchType && prev.vchType !== v.type) {
+              // a type change (e.g. Cash -> Diesel = Payment -> Journal) can't
+              // be altered: remove the old voucher, then create the new one
+              deletes.push({
+                remoteId: v.remoteId,
+                type: prev.vchType as TallyVoucher["type"],
+                date: prev.vchDate ?? v.date,
+                voucherNo: v.voucherNo,
+              });
+            } else {
+              v = { ...v, action: "Alter" };
+            }
+          }
           out.push(v);
+          const meta = { remoteId: !!v.remoteId, vchType: v.type, vchDate: v.date };
           await tx.tallyExportEntry.upsert({
             where: { firmId_key: { firmId: session.firmId, key: v.key } },
-            create: { tenantId: session.tenantId, firmId: session.firmId, key: v.key, hash },
-            update: { hash, exportedAt: new Date() },
+            create: { tenantId: session.tenantId, firmId: session.firmId, key: v.key, hash, ...meta },
+            update: { hash, exportedAt: new Date(), ...meta },
           });
         }
       }
@@ -94,15 +122,16 @@ export async function runTallyExport(
         entity: "TallyExport",
         entityId: session.firmId,
         action: "CREATE",
-        after: { module: data.module, vouchers: out.length, skipped },
+        after: { module: data.module, vouchers: out.length, skipped, deletes: deletes.length },
       });
       const range = [data.dateFrom, data.dateTo].filter(Boolean).join("_to_") || "all";
       return {
         ok: true as const,
-        xml: buildVouchersXml(out),
+        xml: buildVouchersXml(out, deletes),
         fileName: `tally-${data.module.toLowerCase()}-${range}.xml`,
         exported: out.length,
         skipped,
+        legacyChanged,
       };
     });
   } catch (e) {

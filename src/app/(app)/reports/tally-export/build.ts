@@ -21,6 +21,8 @@ import { makeTallyLookup, type TallyLookup } from "@/lib/tally-map";
  *  - TDS journals alone; Commission+Mamool together; everything bill-by-bill.
  *  - Settlements split: bank Receipt alone, Shortage alone, Round-off alone.
  *  - ADVANCE_ADJ rows post nothing (the advance voucher already did).
+ *  - Chalan advances carry a REMOTEID (= key): an edited advance re-exports
+ *    as Alter (Delete + Create when its voucher type changed), never a copy.
  */
 
 export type TallyModule = "CHALAN" | "BILLING" | "SLIP" | "VOUCHERS" | "EXPENSES" | "OFFICE";
@@ -456,6 +458,7 @@ export async function buildChalanDocs(
           : a.bankName?.trim() || "BANK";
         vouchers.push({
           key: `CHALAN:${c.id}:ADV:${a.id}`,
+          remoteId: `CHALAN:${c.id}:ADV:${a.id}`,
           // advance PAID to the broker: money out -> Payment (Journal on a card)
           type: moneyVoucherType(ctx, a.bankPartyId, "Payment"),
           date: aDate,
@@ -465,6 +468,7 @@ export async function buildChalanDocs(
       } else if (a.type === "CASH") {
         vouchers.push({
           key: `CHALAN:${c.id}:ADV:${a.id}`,
+          remoteId: `CHALAN:${c.id}:ADV:${a.id}`,
           type: "Payment",
           date: aDate,
           narration,
@@ -476,6 +480,7 @@ export async function buildChalanDocs(
           : `${a.type.charAt(0)}${a.type.slice(1).toLowerCase().replace(/_/g, " ")} Advance (Chalan)`.toUpperCase();
         vouchers.push({
           key: `CHALAN:${c.id}:ADV:${a.id}`,
+          remoteId: `CHALAN:${c.id}:ADV:${a.id}`,
           type: "Journal",
           date: aDate,
           narration,

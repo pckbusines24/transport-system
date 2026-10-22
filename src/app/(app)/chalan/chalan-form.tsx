@@ -49,6 +49,8 @@ export interface BrokerOption {
 }
 
 export interface AdvanceRow {
+  /** saved row id — kept across edits so the row's Tally voucher key is stable */
+  id?: string | null;
   type:
     | "CASH"
     | "BANK"

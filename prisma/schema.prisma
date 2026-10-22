@@ -2851,6 +2851,11 @@ model TallyExportEntry {
   key        String // e.g. "CHALAN:<id>:MAIN"
   hash       String
   exportedAt DateTime @default(now())
+  // vouchers sent with a REMOTEID (chalan advances) — so a later edit can
+  // Alter it, or Delete + Create when the voucher type changed
+  remoteId   Boolean  @default(false)
+  vchType    String?
+  vchDate    String? // yyyymmdd as last sent
 
   @@unique([firmId, key])
   @@index([tenantId])

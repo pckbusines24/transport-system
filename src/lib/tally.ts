@@ -63,6 +63,19 @@ export interface TallyVoucher {
   voucherNo?: string;
   narration: string;
   lines: TallyLine[];
+  /** stable Tally REMOTEID (the key) — set on vouchers that re-export by
+      Alter instead of Create (chalan advances) */
+  remoteId?: string;
+  /** import action; Create when omitted */
+  action?: "Create" | "Alter";
+}
+
+/** A voucher to remove from Tally by its REMOTEID, as it was last sent. */
+export interface TallyVoucherDelete {
+  remoteId: string;
+  type: TallyVoucher["type"];
+  date: string;
+  voucherNo?: string;
 }
 
 export interface TallyLedgerMaster {
@@ -116,7 +129,7 @@ function voucherXml(v: TallyVoucher): string {
     })
     .join("");
   return (
-    `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${v.type}" ACTION="Create">` +
+    `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER${v.remoteId ? ` REMOTEID="${esc(v.remoteId)}"` : ""} VCHTYPE="${v.type}" ACTION="${v.action ?? "Create"}">` +
     `<DATE>${v.date}</DATE><EFFECTIVEDATE>${v.date}</EFFECTIVEDATE>` +
     `<VOUCHERTYPENAME>${v.type}</VOUCHERTYPENAME>` +
     (v.voucherNo ? `<VOUCHERNUMBER>${esc(v.voucherNo)}</VOUCHERNUMBER>` : "") +
@@ -150,8 +163,19 @@ function envelope(messages: string): string {
   );
 }
 
-export function buildVouchersXml(vouchers: TallyVoucher[]): string {
-  const msgs = vouchers.map(voucherXml).join("");
+function voucherDeleteXml(d: TallyVoucherDelete): string {
+  return (
+    `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER REMOTEID="${esc(d.remoteId)}" VCHTYPE="${d.type}" ACTION="Delete">` +
+    `<DATE>${d.date}</DATE><VOUCHERTYPENAME>${d.type}</VOUCHERTYPENAME>` +
+    (d.voucherNo ? `<VOUCHERNUMBER>${esc(d.voucherNo)}</VOUCHERNUMBER>` : "") +
+    `</VOUCHER></TALLYMESSAGE>`
+  );
+}
+
+/** Deletes go first, so a voucher whose type changed is removed before its
+    replacement (same REMOTEID) is created. */
+export function buildVouchersXml(vouchers: TallyVoucher[], deletes: TallyVoucherDelete[] = []): string {
+  const msgs = deletes.map(voucherDeleteXml).join("") + vouchers.map(voucherXml).join("");
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>` +

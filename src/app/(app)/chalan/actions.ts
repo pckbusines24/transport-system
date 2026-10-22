@@ -131,6 +131,8 @@ export async function getBrokerTdsInfo(partyId: string) {
 }
 
 const advanceSchema = z.object({
+  /** saved row id; absent on a new row */
+  id: z.string().optional().nullable(),
   type: z.enum([
     "CASH",
     "BANK",
@@ -668,28 +670,55 @@ export async function saveChalanAdvances(
       });
       const voucherNoOf = new Map(applied.map((a) => [a.advanceId, a.voucherNo]));
 
-      await tx.chalanAdvance.deleteMany({ where: { chalanId } });
-      if (rows.length) {
+      // update rows in place instead of delete-and-recreate: each row's id is
+      // its Tally voucher key (CHALAN:<id>:ADV:<rowId>), so an untouched
+      // advance must keep its id or the next export sends it to Tally again.
+      // ADVANCE_ADJ rows post nothing to Tally and are rebuilt every save.
+      const storedIds = new Set(
+        (
+          await tx.chalanAdvance.findMany({
+            where: { chalanId, type: { not: "ADVANCE_ADJ" } },
+            select: { id: true },
+          })
+        ).map((a) => a.id)
+      );
+      const keptIds = new Set(
+        rows
+          .filter((r) => r.type !== "ADVANCE_ADJ" && r.id && storedIds.has(r.id))
+          .map((r) => r.id as string)
+      );
+      await tx.chalanAdvance.deleteMany({
+        where: {
+          chalanId,
+          OR: [{ type: "ADVANCE_ADJ" }, { id: { notIn: Array.from(keptIds) } }],
+        },
+      });
+      const rowData = (r: (typeof rows)[number]) => ({
+        type: r.type,
+        advanceId: r.type === "ADVANCE_ADJ" ? r.advanceId ?? null : null,
+        advanceVoucherNo:
+          r.type === "ADVANCE_ADJ"
+            ? voucherNoOf.get(r.advanceId ?? "") ?? r.advanceVoucherNo ?? null
+            : null,
+        supplierName: r.supplierName ?? null,
+        bankName: r.bankName ?? null,
+        bankPartyId: r.type === "BANK" ? r.bankPartyId ?? null : null,
+        headId: r.type === "BANK" || r.type === "ADVANCE_ADJ" ? null : r.headId ?? null,
+        dieselQty: r.dieselQty ?? null,
+        dieselRate: r.dieselRate ?? null,
+        amount: r.amount,
+        date: r.date ? new Date(r.date) : null,
+        remarks: r.remarks ?? null,
+      });
+      for (const r of rows) {
+        if (r.id && keptIds.has(r.id) && r.type !== "ADVANCE_ADJ") {
+          await tx.chalanAdvance.update({ where: { id: r.id }, data: rowData(r) });
+        }
+      }
+      const fresh = rows.filter((r) => r.type === "ADVANCE_ADJ" || !r.id || !keptIds.has(r.id));
+      if (fresh.length) {
         await tx.chalanAdvance.createMany({
-          data: rows.map((r) => ({
-            tenantId: session.tenantId,
-            chalanId,
-            type: r.type,
-            advanceId: r.type === "ADVANCE_ADJ" ? r.advanceId ?? null : null,
-            advanceVoucherNo:
-              r.type === "ADVANCE_ADJ"
-                ? voucherNoOf.get(r.advanceId ?? "") ?? r.advanceVoucherNo ?? null
-                : null,
-            supplierName: r.supplierName ?? null,
-            bankName: r.bankName ?? null,
-            bankPartyId: r.type === "BANK" ? r.bankPartyId ?? null : null,
-            headId: r.type === "BANK" || r.type === "ADVANCE_ADJ" ? null : r.headId ?? null,
-            dieselQty: r.dieselQty ?? null,
-            dieselRate: r.dieselRate ?? null,
-            amount: r.amount,
-            date: r.date ? new Date(r.date) : null,
-            remarks: r.remarks ?? null,
-          })),
+          data: fresh.map((r) => ({ tenantId: session.tenantId, chalanId, ...rowData(r) })),
         });
       }
       const advanceTotal = rows.reduce((s, r) => s + r.amount, 0);

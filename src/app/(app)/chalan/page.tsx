@@ -47,7 +47,9 @@ export default async function ChalanPage({
             },
             include: {
               lrs: { include: { lr: { include: { items: true, pods: true } } } },
-              advances: true,
+              // rows are updated in place now, so storage order drifts — cuid
+              // ids sort by creation and keep the entered order on reload
+              advances: { orderBy: { id: "asc" } },
             },
           })
         : null;
@@ -168,6 +170,7 @@ export default async function ChalanPage({
               remarks: lr.remarks ?? "",
             })),
             advances: record.advances.map((a) => ({
+              id: a.id,
               type: a.type,
               supplierName: a.supplierName ?? "",
               bankName: a.bankName ?? "",
