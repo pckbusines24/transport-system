@@ -525,6 +525,61 @@ export function ChalanForm({
     unloadRemarks,
   });
 
+  /**
+   * Save & Print: saves the chalan AND its advances (like Final Save, without
+   * finalizing), then prints what was saved — so the paper always matches the
+   * records, and a failed save prints nothing. The tab opens inside the click
+   * (one opened after the awaits would be blocked as a pop-up) and gets the
+   * print only once both saves succeed.
+   */
+  const handleSaveAndPrint = async () => {
+    if (!brokerId || !vehicleId || !chalanNo || !chalanDate) {
+      toast({ variant: "destructive", title: "Broker, vehicle, chalan no & date are required" });
+      return;
+    }
+    if (selected.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Select at least one LR",
+        description: "A chalan cannot be saved without LRs — pick them from the pending list.",
+      });
+      return;
+    }
+    if (id && advAdjError) {
+      toast({ variant: "destructive", title: "Advance adjustment invalid", description: advAdjError });
+      return;
+    }
+    const tab = window.open("", "_blank");
+    setSaving(true);
+    try {
+      const res = await saveChalan(buildPayload());
+      if (!res.ok) {
+        tab?.close();
+        toast({ variant: "destructive", title: "Save failed", description: res.error });
+        return;
+      }
+      // advances exist only on a saved chalan — a brand-new one has none yet
+      if (id) {
+        const a = await saveChalanAdvances(id, buildAdvancePayload());
+        if (!a.ok) {
+          tab?.close();
+          toast({ variant: "destructive", title: "Advances not saved", description: a.error });
+          return;
+        }
+        refreshAdvanceOptions();
+      } else {
+        setId(res.id);
+        router.replace(`/chalan?id=${res.id}`, { scroll: false });
+      }
+      const url = `/print/chalan/${res.id}`;
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      toast({ title: "Chalan saved", description: "Print opened in a new tab." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!brokerId || !vehicleId || !chalanNo || !chalanDate) {
       toast({ variant: "destructive", title: "Broker, vehicle, chalan no & date are required" });
@@ -1097,7 +1152,15 @@ export function ChalanForm({
               <div className="text-lg font-semibold tabular-nums">{formatMoney(totals.balance)}</div>
             </div>
           </div>
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleSaveAndPrint()}
+              disabled={saving}
+            >
+              Save &amp; Print
+            </Button>
             <Button type="button" variant="outline" onClick={handleSave} disabled={saving}>
               {saving ? "Saving..." : id ? "Save changes" : "Save (Step 1)"}
             </Button>

@@ -696,7 +696,14 @@ export function BrokerSlipForm({
       form.advances.filter((_, i) => i !== idx)
     );
 
-  const handleSave = async () => {
+  /**
+   * Save Slip / Update Slip; with `print`, the saved slip's print also opens
+   * in a new tab (Save & Print) — so the paper always matches the records,
+   * and a failed save prints nothing. That tab opens inside the click (one
+   * opened after the await would be blocked as a pop-up) and gets the print
+   * only once the save succeeds.
+   */
+  const handleSave = async (opts?: { print?: boolean }) => {
     const slipDateIso = textToIso(slipDateText);
     if (!form.slipNo.trim()) {
       toast({ variant: "destructive", title: "Slip number is required" });
@@ -711,6 +718,7 @@ export function BrokerSlipForm({
       toast({ variant: "destructive", title: "Advance adjustment invalid", description: badAdj });
       return;
     }
+    const tab = opts?.print ? window.open("", "_blank") : null;
     setSaving(true);
     try {
       const res = await saveBrokerSlip({
@@ -722,9 +730,15 @@ export function BrokerSlipForm({
         advances: form.advances.map((a) => ({ ...a, amount: advanceAmount(a) })),
       });
       if (res.ok) {
+        if (opts?.print) {
+          const url = `/print/broker-slip/${res.id}`;
+          if (tab) tab.location.href = url;
+          else window.open(url, "_blank");
+        }
         toast({ title: `Broker slip ${form.slipNo} saved` });
         router.push(registerReturn);
       } else {
+        tab?.close();
         toast({ variant: "destructive", title: "Save failed", description: res.error });
       }
     } finally {
@@ -1353,7 +1367,10 @@ export function BrokerSlipForm({
         <Button variant="outline" onClick={() => router.push(registerReturn)}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={saving}>
+        <Button variant="outline" onClick={() => void handleSave({ print: true })} disabled={saving}>
+          {initial ? "Update & Print" : "Save & Print"}
+        </Button>
+        <Button onClick={() => void handleSave()} disabled={saving}>
           {saving ? "Saving..." : initial ? "Update Slip" : "Save Slip"}
         </Button>
       </div>
