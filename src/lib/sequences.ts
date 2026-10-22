@@ -153,16 +153,59 @@ export async function randomUniqueDocNumber(
 }
 
 
-/** Max numeric LR number in this firm+FY plus one (LR numbering is sequential). */
+/** Numeric part of an LR number ("LR-1241" -> 1241); null when it has none. */
+function lrNumeric(lrNo: string): number | null {
+  const digits = lrNo.replace(/\D/g, "");
+  return digits ? Number(digits) : null;
+}
+
+/**
+ * Hands out free LR numbers for this firm+FY, counting up from the LAST NEW LR
+ * ENTERED (+1) — not from the highest number, so one stray high entry (a typo,
+ * another book's LR) no longer drags every later suggestion up with it.
+ * "Last entered" is by creation, so editing an old LR never moves it; a
+ * Multi-LR batch shares one timestamp, so the id (cuid, creation-ordered)
+ * breaks the tie. Deleted LRs don't count — their numbers may be reused.
+ * Numbers already held by a live LR are skipped, as is anything `skip` names
+ * (a batch's own typed numbers). With no numeric LR yet, it continues from
+ * the highest number (1 for a new year).
+ */
+export async function lrNumberAllocator(
+  tx: Tx,
+  args: { firmId: string; fyId: string }
+): Promise<(skip?: (lrNo: string) => boolean) => string> {
+  const where = { firmId: args.firmId, fyId: args.fyId, deletedAt: null };
+  const [rows, last] = await Promise.all([
+    tx.lr.findMany({ where, select: { lrNo: true } }),
+    tx.lr.findFirst({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { lrNo: true },
+    }),
+  ]);
+  const taken = new Set<number>();
+  for (const r of rows) {
+    const n = lrNumeric(r.lrNo);
+    if (n != null) taken.add(n);
+  }
+  const lastN = last ? lrNumeric(last.lrNo) : null;
+  let max = 0;
+  taken.forEach((n) => {
+    if (n > max) max = n;
+  });
+  let cursor = lastN != null ? lastN + 1 : max + 1;
+  return (skip) => {
+    while (taken.has(cursor) || skip?.(String(cursor))) cursor++;
+    return String(cursor++);
+  };
+}
+
+/** Next free LR number — last new LR entered + 1 (see lrNumberAllocator). */
 export async function nextLrNumber(
   tx: Tx,
   args: { firmId: string; fyId: string }
 ): Promise<string> {
-  const rows = await tx.$queryRaw<{ max: bigint | null }[]>`
-    SELECT MAX(NULLIF(regexp_replace("lrNo", '\\D', '', 'g'), '')::bigint) AS max
-    FROM "Lr" WHERE "firmId" = ${args.firmId} AND "fyId" = ${args.fyId}`;
-  const max = rows[0]?.max ? Number(rows[0].max) : 0;
-  return String(max + 1);
+  return (await lrNumberAllocator(tx, args))();
 }
 
 /**

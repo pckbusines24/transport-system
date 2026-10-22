@@ -9,7 +9,7 @@ import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { assertDateInFy } from "@/lib/fy-guard";
 import { toNum } from "@/lib/utils";
-import { nextLrNumber, syncSequenceTo } from "@/lib/sequences";
+import { lrNumberAllocator, nextLrNumber, syncSequenceTo } from "@/lib/sequences";
 import { stateCodeFromGstin } from "@/lib/calc/gst";
 import { computeLrTotals, itemAmount } from "@/components/lr/lr-calc";
 import { resyncInvoicesForLr } from "@/app/(app)/billing/actions";
@@ -616,8 +616,9 @@ export async function saveLrBatch(
       const firm = await tx.firm.findUniqueOrThrow({ where: { id: session.firmId } });
       const igstPct = Number(firm.igstPct);
       const gstPct = igstPct > 0 ? igstPct : Number(firm.cgstPct) + Number(firm.sgstPct);
-      const first = await nextLrNumber(tx, { firmId: session.firmId, fyId: session.fyId });
-      let cursor = parseInt(first, 10);
+      // blanks count up from the last new LR entered, skipping numbers a live
+      // LR or this batch's own typed entries already hold
+      const nextFree = await lrNumberAllocator(tx, { firmId: session.firmId, fyId: session.fyId });
       const lrNos: string[] = [];
 
       // user-typed LR numbers are honoured exactly; blanks are auto-assigned
@@ -632,8 +633,7 @@ export async function saveLrBatch(
           }
           lrNo = typed;
         } else {
-          while (used.has(String(cursor))) cursor++;
-          lrNo = String(cursor++);
+          lrNo = nextFree((n) => used.has(n));
         }
         used.add(lrNo);
         assigned.push(lrNo);
