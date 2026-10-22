@@ -335,4 +335,21 @@
   body::before {
     display: none !important;
   }
+
+  /* No print ever shows a scrollbar: a box that scrolls on screen prints its
+     whole content instead of a bar and a clipped edge. */
+  .overflow-auto,
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-scroll,
+  .overflow-x-scroll,
+  .overflow-y-scroll {
+    overflow: visible !important;
+  }
+  * {
+    scrollbar-width: none !important;
+  }
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
 }

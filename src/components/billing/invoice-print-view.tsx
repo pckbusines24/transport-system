@@ -353,9 +353,13 @@ export function InvoicePrintView({
         wrapped one letter per line over Delivery Date. Holding the sheet
         width makes the preview scroll sideways instead; on paper the sheet
         IS 277mm, so print output is unchanged.
+        On paper the hold comes off (print:min-w-0): the sheet's own 2px border
+        leaves a hair under 277mm inside it, so the held table overflowed, the
+        scroll box printed its scrollbar and clipped Freight Amt. Printed, the
+        table takes the sheet's real width and Consignee absorbs the difference.
       */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[277mm] table-fixed border-collapse text-[10.5px] leading-[1.25]">
+      <div className="overflow-x-auto print:overflow-visible">
+        <table className="w-full min-w-[277mm] table-fixed border-collapse text-[10.5px] leading-[1.25] print:min-w-0">
           <thead>
             <tr>
               {columns.map((c) => (
