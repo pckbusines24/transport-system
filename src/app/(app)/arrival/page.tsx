@@ -43,6 +43,16 @@ export default async function ArrivalPage({
   return (
     <>
       <DocModule
+        pager={
+          <PaginationBar
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            basePath="/arrival"
+            searchParams={searchParams}
+            hideSinglePage
+          />
+        }
       title="Unloading / Arrival"
       newLabel="New Arrival"
       exportName="arrivals"

@@ -63,6 +63,16 @@ export default async function OutwardCrossingPage({
   return (
     <>
     <DocModule
+      pager={
+        <PaginationBar
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          basePath="/outward-crossing"
+          searchParams={searchParams}
+          hideSinglePage
+        />
+      }
       title="Outward Crossing"
       exportName="outward-crossings"
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}

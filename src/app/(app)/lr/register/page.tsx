@@ -221,6 +221,14 @@ export default async function LrRegisterPage({
         </Button>
       </div>
       <FilterBar filters={filters} />
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={total}
+        basePath="/lr/register"
+        searchParams={searchParams}
+        hideSinglePage
+      />
       <LrRegisterTable rows={lrs} canDelete={canDelete} totals={totals} />
       <PaginationBar
         page={page}

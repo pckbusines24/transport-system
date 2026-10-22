@@ -81,6 +81,16 @@ export default async function LoadingChalanPage({
   return (
     <>
       <DocModule
+        pager={
+          <PaginationBar
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            basePath="/loading-chalan"
+            searchParams={searchParams}
+            hideSinglePage
+          />
+        }
       title="Loading Challan"
       exportName="loading-chalans"
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}

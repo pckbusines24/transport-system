@@ -13,15 +13,20 @@ export function PaginationBar({
   total,
   basePath,
   searchParams,
+  hideSinglePage = false,
 }: {
   page: number;
   pageSize: number;
   total: number;
   basePath: string;
   searchParams: Record<string, string | undefined>;
+  /** the copy above the table: nothing to page through -> render nothing,
+      rather than a second "N rows" line */
+  hideSinglePage?: boolean;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (pages <= 1) {
+    if (hideSinglePage) return null;
     return (
       <div className="flex items-center justify-end text-xs text-muted-foreground">
         {total} row{total === 1 ? "" : "s"}

@@ -370,6 +370,8 @@ interface SimpleMasterProps<T> {
   embedded?: boolean;
   /** false on pages whose own pagination bar already counts the rows */
   showCount?: boolean;
+  /** page bar shown under the filters (the page renders the bottom one) */
+  pager?: React.ReactNode;
   newLabel?: string;
   rows: T[];
   columns: ColumnDef<T, unknown>[];
@@ -412,6 +414,7 @@ export function SimpleMaster<T>({
   titleExtra,
   embedded = false,
   showCount = true,
+  pager,
   newLabel = "New",
   rows,
   columns,
@@ -527,6 +530,7 @@ export function SimpleMaster<T>({
       </div>
 
       {filters && filters.length > 0 && <FilterBar filters={filters} />}
+      {pager}
 
       <DataTable
         fillViewport

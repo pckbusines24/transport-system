@@ -161,6 +161,14 @@ export async function VoucherRegisterTab({
           { type: "combobox", key: "vehicle", label: "Vehicle", options: vehicleOptions },
         ]}
       />
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={total}
+        basePath="/accounts/vouchers"
+        searchParams={searchParams}
+        hideSinglePage
+      />
       <VoucherRegisterTable rows={rows} canDelete={canDelete} totals={totals} />
       <PaginationBar
         page={page}

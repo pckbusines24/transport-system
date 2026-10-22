@@ -56,6 +56,16 @@ export default async function PartiesPage({
   return (
     <>
     <PartiesClient
+      pager={
+        <PaginationBar
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          basePath="/masters/parties"
+          searchParams={searchParams}
+          hideSinglePage
+        />
+      }
       rows={rows.map((r) => ({
         id: r.id,
         name: r.name,

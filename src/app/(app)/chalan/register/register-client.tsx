@@ -63,6 +63,7 @@ export function ChalanRegisterClient({
   brokers,
   vehicles,
   canDelete,
+  pager,
 }: {
   rows: ChalanRegisterRow[];
   /** MARKET = payable workflow (default); OWNREL = own + relative, no payment actions */
@@ -72,6 +73,8 @@ export function ChalanRegisterClient({
   brokers: { value: string; label: string; meta?: string }[];
   vehicles: { value: string; label: string }[];
   canDelete: boolean;
+  /** page bar shown under the filters (the page renders the bottom one) */
+  pager?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -534,6 +537,7 @@ export function ChalanRegisterClient({
           },
         ]}
       />
+      {pager}
       <DataTable
         fillViewport
         showCount={false}

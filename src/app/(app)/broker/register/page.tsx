@@ -302,6 +302,14 @@ export default async function BrokerRegisterPage({
         </Button>
       </div>
       <FilterBar filters={filters} />
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={total}
+        basePath="/broker/register"
+        searchParams={searchParams}
+        hideSinglePage
+      />
       {/* balance receipt / payment moved into the slip itself */}
       <BrokerRegisterTable data={data} canDelete={canDelete} />
       <PaginationBar

@@ -51,6 +51,7 @@ export function DocModule({
   fields,
   defaults,
   filters,
+  pager,
   exportName,
   save,
   remove,
@@ -66,6 +67,8 @@ export function DocModule({
   fields: DocFieldSpec[];
   defaults: FormState;
   filters?: FilterDef[];
+  /** page bar shown under the filters (the page renders the bottom one) */
+  pager?: React.ReactNode;
   exportName: string;
   save: (input: unknown) => Promise<ActionResult>;
   remove?: (id: string) => Promise<ActionResult>;
@@ -139,6 +142,7 @@ export function DocModule({
   return (
     <SimpleMaster
       showCount={false}
+      pager={pager}
       title={title}
       newLabel={newLabel ?? `New ${title}`}
       rows={rows}

@@ -222,6 +222,16 @@ export default async function ChalanRegisterPage({
   return (
     <div className="space-y-4">
       <ChalanRegisterClient
+        pager={
+          <PaginationBar
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            basePath="/chalan/register"
+            searchParams={searchParams}
+            hideSinglePage
+          />
+        }
         rows={data}
         mode={tab}
         view={view}

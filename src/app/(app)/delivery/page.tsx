@@ -78,6 +78,16 @@ export default async function DeliveryPage({
   return (
     <>
       <DocModule
+        pager={
+          <PaginationBar
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            basePath="/delivery"
+            searchParams={searchParams}
+            hideSinglePage
+          />
+        }
       title="Delivery (Gate Pass / Cash Memo)"
       newLabel="New Delivery"
       exportName="deliveries"

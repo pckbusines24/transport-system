@@ -87,15 +87,19 @@ export function PartiesClient({
   stateOptions,
   cityOptions,
   canDelete,
+  pager,
 }: {
   rows: PartyRow[];
   stateOptions: MasterOption[];
   cityOptions: MasterOption[];
   canDelete: boolean;
+  /** page bar shown under the filters (the page renders the bottom one) */
+  pager?: React.ReactNode;
 }) {
   return (
     <SimpleMaster
       showCount={false}
+      pager={pager}
       title="Party / Ledger"
       newLabel="New Party"
       rows={rows}

@@ -67,6 +67,16 @@ export default async function CrossingPage({
   return (
     <>
     <DocModule
+      pager={
+        <PaginationBar
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          basePath="/crossing"
+          searchParams={searchParams}
+          hideSinglePage
+        />
+      }
       title="Crossing"
       exportName="crossings"
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}

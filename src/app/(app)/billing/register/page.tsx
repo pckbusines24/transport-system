@@ -135,6 +135,14 @@ export default async function BillingRegisterPage({
         </div>
       </div>
       <FilterBar filters={filters} />
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={total}
+        basePath="/billing/register"
+        searchParams={searchParams}
+        hideSinglePage
+      />
       <BillingRegisterTable data={data} canDelete={canDelete} />
       <PaginationBar
         page={page}

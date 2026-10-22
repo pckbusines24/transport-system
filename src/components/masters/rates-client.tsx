@@ -118,12 +118,15 @@ export function RatesClient({
   productOptions,
   cityOptions,
   canDelete,
+  pager,
 }: {
   rows: RateRow[];
   partyOptions: MasterOption[];
   productOptions: MasterOption[];
   cityOptions: MasterOption[];
   canDelete: boolean;
+  /** page bar shown under the filters (the page renders the bottom one) */
+  pager?: React.ReactNode;
 }) {
   const { toast } = useToast();
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -183,6 +186,7 @@ export function RatesClient({
       </div>
     <SimpleMaster
       showCount={false}
+      pager={pager}
       title="Rate Setup"
       newLabel="New Rate"
       rows={rows}

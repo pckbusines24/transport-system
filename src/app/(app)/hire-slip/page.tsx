@@ -70,6 +70,16 @@ export default async function HireSlipPage({
   return (
     <>
       <DocModule
+        pager={
+          <PaginationBar
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            basePath="/hire-slip"
+            searchParams={searchParams}
+            hideSinglePage
+          />
+        }
         title="Hire Slip"
       exportName="hire-slips"
       canDelete={session.role === "ADMIN" || session.role === "OWNER"}

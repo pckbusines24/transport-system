@@ -139,6 +139,14 @@ export default async function PodRegisterPage({
           },
         ]}
       />
+      <PaginationBar
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={total}
+        basePath="/pod/register"
+        searchParams={searchParams}
+        hideSinglePage
+      />
       <PodRegisterTable rows={pods} canDelete={session.role === "ADMIN" || session.role === "OWNER"} />
       <PaginationBar
         page={page}

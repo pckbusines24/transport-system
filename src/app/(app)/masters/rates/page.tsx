@@ -55,6 +55,16 @@ export default async function RatesPage({
   return (
     <>
     <RatesClient
+      pager={
+        <PaginationBar
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          basePath="/masters/rates"
+          searchParams={searchParams}
+          hideSinglePage
+        />
+      }
       rows={rows
         .map((r) => ({
           id: r.id,
