@@ -119,6 +119,51 @@ export function useFillHeight(enabled: boolean) {
   return ref;
 }
 
+/**
+ * A second, sideways scrollbar fixed above the column headings, linked to the
+ * table box — a wide register can be slid to its far columns from the top,
+ * without going down to the box's own bottom scrollbar. The two stay in step
+ * whichever one moves (setting the same scrollLeft fires no scroll event, so
+ * they don't ping-pong). It's only shown while the table is wider than its
+ * box. The spacer inside it is sized to the table's full width.
+ */
+function useTopScrollbar(boxRef: React.RefObject<HTMLDivElement>, enabled: boolean) {
+  const barRef = React.useRef<HTMLDivElement>(null);
+  const spacerRef = React.useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = React.useState(false);
+
+  React.useEffect(() => {
+    const box = boxRef.current;
+    const bar = barRef.current;
+    const spacer = spacerRef.current;
+    if (!enabled || !box || !bar || !spacer) return;
+    const size = () => {
+      spacer.style.width = `${box.scrollWidth}px`;
+      setOverflows(box.scrollWidth > box.clientWidth + 1);
+      bar.scrollLeft = box.scrollLeft;
+    };
+    const fromBar = () => {
+      box.scrollLeft = bar.scrollLeft;
+    };
+    const fromBox = () => {
+      bar.scrollLeft = box.scrollLeft;
+    };
+    size();
+    bar.addEventListener("scroll", fromBar, { passive: true });
+    box.addEventListener("scroll", fromBox, { passive: true });
+    const ro = new ResizeObserver(size);
+    ro.observe(box);
+    if (box.firstElementChild) ro.observe(box.firstElementChild);
+    return () => {
+      bar.removeEventListener("scroll", fromBar);
+      box.removeEventListener("scroll", fromBox);
+      ro.disconnect();
+    };
+  }, [boxRef, enabled]);
+
+  return { barRef, spacerRef, overflows };
+}
+
 const PAGE_SIZES = [25, 50, 100];
 
 /**
@@ -158,6 +203,7 @@ export function DataTable<TData, TValue>({
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const fillRef = useFillHeight(fillViewport);
+  const topBar = useTopScrollbar(fillRef, fillViewport);
 
   const table = useReactTable({
     data,
@@ -181,6 +227,20 @@ export function DataTable<TData, TValue>({
     // stretching the page - without it the flex/grid parent refuses to shrink
     <div className={cn("min-w-0 space-y-2", className)}>
       <div className="min-w-0 rounded-md border">
+        {/* sideways scrollbar fixed above the headings (desktop: phones
+            swipe sideways and show no draggable bar anyway) */}
+        {fillViewport && (
+          <div
+            ref={topBar.barRef}
+            aria-hidden
+            className={cn(
+              "scroll-thin hidden overflow-x-auto overflow-y-hidden border-b",
+              topBar.overflows && "md:block"
+            )}
+          >
+            <div ref={topBar.spacerRef} className="h-px" />
+          </div>
+        )}
         <Table
           wrapperRef={fillViewport ? fillRef : undefined}
           wrapperClassName={fillViewport ? "scroll-thin overscroll-contain rounded-md" : undefined}
