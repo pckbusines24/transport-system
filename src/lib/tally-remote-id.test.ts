@@ -43,12 +43,12 @@ describe("chalan advance vouchers carry a REMOTEID", () => {
   });
 
   it("leaves vouchers without a REMOTEID unchanged", () => {
-    const { remoteId: _r, ...plain } = adv;
+    const plain: TallyVoucher = { ...adv, remoteId: undefined };
     expect(buildVouchersXml([plain])).toContain('<VOUCHER VCHTYPE="Payment" ACTION="Create">');
   });
 
   it("does not change the content hash, so earlier exports stay matched", () => {
-    const { remoteId: _r, ...plain } = adv;
+    const plain: TallyVoucher = { ...adv, remoteId: undefined };
     expect(voucherHash({ ...adv, action: "Alter" })).toBe(voucherHash(plain));
   });
 });
