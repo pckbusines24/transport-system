@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatDate, formatMoney, formatWt } from "@/lib/utils";
 
 export interface PendingLrRow {
   id: string;
@@ -118,8 +118,8 @@ export function LrPicker({
                   <TableCell>{r.destination}</TableCell>
                   <TableCell>{r.consignor}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.qty}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.actualWt}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.chargeWt}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatWt(r.actualWt)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatWt(r.chargeWt)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(r.rate)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(r.freight)}</TableCell>
                 </TableRow>
@@ -155,6 +155,7 @@ export function SelectedLrList({
             <TableHead className="text-right text-xs">Qty</TableHead>
             <TableHead className="text-right text-xs">Actual Wt</TableHead>
             <TableHead className="text-right text-xs">Charge Wt</TableHead>
+            <TableHead className="text-right text-xs">Rate</TableHead>
             <TableHead className="text-right text-xs">Booking Freight</TableHead>
             <TableHead className="w-10 text-xs" />
           </TableRow>
@@ -168,8 +169,8 @@ export function SelectedLrList({
               <TableCell>{r.destination}</TableCell>
               <TableCell>{r.consignor}</TableCell>
               <TableCell className="text-right tabular-nums">{r.qty}</TableCell>
-              <TableCell className="text-right tabular-nums">{r.actualWt}</TableCell>
-              <TableCell className="text-right tabular-nums">{r.chargeWt}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatWt(r.actualWt)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatWt(r.chargeWt)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMoney(r.rate)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMoney(r.freight)}</TableCell>
               <TableCell>
@@ -191,10 +192,10 @@ export function SelectedLrList({
               {rows.reduce((s, r) => s + r.qty, 0)}
             </TableCell>
             <TableCell className="text-right tabular-nums">
-              {rows.reduce((s, r) => s + r.actualWt, 0)}
+              {formatWt(rows.reduce((s, r) => s + r.actualWt, 0))}
             </TableCell>
             <TableCell className="text-right tabular-nums">
-              {rows.reduce((s, r) => s + r.chargeWt, 0)}
+              {formatWt(rows.reduce((s, r) => s + r.chargeWt, 0))}
             </TableCell>
             <TableCell />
             <TableCell className="text-right tabular-nums">
