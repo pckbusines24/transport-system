@@ -6,6 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -265,6 +273,7 @@ export function ChalanForm({
   const [balMode, setBalMode] = React.useState(record?.balPaymentMode ?? "BANK");
   const [balRemarks, setBalRemarks] = React.useState(record?.balRemarks ?? "");
   const [balSaving, setBalSaving] = React.useState(false);
+  const [balConfirmOpen, setBalConfirmOpen] = React.useState(false);
   const [paymentStatus, setPaymentStatus] = React.useState(record?.paymentStatus ?? "PENDING");
   const podTotal = record?.podTotal ?? 0;
   const podDone = record?.podDone ?? 0;
@@ -396,6 +405,38 @@ export function ChalanForm({
       toast({ variant: "destructive", title: "Select the bank/cash payment head" });
       return;
     }
+    // print first, then save — the popup offers both
+    setBalConfirmOpen(true);
+  };
+
+  /** Print link carrying the typed (unsaved) balance payment, so the print
+      shows it as it will read once saved. */
+  const balancePrintHref = () => {
+    const d = parseDdMmYyyy(balDateText);
+    const q = new URLSearchParams({
+      preview: "1",
+      paid: String(balPaidPreview),
+      ro: String(balRoundOff || 0),
+      sh: String(balShortage || 0),
+      adv: String(balAdjTotal || 0),
+      mode: balMode,
+      head: balHeadId ?? "",
+      rem: balRemarks,
+    });
+    if (d) {
+      q.set(
+        "date",
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+      );
+    }
+    return `/print/chalan/${id}?${q.toString()}`;
+  };
+
+  const saveBalance = async () => {
+    if (!id) return;
+    const d = parseDdMmYyyy(balDateText);
+    if (!d) return;
+    setBalConfirmOpen(false);
     setBalSaving(true);
     try {
       const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -1192,13 +1233,41 @@ export function ChalanForm({
                 {balSaving
                   ? "Saving..."
                   : paymentStatus === "PAID"
-                    ? "Update Balance Payment"
-                    : "Save Balance Payment (mark PAID)"}
+                    ? "Print & Update"
+                    : "Print & Save"}
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={balConfirmOpen} onOpenChange={setBalConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Balance payment — chalan {chalanNo}</DialogTitle>
+            <DialogDescription>
+              Print the chalan with this balance payment to check the figures, then save it.
+              Nothing is saved until you click Save.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm">
+            Paying <span className="font-semibold tabular-nums">{formatMoney(balPaidPreview)}</span>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" onClick={() => setBalConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button asChild type="button" variant="outline">
+              <Link href={balancePrintHref()} target="_blank">
+                Print
+              </Link>
+            </Button>
+            <Button type="button" onClick={() => void saveBalance()} disabled={balSaving}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

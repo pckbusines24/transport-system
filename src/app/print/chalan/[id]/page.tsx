@@ -14,7 +14,19 @@ export default async function ChalanPrintPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { copies?: string };
+  searchParams: {
+    copies?: string;
+    /** "1" = print the balance payment typed on the chalan form, not yet saved */
+    preview?: string;
+    paid?: string;
+    ro?: string;
+    sh?: string;
+    adv?: string;
+    date?: string; // yyyy-mm-dd
+    mode?: string;
+    head?: string;
+    rem?: string;
+  };
 }) {
   const session = requireSession();
   await authorize(session, "chalan", "print");
@@ -22,17 +34,36 @@ export default async function ChalanPrintPage({
     3,
     Math.max(1, parseInt(searchParams.copies ?? "1", 10) || 1),
   );
+  // the chalan form's "Print & Save" prints BEFORE saving: the unsaved
+  // balance payment rides the URL and stands in for the chalan-side
+  // settlement, so the print reads exactly as it will once saved
+  const preview =
+    searchParams.preview === "1"
+      ? {
+          balPaidAmount: toNum(searchParams.paid),
+          balRoundOff: toNum(searchParams.ro),
+          balShortage: toNum(searchParams.sh),
+          balAdvanceAdjusted: toNum(searchParams.adv),
+          balPaymentDate: searchParams.date
+            ? new Date(`${searchParams.date}T00:00:00`)
+            : null,
+          balPaymentMode: searchParams.mode || null,
+          balPaymentHeadId: searchParams.head || null,
+          balRemarks: searchParams.rem || null,
+        }
+      : null;
 
   const data = await withTenant(session.tenantId, async (tx) => {
     // firm scoped: another firm's chalan must never print under this session
-    const chalan = await tx.chalan.findFirst({
+    const stored = await tx.chalan.findFirst({
       where: { id: params.id, firmId: session.firmId, deletedAt: null },
       include: {
         lrs: { include: { lr: { include: { items: true } } } },
         advances: true,
       },
     });
-    if (!chalan) return null;
+    if (!stored) return null;
+    const chalan = preview ? { ...stored, ...preview } : stored;
     const [
       firm,
       broker,
