@@ -368,6 +368,8 @@ interface SimpleMasterProps<T> {
   titleExtra?: React.ReactNode;
   /** rendered inside a tabbed screen that owns the heading and padding */
   embedded?: boolean;
+  /** false on pages whose own pagination bar already counts the rows */
+  showCount?: boolean;
   newLabel?: string;
   rows: T[];
   columns: ColumnDef<T, unknown>[];
@@ -409,6 +411,7 @@ export function SimpleMaster<T>({
   heading,
   titleExtra,
   embedded = false,
+  showCount = true,
   newLabel = "New",
   rows,
   columns,
@@ -525,7 +528,13 @@ export function SimpleMaster<T>({
 
       {filters && filters.length > 0 && <FilterBar filters={filters} />}
 
-      <DataTable columns={columns} data={rows} onRowClick={openEdit} />
+      <DataTable
+        fillViewport
+        showCount={showCount}
+        columns={columns}
+        data={rows}
+        onRowClick={openEdit}
+      />
 
       <MasterFormDialog
         open={open}

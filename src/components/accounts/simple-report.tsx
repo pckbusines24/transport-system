@@ -42,12 +42,15 @@ export function SimpleReport({
   fileName,
   title,
   emptyMessage,
+  fillViewport = false,
 }: {
   columns: ReportColumn[];
   rows: ReportRow[];
   fileName: string;
   title?: string;
   emptyMessage?: string;
+  /** register screens: rows scroll inside a screen-height box */
+  fillViewport?: boolean;
 }) {
   const columnDefs = React.useMemo<ColumnDef<ReportRow, unknown>[]>(
     () =>
@@ -116,7 +119,12 @@ export function SimpleReport({
         <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
         <ExportButton rows={rows} columns={exportColumns} fileName={fileName} />
       </div>
-      <DataTable columns={columnDefs} data={rows} emptyMessage={emptyMessage} />
+      <DataTable
+        fillViewport={fillViewport}
+        columns={columnDefs}
+        data={rows}
+        emptyMessage={emptyMessage}
+      />
     </div>
   );
 }

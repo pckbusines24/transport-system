@@ -309,6 +309,7 @@ export async function OutstandingReceivableTab({
     <div className="space-y-4">
       <FilterBar filters={filters} />
       <SimpleReport
+        fillViewport
         title={`${rows.length} receivable${rows.length === 1 ? "" : "s"} (invoices + broker slips + office income + advances + driver settlements — same set as the dashboard tile)`}
         columns={[
           { key: "refNo", header: "Ref No", linkBase: "/", linkParamKey: "link" },

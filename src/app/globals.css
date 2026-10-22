@@ -298,6 +298,30 @@
   .divide-hairline > * + * {
     border-top: 1px solid hsl(var(--border) / 0.7);
   }
+
+  /* Thin, quiet scrollbar for boxes that scroll inside the page (register
+     tables) — the default Windows bar is a heavy grey slab next to a border */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.55);
+    background-clip: content-box;
+  }
 }
 
 @media print {

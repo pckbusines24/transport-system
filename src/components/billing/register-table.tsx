@@ -186,6 +186,7 @@ export function BillingRegisterTable({
       </div>
       <DataTable
         fillViewport
+        showCount={false}
         columns={columns}
         data={data}
         emptyMessage="No invoices found."

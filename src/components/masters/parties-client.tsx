@@ -95,6 +95,7 @@ export function PartiesClient({
 }) {
   return (
     <SimpleMaster
+      showCount={false}
       title="Party / Ledger"
       newLabel="New Party"
       rows={rows}

@@ -182,6 +182,7 @@ export function RatesClient({
         </Button>
       </div>
     <SimpleMaster
+      showCount={false}
       title="Rate Setup"
       newLabel="New Rate"
       rows={rows}

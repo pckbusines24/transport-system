@@ -272,7 +272,7 @@ export function PodRegisterTable({
           ]}
         />
       </div>
-      <DataTable fillViewport columns={columns} data={rows} emptyMessage="No PODs found." />
+      <DataTable fillViewport showCount={false} columns={columns} data={rows} emptyMessage="No PODs found." />
 
       {/* edit dialog */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>

@@ -11,6 +11,7 @@ import { IsoDateInput } from "@/components/data/date-input";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ExportButton } from "@/components/data/export-button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
+import { useFillHeight } from "@/components/data/data-table";
 import type { OutSide, OutstandingData } from "../outstanding-actions";
 
 export function OutstandingClient({
@@ -36,6 +37,9 @@ export function OutstandingClient({
   const [minAmt, setMinAmt] = React.useState("");
   const [only90, setOnly90] = React.useState(false);
   const [open, setOpen] = React.useState<Set<string>>(new Set());
+  // rows scroll inside a screen-height box; summary, filters, header and
+  // totals stay put (same register mode as the shared DataTable)
+  const fillRef = useFillHeight(true);
 
   const recv = side === "RECV";
   const title = recv ? "Receivables — Party-wise Ageing" : "Payables — Party-wise Ageing";
@@ -202,9 +206,10 @@ export function OutstandingClient({
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
+      <div ref={fillRef} className="scroll-thin overflow-auto overscroll-contain rounded-md border">
         <table className="w-full border-collapse text-xs">
-          <thead className="bg-muted/60">
+          {/* solid backgrounds: rows scroll underneath the pinned header/totals */}
+          <thead className="sticky top-0 z-10 bg-muted shadow-[0_1px_0_hsl(var(--border))]">
             <tr>
               {["Party", "0–30", "31–60", "61–90", "90+", "Total", "Oldest", "Contact"].map((h) => (
                 <th key={h} className={`${cell} whitespace-nowrap text-left font-semibold`}>
@@ -321,7 +326,7 @@ export function OutstandingClient({
             )}
           </tbody>
           {rows.length > 0 && (
-            <tfoot className="bg-muted/60 font-bold">
+            <tfoot className="sticky bottom-0 z-10 bg-muted font-bold shadow-[0_-1px_0_hsl(var(--border))]">
               <tr>
                 <td className={cell}>Total ({rows.length} parties)</td>
                 <td className={num}>{formatMoney(t.b0)}</td>

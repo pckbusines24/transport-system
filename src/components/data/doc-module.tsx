@@ -138,6 +138,7 @@ export function DocModule({
 
   return (
     <SimpleMaster
+      showCount={false}
       title={title}
       newLabel={newLabel ?? `New ${title}`}
       rows={rows}

@@ -199,7 +199,7 @@ export function VoucherRegisterTable({
       <div className="flex justify-end">
         <ExportButton rows={rows} columns={exportColumns} fileName="voucher-register" />
       </div>
-      <DataTable fillViewport columns={columns} data={rows} emptyMessage="No vouchers found." />
+      <DataTable fillViewport showCount={false} columns={columns} data={rows} emptyMessage="No vouchers found." />
     </div>
   );
 }

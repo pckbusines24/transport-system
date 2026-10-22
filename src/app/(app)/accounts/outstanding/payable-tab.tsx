@@ -545,6 +545,7 @@ export async function OutstandingPayableTab({
     <div className="space-y-4">
       <FilterBar filters={filters} />
       <SimpleReport
+        fillViewport
         title={`${rows.length} payable${rows.length === 1 ? "" : "s"} (chalans + broker slip owner side + hire slips + staff salary + office/vehicle/adblue bills + received advances + driver settlements — same set as the dashboard tile)`}
         columns={[
           { key: "refNo", header: "Ref No", linkBase: "/", linkParamKey: "link" },
