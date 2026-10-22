@@ -19,13 +19,18 @@ export interface PodPendingLr {
   billedParty: string;
   qty: number;
   actualWt: number;
+  /** the LR's OBD no. (its first invoice's); "0" when it has none */
+  obdNo: string;
+  /** highest item rate — the same per-LR rate the chalan LR list shows */
+  rate: number;
 }
 
 function mapLr(lr: {
   id: string;
   lrNo: string;
   lrDate: Date;
-  items: { qty: unknown; actualWt: unknown }[];
+  obdNo?: string | null;
+  items: { qty: unknown; actualWt: unknown; rate: unknown }[];
   sourceCity?: { name: string } | null;
   destCity?: { name: string } | null;
   billedName: string;
@@ -41,6 +46,8 @@ function mapLr(lr: {
     billedParty: lr.billedName,
     qty: lr.items.reduce((s, i) => s + toNum(String(i.qty)), 0),
     actualWt: lr.items.reduce((s, i) => s + toNum(String(i.actualWt)), 0),
+    obdNo: lr.obdNo?.trim() || "0",
+    rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(String(i.rate)))) : 0,
   };
 }
 
@@ -157,7 +164,8 @@ async function withNames(
     billToId: string | null;
     consignorId: string;
     cargoType?: string;
-    items: { qty: unknown; actualWt: unknown }[];
+    obdNo?: string | null;
+    items: { qty: unknown; actualWt: unknown; rate: unknown }[];
   }[]
 ): Promise<PodPendingLr[]> {
   const cityIds = Array.from(new Set(lrs.flatMap((l) => [l.sourceCityId, l.destCityId])));

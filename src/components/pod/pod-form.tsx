@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -350,18 +350,20 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                 <TableHead className="w-8"></TableHead>
                 <TableHead>LR No</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead>OBD No</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Dest</TableHead>
                 <TableHead>Billed Party</TableHead>
                 <TableHead>Cargo Type</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Actual Wt</TableHead>
+                <TableHead className="text-right">Rate</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pendingLrs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-16 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="h-16 text-center text-muted-foreground">
                     Select a vehicle or add an LR manually.
                   </TableCell>
                 </TableRow>
@@ -376,6 +378,7 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                     </TableCell>
                     <TableCell>{lr.lrNo}</TableCell>
                     <TableCell>{formatDate(lr.lrDate)}</TableCell>
+                    <TableCell>{lr.obdNo}</TableCell>
                     <TableCell>{lr.source}</TableCell>
                     <TableCell>{lr.dest}</TableCell>
                     <TableCell>{lr.billedParty}</TableCell>
@@ -386,6 +389,7 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{lr.qty}</TableCell>
                     <TableCell className="text-right tabular-nums">{lr.actualWt}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatMoney(lr.rate)}</TableCell>
                   </TableRow>
                 ))
               )}
