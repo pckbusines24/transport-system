@@ -37,6 +37,16 @@ function statusOf(r: TallyExportRow): DocStatus {
 /** List order: still to send first, fully exported last. */
 const STATUS_RANK: Record<DocStatus, number> = { NEW: 0, PARTIAL: 1, CHANGED: 2, EXPORTED: 3 };
 
+/** Status filter radios; "All" keeps the full list in STATUS_RANK order. */
+type StatusFilter = "ALL" | "NEW" | "PARTIAL" | "PENDING" | "EXPORTED";
+const STATUS_FILTERS: { value: StatusFilter; label: string; match: (s: DocStatus) => boolean }[] = [
+  { value: "ALL", label: "All", match: () => true },
+  { value: "NEW", label: "New", match: (s) => s === "NEW" },
+  { value: "PARTIAL", label: "Partial / Changed", match: (s) => s === "PARTIAL" || s === "CHANGED" },
+  { value: "PENDING", label: "New + Partial", match: (s) => s !== "EXPORTED" },
+  { value: "EXPORTED", label: "Exported", match: (s) => s === "EXPORTED" },
+];
+
 function download(fileName: string, xml: string) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
@@ -65,6 +75,11 @@ export function TallyExportClient({
     () => [...rows].sort((a, b) => STATUS_RANK[statusOf(a)] - STATUS_RANK[statusOf(b)]),
     [rows]
   );
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("ALL");
+  const visibleRows = React.useMemo(() => {
+    const f = STATUS_FILTERS.find((x) => x.value === statusFilter) ?? STATUS_FILTERS[0];
+    return sortedRows.filter((r) => f.match(statusOf(r)));
+  }, [sortedRows, statusFilter]);
   // default selection: everything that has something new/changed to send
   const [selected, setSelected] = React.useState<Set<string>>(
     () => new Set(rows.filter((r) => r.fresh + r.changed > 0).map((r) => r.docId))
@@ -78,8 +93,11 @@ export function TallyExportClient({
       return next;
     });
 
+  // only what the filter shows goes out — a hidden ticked row never exports
+  const visibleSelected = visibleRows.filter((r) => selected.has(r.docId)).map((r) => r.docId);
+
   const doExport = async () => {
-    if (!selected.size) {
+    if (!visibleSelected.length) {
       toast({ variant: "destructive", title: "Nothing selected" });
       return;
     }
@@ -89,7 +107,7 @@ export function TallyExportClient({
         module,
         dateFrom,
         dateTo,
-        docIds: Array.from(selected),
+        docIds: visibleSelected,
         includeExported,
       });
       if (res.ok) {
@@ -160,15 +178,42 @@ export function TallyExportClient({
         </Button>
       </div>
 
+      <div role="radiogroup" aria-label="Status" className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {STATUS_FILTERS.map((f) => {
+          const count = sortedRows.filter((r) => f.match(statusOf(r))).length;
+          return (
+            <label key={f.value} className="flex cursor-pointer items-center gap-1.5 text-sm">
+              <input
+                type="radio"
+                name="tally-status"
+                checked={statusFilter === f.value}
+                onChange={() => setStatusFilter(f.value)}
+                className="h-4 w-4 accent-primary"
+              />
+              {f.label}
+              <span className="text-xs tabular-nums text-muted-foreground">({count})</span>
+            </label>
+          );
+        })}
+      </div>
+
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="px-3 py-2">
+                {/* ticks / clears only the rows the status filter shows */}
                 <Checkbox
-                  checked={rows.length > 0 && selected.size === rows.length}
+                  checked={visibleRows.length > 0 && visibleSelected.length === visibleRows.length}
                   onCheckedChange={(c) =>
-                    setSelected(c === true ? new Set(rows.map((r) => r.docId)) : new Set())
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      for (const r of visibleRows) {
+                        if (c === true) next.add(r.docId);
+                        else next.delete(r.docId);
+                      }
+                      return next;
+                    })
                   }
                 />
               </th>
@@ -182,7 +227,7 @@ export function TallyExportClient({
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((r) => (
+            {visibleRows.map((r) => (
               <tr key={r.docId} className="border-b hover:bg-muted/40">
                 <td className="px-3 py-2">
                   <Checkbox
@@ -204,10 +249,12 @@ export function TallyExportClient({
                 <td className="px-3 py-2">{status(r)}</td>
               </tr>
             ))}
-            {rows.length === 0 && (
+            {visibleRows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
-                  Nothing found for this module in this period.
+                  {rows.length === 0
+                    ? "Nothing found for this module in this period."
+                    : "No entries with this status."}
                 </td>
               </tr>
             )}
