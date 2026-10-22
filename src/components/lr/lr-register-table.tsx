@@ -328,7 +328,7 @@ export function LrRegisterTable({
           summary={summary}
         />
       </div>
-      <DataTable columns={columns} data={rows} emptyMessage="No LRs found." />
+      <DataTable fillViewport columns={columns} data={rows} emptyMessage="No LRs found." />
 
       <Dialog open={!!statusFor} onOpenChange={(o) => !o && setStatusFor(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">

@@ -202,6 +202,7 @@ export function TripRegisterClient({
         ]}
       />
       <DataTable
+        fillViewport
         columns={columns}
         data={rows}
         emptyMessage="No trip sheets yet."

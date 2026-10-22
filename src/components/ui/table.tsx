@@ -12,9 +12,21 @@ import { cn } from "@/lib/utils";
  *  - The header is a sunken band, not bold text. It should recede once you
  *    have read it, and stay legible when the body scrolls under it.
  */
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
+interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /** the scroll wrapper — a register sizes it to the screen so the body
+      scrolls inside it under a pinned header */
+  wrapperRef?: React.Ref<HTMLDivElement>;
+  wrapperClassName?: string;
+  wrapperStyle?: React.CSSProperties;
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, wrapperRef, wrapperClassName, wrapperStyle, ...props }, ref) => (
+    <div
+      ref={wrapperRef}
+      className={cn("relative w-full overflow-auto", wrapperClassName)}
+      style={wrapperStyle}
+    >
       <table
         ref={ref}
         className={cn("w-full caption-bottom border-collapse text-sm", className)}

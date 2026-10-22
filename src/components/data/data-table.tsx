@@ -53,6 +53,57 @@ interface DataTableProps<TData, TValue> {
    * narrow tables that never overflow.
    */
   stickyFirstColumn?: boolean;
+  /**
+   * Register mode: the table box takes exactly the screen height left below
+   * the title/filters, the rows scroll INSIDE it and the column header (with
+   * the sort arrows) stays pinned — so the page itself never scrolls and the
+   * filters stay put.
+   */
+  fillViewport?: boolean;
+}
+
+/** Below this the box would show too few rows; the page scrolls instead. */
+const MIN_FILL_HEIGHT = 240;
+
+/**
+ * Height for a register's table box: the viewport minus everything above it
+ * (header, title, filters) and everything below it (record count, pagination,
+ * page padding). Re-measured when the window or the page layout changes —
+ * e.g. the phone's Filters panel opening, or filter chips wrapping.
+ */
+function useFillHeight(enabled: boolean) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [height, setHeight] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const el = ref.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const top = rect.top + window.scrollY;
+        // what sits under the box doesn't depend on the box's own height, so
+        // setting it can't feed back into the next measurement
+        const below = document.documentElement.scrollHeight - (rect.bottom + window.scrollY);
+        const next = Math.max(MIN_FILL_HEIGHT, Math.floor(window.innerHeight - top - below));
+        setHeight((prev) => (prev === next ? prev : next));
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(document.body);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", measure);
+      ro.disconnect();
+    };
+  }, [enabled]);
+
+  return { ref, height };
 }
 
 const PAGE_SIZES = [25, 50, 100];
@@ -75,8 +126,10 @@ export function DataTable<TData, TValue>({
   emptyMessage = "No records found.",
   className,
   stickyFirstColumn = true,
+  fillViewport = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
+  const fill = useFillHeight(fillViewport);
 
   const table = useReactTable({
     data,
@@ -98,8 +151,13 @@ export function DataTable<TData, TValue>({
     // stretching the page - without it the flex/grid parent refuses to shrink
     <div className={cn("min-w-0 space-y-2", className)}>
       <div className="min-w-0 rounded-md border">
-        <Table>
-          <TableHeader>
+        <Table
+          wrapperRef={fillViewport ? fill.ref : undefined}
+          wrapperClassName={fillViewport ? "overscroll-contain" : undefined}
+          wrapperStyle={fillViewport && fill.height ? { maxHeight: fill.height } : undefined}
+        >
+          {/* pinned inside the scrolling box; z above the pinned first column */}
+          <TableHeader className={cn(fillViewport && "sticky top-0 z-20")}>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header, idx) => {

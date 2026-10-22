@@ -427,6 +427,7 @@ export function BrokerRegisterTable({
         />
       </div>
       <DataTable
+        fillViewport
         columns={columns}
         data={data}
         emptyMessage="No broker slips found."

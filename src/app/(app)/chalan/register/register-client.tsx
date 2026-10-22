@@ -535,6 +535,7 @@ export function ChalanRegisterClient({
         ]}
       />
       <DataTable
+        fillViewport
         columns={columns}
         data={rows}
         onRowClick={(row) =>
