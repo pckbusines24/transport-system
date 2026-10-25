@@ -347,19 +347,19 @@ export function InvoicePrintView({
 
       {/* LR details table — expands with the number of LRs */}
       {/*
-        min-w-[277mm]: the fixed column widths add up to nearly the full
-        landscape sheet. In a preview dialog narrower than that, table-fixed
-        squeezed the one unsized column (Consignee) to zero and its text
-        wrapped one letter per line over Delivery Date. Holding the sheet
-        width makes the preview scroll sideways instead; on paper the sheet
-        IS 277mm, so print output is unchanged.
+        min-w-[265mm]: in a window narrower than that, table-fixed would
+        squeeze the one unsized column (Consignee) to zero and its text would
+        wrap one letter per line over Delivery Date, so the table scrolls
+        sideways instead. The hold sits a little under the 277mm sheet: held
+        at the full 277mm, the sheet's border and padding left the table a few
+        pixels too wide and a scrollbar showed on every screen view.
         On paper the hold comes off (print:min-w-0): the sheet's own 2px border
         leaves a hair under 277mm inside it, so the held table overflowed, the
         scroll box printed its scrollbar and clipped Freight Amt. Printed, the
         table takes the sheet's real width and Consignee absorbs the difference.
       */}
       <div className="overflow-x-auto print:overflow-visible">
-        <table className="w-full min-w-[277mm] table-fixed border-collapse text-[10.5px] leading-[1.25] print:min-w-0">
+        <table className="w-full min-w-[265mm] table-fixed border-collapse text-[10.5px] leading-[1.25] print:min-w-0">
           <thead>
             <tr>
               {columns.map((c) => (
