@@ -25,22 +25,29 @@ import {
   type TdsMonitorData,
   type TdsMonitorRow,
 } from "../tds-actions";
+import { rankByMatch } from "@/lib/search-rank";
+import { useUrlFlag, useUrlState } from "@/components/data/use-url-state";
 
 export function TdsMonitorClient({ data, error }: { data: TdsMonitorData; error: string | null }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [q, setQ] = React.useState("");
-  const [onlyCrossed, setOnlyCrossed] = React.useState(false);
+  // filters live in the URL, so a refresh keeps them
+  const [q, setQ] = useUrlState("q");
+  const [onlyCrossed, setOnlyCrossed] = useUrlFlag("crossed");
   const [open, setOpen] = React.useState<Set<string>>(new Set());
   const [deductFor, setDeductFor] = React.useState<TdsMonitorRow | null>(null);
   const [dForm, setDForm] = React.useState({ date: "", amount: "", remarks: "" });
   const [saving, setSaving] = React.useState(false);
 
-  const rows = data.rows.filter((r) => {
-    if (q && !r.party.toLowerCase().includes(q.toLowerCase())) return false;
-    if (onlyCrossed && !r.crossed) return false;
-    return true;
-  });
+  const rows = rankByMatch(
+    data.rows.filter((r) => {
+      if (q && !r.party.toLowerCase().includes(q.toLowerCase())) return false;
+      if (onlyCrossed && !r.crossed) return false;
+      return true;
+    }),
+    q,
+    (r) => r.party
+  );
 
   const toggle = (key: string) =>
     setOpen((prev) => {

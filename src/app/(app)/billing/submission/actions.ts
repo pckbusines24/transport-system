@@ -8,6 +8,7 @@ import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { toNum } from "@/lib/utils";
 import { invoiceSettlement } from "@/lib/settlement";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 // ---------------------------------------------------------------- types
 
@@ -126,14 +127,19 @@ export async function findInvoiceForSubmission(
 ): Promise<{ ok: true; rows: SubmissionInvoiceRow[] } | { ok: false; error: string }> {
   const session = requireSession();
   return withTenant(session.tenantId, async (tx) => {
-    const invoices = await tx.invoice.findMany({
+    // exact invoice no. first, so it is never pushed out of the 10 shown
+    const invoices = await findExactFirst({
       where: {
         firmId: session.firmId,
         fyId: session.fyId,
         deletedAt: null,
-        invoiceNo: { contains: q.trim(), mode: "insensitive" },
+        invoiceNo: { contains: q.trim(), mode: "insensitive" as const },
       },
-      orderBy: { invoiceDate: "desc" },
+      exact: eqi(q) ? { invoiceNo: eqi(q)! } : null,
+      ids: (w, take) =>
+        tx.invoice.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+      fetch: (w, skip, take) => tx.invoice.findMany({ where: w, orderBy: { invoiceDate: "desc" }, skip, take }),
+      skip: 0,
       take: 10,
     });
     if (invoices.length === 0) return { ok: false as const, error: `No invoice matches "${q}".` };

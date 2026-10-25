@@ -2,6 +2,7 @@
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { ProductsClient } from "@/components/masters/products-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function ProductsTab({
   searchParams,
@@ -21,7 +22,9 @@ export async function ProductsTab({
       },
       include: { group: true },
       orderBy: { name: "asc" },
-    });
+    })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.name));
     const groups = await tx.productGroup.findMany({ orderBy: { name: "asc" } });
     const units = await tx.unit.findMany({ orderBy: { name: "asc" } });
     return { rows, groups, units };

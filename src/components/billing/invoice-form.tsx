@@ -62,6 +62,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { rankByFilters } from "@/lib/search-rank";
 
 // ---------------------------------------------------------------- helpers
 
@@ -463,7 +464,7 @@ export function InvoiceForm({
 
   const contains = (v: string | number, q: string) =>
     !q || String(v).toLowerCase().includes(q.trim().toLowerCase());
-  const visibleLrs = pendingLrs.filter(
+  const matchingLrs = pendingLrs.filter(
     (lr) =>
       contains(lr.lrNo, lrFilters.lrNo) &&
       contains(formatDate(lr.lrDate), lrFilters.date) &&
@@ -477,6 +478,18 @@ export function InvoiceForm({
       contains(lr.chargeWt, lrFilters.chargeWt) &&
       contains(lr.amount, lrFilters.amount)
   );
+  // rows matching the typed filters exactly come first
+  const visibleLrs = rankByFilters(matchingLrs, [
+    [lrFilters.lrNo, (lr) => lr.lrNo],
+    [lrFilters.date, (lr) => formatDate(lr.lrDate)],
+    [lrFilters.source, (lr) => lr.source],
+    [lrFilters.dest, (lr) => lr.dest],
+    [lrFilters.vehicle, (lr) => lr.vehicle],
+    [lrFilters.obdNo, (lr) => lr.obdNo],
+    [lrFilters.qty, (lr) => lr.qty],
+    [lrFilters.chargeWt, (lr) => lr.chargeWt],
+    [lrFilters.amount, (lr) => lr.amount],
+  ]);
 
   // ---------------------------------------------------------------- totals (mirror of server calc)
   // always LR-number order, never tick order — the S.No column stays

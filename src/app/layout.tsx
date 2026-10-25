@@ -3,6 +3,7 @@ import { Poppins, Roboto_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
+import { NumberInputGuard } from "@/components/app/number-input-guard";
 
 /**
  * Poppins is not a variable font on Google Fonts, so the weights the design
@@ -72,6 +73,7 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           {children}
           <Toaster />
+          <NumberInputGuard />
         </ThemeProvider>
       </body>
     </html>

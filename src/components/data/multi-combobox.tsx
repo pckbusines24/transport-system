@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MasterOption } from "@/components/data/master-combobox";
+import { searchRanked } from "@/lib/search-rank";
 
 interface MultiComboboxProps {
   options: MasterOption[];
@@ -40,7 +41,7 @@ export function MultiCombobox({
   );
   const query = text.trim().toLowerCase();
   const filtered = query
-    ? options.filter((o) => `${o.label} ${o.meta ?? ""}`.toLowerCase().includes(query))
+    ? searchRanked(options, query, (o) => [o.label, o.meta])
     : options;
 
   const scrollTo = (idx: number) => {

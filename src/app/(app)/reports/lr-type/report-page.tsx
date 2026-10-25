@@ -7,6 +7,7 @@ import {
   LrTypeReportTable,
   type LrTypeReportRow,
 } from "@/components/lr/lr-type-report-table";
+import { rankByMatch } from "@/lib/search-rank";
 
 /**
  * Shared audit report for non-operational LR types (Cancelled / Paper Change).
@@ -42,7 +43,9 @@ export async function LrTypeReportPage({
       };
     }
     const [lrs, cities, parties, vehicles] = await Promise.all([
-      tx.lr.findMany({ where, include: { items: true }, orderBy: { lrDate: "desc" } }),
+      tx.lr.findMany({ where, include: { items: true }, orderBy: { lrDate: "desc" } })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, searchParams.q ?? "", (r) => r.lrNo)),
       tx.city.findMany(),
       tx.party.findMany(),
       tx.vehicle.findMany(),

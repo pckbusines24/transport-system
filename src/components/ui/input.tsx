@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
@@ -9,9 +11,14 @@ export type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
  * place to type. The border only asserts itself on focus.
  */
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => (
+  ({ className, type, onKeyDown, ...props }, ref) => (
     <input
       type={type}
+      onKeyDown={(e) => {
+        onKeyDown?.(e);
+        // number fields are typed, never stepped by Arrow Up / Down
+        if (type === "number" && (e.key === "ArrowUp" || e.key === "ArrowDown")) e.preventDefault();
+      }}
       className={cn(
         "flex h-10 w-full rounded-lg border border-border/70 bg-sunken px-3.5 py-2 text-sm",
         "transition-[border-color,box-shadow,background-color] duration-fast ease-out",

@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { VehiclesClient } from "@/components/masters/vehicles-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export default async function VehiclesPage({
   searchParams,
@@ -22,7 +23,9 @@ export default async function VehiclesPage({
       },
       include: { owner: true },
       orderBy: { number: "asc" },
-    });
+    })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.number));
     // unified person list — Owner / Broker / Relative are just ownership types;
     // legacy RELATIVE-group parties remain selectable alongside OWNER_BROKER ones
     const owners = await tx.party.findMany({

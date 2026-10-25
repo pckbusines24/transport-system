@@ -13,6 +13,7 @@ import { ExportButton } from "@/components/data/export-button";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import { useFillHeight } from "@/components/data/data-table";
 import type { OutSide, OutstandingData } from "../outstanding-actions";
+import { useUrlFlag, useUrlNullable, useUrlState } from "@/components/data/use-url-state";
 
 export function OutstandingClient({
   side,
@@ -33,9 +34,10 @@ export function OutstandingClient({
 }) {
   // party filter: one combobox that finds a party by its own name OR its
   // transport name (owner ↔ transport link, like the chalan entry pickers)
-  const [partyKey, setPartyKey] = React.useState<string | null>(null);
-  const [minAmt, setMinAmt] = React.useState("");
-  const [only90, setOnly90] = React.useState(false);
+  // filters live in the URL, so a refresh keeps them
+  const [partyKey, setPartyKey] = useUrlNullable("party");
+  const [minAmt, setMinAmt] = useUrlState("min");
+  const [only90, setOnly90] = useUrlFlag("over90");
   const [open, setOpen] = React.useState<Set<string>>(new Set());
   // rows scroll inside a screen-height box; summary, filters, header and
   // totals stay put (same register mode as the shared DataTable)

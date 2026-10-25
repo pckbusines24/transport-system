@@ -2,6 +2,7 @@
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { DocumentMasterClient } from "@/components/masters/document-master-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function DocumentTypesTab({
   searchParams,
@@ -17,6 +18,8 @@ export async function DocumentTypesTab({
       where: q ? { name: { contains: q, mode: "insensitive" } } : undefined,
       orderBy: { name: "asc" },
     })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.name))
   );
 
   const canDelete = session.role === "ADMIN" || session.role === "OWNER";

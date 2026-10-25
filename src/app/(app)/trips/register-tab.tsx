@@ -8,6 +8,7 @@ import {
   TripRegisterClient,
   type TripRegisterRow,
 } from "@/components/trips/trip-register-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function TripRegisterTab({
   searchParams,
@@ -53,7 +54,9 @@ export async function TripRegisterTab({
         };
       }
       const [trips, vehicles, drivers, settlements] = await Promise.all([
-        tx.trip.findMany({ where, orderBy: [{ tripDate: "desc" }, { createdAt: "desc" }] }),
+        tx.trip.findMany({ where, orderBy: [{ tripDate: "desc" }, { createdAt: "desc" }] })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, searchParams.q ?? "", (r) => r.tripNo)),
         // these three feed id→label maps and the filter dropdowns, so only the
         // label columns are needed — the full master rows were pure wire cost
         tx.vehicle.findMany({ orderBy: { number: "asc" }, select: { id: true, number: true } }),

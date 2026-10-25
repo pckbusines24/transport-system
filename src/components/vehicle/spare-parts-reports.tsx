@@ -20,6 +20,7 @@ import { ExportButton, type ExportColumn } from "@/components/data/export-button
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import { WarrantyBadge } from "./spare-parts-client";
 import type { SparePartRow, SparePartEventRow } from "./spare-parts-types";
+import { rankByFilters } from "@/lib/search-rank";
 
 const BASE = "/vehicle/spare-parts";
 
@@ -154,6 +155,15 @@ export function SparePartsReports({
       cols = eventCols as Col<never>[];
       break;
   }
+  // rows whose part matches the typed filters exactly come first (rows are
+  // parts, or event lines that carry their part)
+  const partOf = (r: unknown) => ("part" in (r as object) ? (r as EventLine).part : (r as SparePartRow));
+  rows = rankByFilters(rows, [
+    [partName, (r) => partOf(r).name],
+    [partNumber, (r) => partOf(r).partNumber],
+    [serial, (r) => partOf(r).serialNo],
+    [supplier, (r) => partOf(r).supplierName],
+  ]);
   const typedCols = cols as Col<unknown>[];
   const exportCols: ExportColumn<unknown>[] = typedCols.map((c) => ({ header: c.header, accessor: (r) => c.cell(r as never), numeric: c.numeric }));
 

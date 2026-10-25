@@ -5,6 +5,7 @@ import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { PartiesClient } from "@/components/masters/parties-client";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 const PAGE_SIZE = 100;
 
@@ -39,11 +40,26 @@ export default async function PartiesPage({
     if (searchParams.status === "active") where.isActive = true;
     if (searchParams.status === "inactive") where.isActive = false;
     const [rows, total, states, cities] = await Promise.all([
-      tx.party.findMany({
+findExactFirst({
         where,
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-        take: PAGE_SIZE,
+        exact: eqi(q)
+          ? {
+              OR: (["name", "gstin", "pan", "alias", "transportName", "tallyName"] as const).map(
+                (f) => ({ [f]: eqi(q)! }) as Prisma.PartyWhereInput
+              ),
+            }
+          : null,
+        ids: (w, take) =>
+          tx.party.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+        fetch: (w, skip, take) =>
+          tx.party.findMany({
+            where: w,
+            orderBy: [{ name: "asc" }, { id: "asc" }],
+            take,
+            skip,
+          }),
         skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
       tx.party.count({ where }),
       tx.state.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, gstCode: true } }),

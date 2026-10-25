@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MiniCalendar } from "@/components/data/mini-calendar";
+import { useRememberedFilters } from "@/components/data/use-remembered-filters";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -337,6 +338,14 @@ export function FilterBar({ filters, className }: FilterBarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [open, setOpen] = React.useState(false);
+
+  // every URL key this bar owns — remembered per register (see the hook)
+  const filterKeys = React.useMemo(
+    () =>
+      filters.flatMap((f) => (f.type === "daterange" ? [`${f.key}_from`, `${f.key}_to`] : [f.key])),
+    [filters]
+  );
+  useRememberedFilters(filterKeys);
 
   const setParams = React.useCallback(
     (updates: Record<string, string | null>) => {

@@ -25,6 +25,8 @@ import {
   bulkSetVehicleDocStatus,
   saveVehicleDocument,
 } from "@/app/(app)/masters/vehicle-documents/actions";
+import { rankByMatch } from "@/lib/search-rank";
+import { useUrlNullable, useUrlState } from "@/components/data/use-url-state";
 
 export interface DocStatusRow {
   id: string;
@@ -74,10 +76,11 @@ export function DocStatusClient({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [statusFilter, setStatusFilter] = React.useState<string>("ALL");
-  const [vehicleFilter, setVehicleFilter] = React.useState<string | null>(null);
-  const [docTypeFilter, setDocTypeFilter] = React.useState<string | null>(null);
-  const [q, setQ] = React.useState("");
+  // filters live in the URL, so a refresh keeps them
+  const [statusFilter, setStatusFilter] = useUrlState("status", "ALL");
+  const [vehicleFilter, setVehicleFilter] = useUrlNullable("vehicle");
+  const [docTypeFilter, setDocTypeFilter] = useUrlNullable("docType");
+  const [q, setQ] = useUrlState("q");
 
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
@@ -114,7 +117,7 @@ export function DocStatusClient({
     });
   };
 
-  const list = rows.filter((r) => {
+  const list = rankByMatch(rows.filter((r) => {
     // EXPIRED is computed from the expiry date, not a stored status
     if (statusFilter === "EXPIRED") {
       if (!r.expiredNow) return false;
@@ -131,7 +134,7 @@ export function DocStatusClient({
         return false;
     }
     return true;
-  });
+  }), q, (r) => [r.vehicleNumber, r.docTypeName, r.docNo]);
 
   const counts = {
     EXPIRED: rows.filter((r) => r.expiredNow).length,

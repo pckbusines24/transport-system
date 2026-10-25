@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { computePlacement } from "@/lib/ui/popover-placement";
 import { resolveOnBlur } from "@/lib/ui/combobox-resolve";
+import { searchRanked } from "@/lib/search-rank";
 
 export interface MasterOption {
   value: string;
@@ -84,7 +85,8 @@ export function MasterCombobox({
     () =>
       showAll
         ? options
-        : options.filter((o) => `${o.label} ${o.meta ?? ""}`.toLowerCase().includes(query)),
+        : // exact match first, then starts-with, then contains
+          searchRanked(options, query, (o) => [o.label, o.meta]),
     [options, showAll, query]
   );
   // A master with thousands of rows rendered every match into the DOM, which

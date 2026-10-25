@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fetchBrowse, type BrowseResult, type BrowseRow, type BrowseSrc } from "./actions";
+import { useUrlNullable, useUrlState } from "@/components/data/use-url-state";
 
 /**
  * Month Browser client: month chips on top, filters, then ONE long list that
@@ -65,20 +66,28 @@ export function BrowserClient({
 }) {
   // FY continuity: browse any year from right here — the dropdown swaps the
   // month-chip row and every fetch carries the chosen fyId
-  const [fyId, setFyId] = React.useState<string>(
+  const [fyRaw, setFyId] = useUrlState(
+    "fy",
     fyChips.some((f) => f.fyId === defaultFy) ? defaultFy : fyChips[0]?.fyId ?? ""
   );
+  // a remembered FY that no longer exists falls back to the default
+  const fyId = fyChips.some((f) => f.fyId === fyRaw)
+    ? fyRaw
+    : fyChips.some((f) => f.fyId === defaultFy)
+      ? defaultFy
+      : fyChips[0]?.fyId ?? "";
   const months = fyChips.find((f) => f.fyId === fyId)?.months ?? [{ value: "ALL", label: "ALL" }];
-  const [month, setMonth] = React.useState<string>("ALL");
-  const [q, setQ] = React.useState("");
-  const [partyId, setPartyId] = React.useState<string | null>(null);
-  const [vehicleId, setVehicleId] = React.useState<string | null>(null);
-  const [head, setHead] = React.useState<string | null>(null);
-  const [obd, setObd] = React.useState("");
+  // filters live in the URL, so a refresh keeps them
+  const [month, setMonth] = useUrlState("month", "ALL");
+  const [q, setQ] = useUrlState("q");
+  const [partyId, setPartyId] = useUrlNullable("party");
+  const [vehicleId, setVehicleId] = useUrlNullable("vehicle");
+  const [head, setHead] = useUrlNullable("head");
+  const [obd, setObd] = useUrlState("obd");
   // CHALAN: live balance status; BROKER: party-side and owner-side balance
-  const [status, setStatus] = React.useState<string | null>(null);
-  const [pbal, setPbal] = React.useState<string | null>(null);
-  const [vbal, setVbal] = React.useState<string | null>(null);
+  const [status, setStatus] = useUrlNullable("status");
+  const [pbal, setPbal] = useUrlNullable("pbal");
+  const [vbal, setVbal] = useUrlNullable("vbal");
   const isChalan = src === "CHALAN_MARKET" || src === "CHALAN_OWNREL";
   const isBroker = src === "BROKER";
 

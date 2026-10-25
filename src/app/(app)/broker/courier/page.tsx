@@ -6,6 +6,7 @@ import {
   CourierDispatchClient,
   type CourierDispatchRow,
 } from "@/components/broker/courier-dispatch-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,9 @@ export default async function CourierDispatchPage({
       where,
       include: { items: true },
       orderBy: [{ dispatchDate: "desc" }, { createdAt: "desc" }],
-    });
+    })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => [r.dispatchNo, r.courierCompany, r.trackingNo, r.partyName]));
   });
 
   const rows: CourierDispatchRow[] = dispatches.map((d) => ({

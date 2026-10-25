@@ -23,6 +23,8 @@ import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import { VehicleCombobox } from "@/components/fleet/fields";
 import { deleteVehicleWork, saveVehicleWork } from "./actions";
+import { rankByMatch } from "@/lib/search-rank";
+import { useUrlNullable, useUrlState } from "@/components/data/use-url-state";
 
 /**
  * Extra Work Information — tracking only, no accounting. Status is derived:
@@ -74,11 +76,13 @@ export function WorkEntryClient({
   const [form, setForm] = React.useState(emptyForm);
 
   // register filters
-  const [vehicleFilter, setVehicleFilter] = React.useState<string | null>(null);
-  const [status, setStatus] = React.useState<"ALL" | "PENDING" | "COMPLETED">("ALL");
-  const [q, setQ] = React.useState("");
+  // filters live in the URL, so a refresh keeps them
+  const [vehicleFilter, setVehicleFilter] = useUrlNullable("vehicle");
+  const [statusRaw, setStatus] = useUrlState("status", "ALL");
+  const status = statusRaw as "ALL" | "PENDING" | "COMPLETED";
+  const [q, setQ] = useUrlState("q");
 
-  const filtered = rows.filter((r) => {
+  const filtered = rankByMatch(rows.filter((r) => {
     if (vehicleFilter && r.vehicleId !== vehicleFilter) return false;
     const done = !!r.completeDate;
     if (status === "PENDING" && done) return false;
@@ -93,7 +97,7 @@ export function WorkEntryClient({
         return false;
     }
     return true;
-  });
+  }), q, (r) => [r.description, r.supplier, r.vehicle]);
   const pendingCount = rows.filter((r) => !r.completeDate).length;
 
   const openNew = () => {

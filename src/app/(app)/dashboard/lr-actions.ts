@@ -16,6 +16,7 @@ import type { LrStatus } from "@prisma/client";
  */
 
 import { LR_VIEW_META, type LrView } from "./lr-views";
+import { rankByFilters } from "@/lib/search-rank";
 
 export interface LrSummaryCard {
   view: LrView;
@@ -297,7 +298,11 @@ export async function getLrDetail(input: {
       );
       const filteredCount = matched.length;
       const filteredAmount = round2(matched.reduce((s, l) => s + toNum(String(l.freight)), 0));
-      const page = matched.slice(0, GRID_LIMIT);
+      // exact LR / OBD no. first, date order within each group
+      const page = rankByFilters(matched, [
+        [f.lrNo ?? "", (l) => l.lrNo],
+        [f.obd ?? "", (l) => l.obdNo],
+      ]).slice(0, GRID_LIMIT);
 
       const pageIds = page.map((l) => l.id);
       const [chalanRefs, invoiceRefs, parties, cities, vehicles] = await Promise.all([

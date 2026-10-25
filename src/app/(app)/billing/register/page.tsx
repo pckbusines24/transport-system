@@ -13,6 +13,7 @@ import {
   BillingRegisterTable,
   type BillingRegisterRow,
 } from "@/components/billing/register-table";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 export const dynamic = "force-dynamic";
 
@@ -59,12 +60,21 @@ export default async function BillingRegisterPage({
     if (searchParams.q) where.invoiceNo = { contains: searchParams.q, mode: "insensitive" };
 
     const [invoices, total, partyRows] = await Promise.all([
-      tx.invoice.findMany({
+findExactFirst({
         where,
-        include: { _count: { select: { lrs: true } } },
-        orderBy: [{ invoiceDate: "desc" }, { invoiceNo: "desc" }],
-        take: PAGE_SIZE,
+        exact: eqi(searchParams.q) ? { invoiceNo: eqi(searchParams.q)! } : null,
+        ids: (w, take) =>
+          tx.invoice.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+        fetch: (w, skip, take) =>
+          tx.invoice.findMany({
+            where: w,
+            include: { _count: { select: { lrs: true } } },
+            orderBy: [{ invoiceDate: "desc" }, { invoiceNo: "desc" }],
+            take,
+            skip,
+          }),
         skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
       tx.invoice.count({ where }),
       tx.party.findMany({

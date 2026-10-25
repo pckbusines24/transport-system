@@ -50,6 +50,8 @@ import {
   saveSparePart,
 } from "@/app/(app)/vehicle/spare-parts/actions";
 import type { SparePartRow } from "./spare-parts-types";
+import { rankByMatch } from "@/lib/search-rank";
+import { useUrlNullable, useUrlState } from "@/components/data/use-url-state";
 
 function textToIso(text: string): string {
   const d = parseDdMmYyyy(text);
@@ -193,14 +195,16 @@ export function SparePartsClient({
   const { toast } = useToast();
 
   // ---- filters (client-side: the set is small and every tab shares it) ----
-  const [q, setQ] = React.useState(initialQuery);
-  const [status, setStatus] = React.useState(initialStatus);
-  const [warranty, setWarranty] = React.useState(initialWarranty);
-  const [vehicleId, setVehicleId] = React.useState<string | null>(null);
+  // filters live in the URL (the page reads q / status / warranty from it
+  // too), so a refresh keeps them
+  const [q, setQ] = useUrlState("q", initialQuery);
+  const [status, setStatus] = useUrlState("status", initialStatus);
+  const [warranty, setWarranty] = useUrlState("warranty", initialWarranty);
+  const [vehicleId, setVehicleId] = useUrlNullable("vehicle");
 
   const rows = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return parts.filter((p) => {
+    const kept = parts.filter((p) => {
       if (needle) {
         const hay = `${p.serialNo} ${p.partNumber} ${p.name} ${p.brand} ${p.supplierName} ${p.currentVehicle}`.toLowerCase();
         if (!hay.includes(needle)) return false;
@@ -210,6 +214,15 @@ export function SparePartsClient({
       if (vehicleId && p.currentVehicleId !== vehicleId) return false;
       return true;
     });
+    // exact serial / part no. / name first
+    return rankByMatch(kept, needle, (p) => [
+      p.serialNo,
+      p.partNumber,
+      p.name,
+      p.brand,
+      p.supplierName,
+      p.currentVehicle,
+    ]);
   }, [parts, q, status, warranty, vehicleId]);
 
   // ---- dialogs ----

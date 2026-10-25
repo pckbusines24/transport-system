@@ -3,6 +3,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { SYSTEM_HEADS, isSystemHeadName } from "@/lib/account-heads";
 import { AccountHeadsClient } from "@/components/masters/account-heads-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,9 @@ export default async function AccountHeadsPage({
         ...(kind ? { kind } : {}),
       },
       orderBy: { name: "asc" },
-    });
+    })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.name));
   });
 
   const canDelete = session.role === "ADMIN" || session.role === "OWNER";

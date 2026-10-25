@@ -6,6 +6,7 @@ import {
   BankCashHeadsClient,
   type BankCashHeadRow,
 } from "@/components/masters/bank-cash-heads-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,9 @@ export default async function BankCashHeadsPage({
         : { in: ["BANK", "CASH", "CARD"] },
     };
     if (searchParams.q) where.name = { contains: searchParams.q, mode: "insensitive" };
-    return tx.party.findMany({ where, orderBy: [{ ledgerGroup: "asc" }, { name: "asc" }] });
+    return tx.party.findMany({ where, orderBy: [{ ledgerGroup: "asc" }, { name: "asc" }] })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, searchParams.q ?? "", (r) => r.name));
   });
 
   const data: BankCashHeadRow[] = rows.map((r) => ({

@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { DriverClient, type DriverRow } from "@/components/vehicle/driver-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function DriverInfoTab({
   searchParams,
@@ -37,7 +38,9 @@ export async function DriverInfoTab({
           assignments: { orderBy: { fromDate: "asc" } },
         },
         orderBy: { createdAt: "desc" },
-      }),
+      })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, searchParams.q ?? "", (r) => [r.name, r.driverCode, r.mobile])),
       tx.vehicle.findMany({ orderBy: { number: "asc" } }),
       // every ledger in the Driver group is selectable from Driver Master
       tx.party.findMany({

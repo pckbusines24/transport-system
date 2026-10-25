@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { NumInput } from "@/components/fleet/fields";
 import { formatDate, formatMoney } from "@/lib/utils";
 import type { OpenAdvance } from "@/lib/party-advance";
+import { rankByMatch } from "@/lib/search-rank";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -46,7 +47,8 @@ export function AdvanceAdjustGrid({
       : advances.slice();
     list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     if (!sortAsc) list.reverse();
-    return list;
+    // exact voucher no. first, the date order kept within each group
+    return rankByMatch(list, q, (a) => a.voucherNo);
   }, [advances, search, sortAsc]);
 
   const totalAvailable = r2(advances.reduce((s, a) => s + a.available, 0));

@@ -138,11 +138,22 @@ interface IsoDateInputProps
   onChange: (iso: string | null, date: Date | null) => void;
 }
 
-function isoToLocalDate(iso: string): Date | null {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  const d = new Date(+m[1], +m[2] - 1, +m[3]);
-  return isNaN(d.getTime()) ? null : d;
+/**
+ * The calendar day a stored value stands for. A bare "yyyy-mm-dd" is that
+ * day. A full timestamp is read in IST, like formatDate: documents are dated
+ * at IST midnight, which is 18:30Z the day BEFORE — reading the timestamp's
+ * own date part showed (and, once re-picked, saved) the previous day.
+ */
+export function isoToLocalDate(iso: string): Date | null {
+  const day = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (day) {
+    const d = new Date(+day[1], +day[2] - 1, +day[3]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const ts = new Date(iso);
+  if (isNaN(ts.getTime())) return null;
+  const ist = new Date(ts.getTime() + 5.5 * 3600 * 1000);
+  return new Date(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate());
 }
 
 /**

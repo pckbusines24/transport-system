@@ -8,6 +8,7 @@ import {
   OfficeTxnClient,
   type OfficeTxnRow,
 } from "@/components/accounts/office-txn-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,9 @@ export async function OfficeIncomeExpenseTab({
         },
         include: { lines: true },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      }),
+      })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => [r.voucherNo, r.refNo])),
       tx.accountHead.findMany({
         where: { kind: { in: ["INCOME", "EXPENSE"] } },
         orderBy: { name: "asc" },

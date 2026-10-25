@@ -7,6 +7,7 @@ import {
   BillSubmissionClient,
   type SubmissionRegisterRow,
 } from "@/components/billing/bill-submission-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,9 @@ export default async function BillSubmissionPage({
         },
         include: { items: { include: { invoice: { select: { netTotal: true } } } } },
         orderBy: { submissionDate: "desc" },
-      }),
+      })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.submissionNo)),
     ]);
     return { parties, rows: subs };
   });

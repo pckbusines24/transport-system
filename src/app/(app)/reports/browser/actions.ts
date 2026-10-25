@@ -7,6 +7,8 @@ import { round2 } from "@/lib/calc/tds";
 import { toNum } from "@/lib/utils";
 import { brokerPartySettlement, invoiceSettlement, payableSettlement } from "@/lib/settlement";
 import { COMMON_HEADS } from "@/lib/account-heads";
+import { eqi, findExactFirst } from "@/lib/exact-first";
+import { rankByMatch } from "@/lib/search-rank";
 
 /**
  * Month Browser — one endless, month-tabbed window over every register.
@@ -147,32 +149,57 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         lrType: { notIn: ["CANCELLED" as const, "PAPER_CHANGE" as const] },
         ...dateFilter("lrDate", input.month),
         ...(q ? { lrNo: { contains: q, mode: "insensitive" as const } } : {}),
-        // any invoice line of the LR may carry the OBD number
-        ...(obd
-          ? {
-              OR: [
-                { obdNo: { contains: obd, mode: "insensitive" as const } },
-                { invoices: { some: { obdNo: { contains: obd, mode: "insensitive" as const } } } },
-              ],
-            }
-          : {}),
-        ...(input.partyId
-          ? { OR: [{ consignorId: input.partyId }, { consigneeId: input.partyId }, { billToId: input.partyId }] }
-          : {}),
+        // OBD and party are BOTH OR shapes — they must sit under AND, or the
+        // second OR key overwrote the first and the OBD search was ignored
+        // whenever a party was picked
+        AND: [
+          // any invoice line of the LR may carry the OBD number
+          ...(obd
+            ? [
+                {
+                  OR: [
+                    { obdNo: { contains: obd, mode: "insensitive" as const } },
+                    { invoices: { some: { obdNo: { contains: obd, mode: "insensitive" as const } } } },
+                  ],
+                },
+              ]
+            : []),
+          ...(input.partyId
+            ? [{ OR: [{ consignorId: input.partyId }, { consigneeId: input.partyId }, { billToId: input.partyId }] }]
+            : []),
+        ],
         ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}),
       };
       const [rows, count, sums, wtSums] = await Promise.all([
-        tx.lr.findMany({
+        // exact LR / OBD no. first (see lib/exact-first)
+        findExactFirst({
           where,
-          include: {
-            items: { select: { chargeWt: true, actualWt: true, rate: true } },
-            // the bill(s) this LR is billed on — live invoices only
-            invoiceLrs: {
-              where: { invoice: { deletedAt: null } },
-              select: { invoice: { select: { invoiceNo: true } } },
-            },
-          },
-          orderBy: [{ lrDate: "desc" }, { lrNo: "desc" }],
+          exact:
+            q || obd
+              ? {
+                  OR: [
+                    ...(q ? [{ lrNo: eqi(q)! }] : []),
+                    ...(obd ? [{ obdNo: eqi(obd)! }, { invoices: { some: { obdNo: eqi(obd)! } } }] : []),
+                  ],
+                }
+              : null,
+          ids: (w, take) =>
+            tx.lr.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+          fetch: (w, skip, take) =>
+            tx.lr.findMany({
+              where: w,
+              include: {
+                items: { select: { chargeWt: true, actualWt: true, rate: true } },
+                // the bill(s) this LR is billed on — live invoices only
+                invoiceLrs: {
+                  where: { invoice: { deletedAt: null } },
+                  select: { invoice: { select: { invoiceNo: true } } },
+                },
+              },
+              orderBy: [{ lrDate: "desc" }, { lrNo: "desc" }],
+              skip,
+              take,
+            }),
           skip: cursor,
           take: PAGE,
         }),
@@ -284,17 +311,29 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
       if (statusFilter) {
         const all = await tx.chalan.findMany({ where, orderBy });
         payable = await settle(all);
-        const kept = all.filter((c) => {
-          const out = payable.get(c.id)?.outstanding ?? toNum(c.balance);
-          return statusFilter === "PAID" ? out <= 0.009 : out > 0.009;
-        });
+        const kept = rankByMatch(
+          all.filter((c) => {
+            const out = payable.get(c.id)?.outstanding ?? toNum(c.balance);
+            return statusFilter === "PAID" ? out <= 0.009 : out > 0.009;
+          }),
+          q ?? "",
+          (c) => c.chalanNo
+        );
         count = kept.length;
         sumFreight = round2(kept.reduce((s, c) => s + toNum(c.freight), 0));
         sumAdvance = round2(kept.reduce((s, c) => s + toNum(c.advanceTotal), 0));
         rows = kept.slice(cursor, cursor + PAGE);
       } else {
         const [page, total, sums] = await Promise.all([
-          tx.chalan.findMany({ where, orderBy, skip: cursor, take: PAGE }),
+          findExactFirst({
+            where,
+            exact: q ? { chalanNo: eqi(q)! } : null,
+            ids: (w, take) =>
+            tx.chalan.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+            fetch: (w, skip, take) => tx.chalan.findMany({ where: w, orderBy, skip, take }),
+            skip: cursor,
+            take: PAGE,
+          }),
           tx.chalan.count({ where }),
           tx.chalan.aggregate({ where, _sum: { freight: true, advanceTotal: true } }),
         ]);
@@ -354,7 +393,16 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}),
       };
       const [rows, count, sums] = await Promise.all([
-        tx.pod.findMany({ where, include: { lr: { select: { lrNo: true } } }, orderBy: [{ docDate: "desc" }, { id: "desc" }], skip: cursor, take: PAGE }),
+        findExactFirst({
+          where,
+          exact: q ? { OR: [{ docNo: eqi(q)! }, { lr: { lrNo: eqi(q)! } }] } : null,
+          ids: (w, take) =>
+            tx.pod.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+          fetch: (w, skip, take) =>
+            tx.pod.findMany({ where: w, include: { lr: { select: { lrNo: true } } }, orderBy: [{ docDate: "desc" }, { id: "desc" }], skip, take }),
+          skip: cursor,
+          take: PAGE,
+        }),
         tx.pod.count({ where }),
         tx.pod.aggregate({ where, _sum: { shortageWt: true } }),
       ]);
@@ -444,18 +492,30 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         // the wanted slips, then page in memory
         const all = await tx.brokerSlip.findMany({ where, orderBy });
         live = await settle(all);
-        const kept = all.filter((s) => {
-          if (pFilter && (pFilter === "RECEIVED" ? live.pOut(s) > 0.009 : live.pOut(s) <= 0.009)) return false;
-          if (vFilter && (vFilter === "PAID" ? live.vOut(s) > 0.009 : live.vOut(s) <= 0.009)) return false;
-          return true;
-        });
+        const kept = rankByMatch(
+          all.filter((s) => {
+            if (pFilter && (pFilter === "RECEIVED" ? live.pOut(s) > 0.009 : live.pOut(s) <= 0.009)) return false;
+            if (vFilter && (vFilter === "PAID" ? live.vOut(s) > 0.009 : live.vOut(s) <= 0.009)) return false;
+            return true;
+          }),
+          q ?? "",
+          (s) => s.slipNo
+        );
         count = kept.length;
         sumParty = round2(kept.reduce((t, s) => t + toNum(s.pChalanAmt), 0));
         sumOwner = round2(kept.reduce((t, s) => t + toNum(s.vChalanAmt), 0));
         rows = kept.slice(cursor, cursor + PAGE);
       } else {
         const [page, total, sums] = await Promise.all([
-          tx.brokerSlip.findMany({ where, orderBy, skip: cursor, take: PAGE }),
+          findExactFirst({
+            where,
+            exact: q ? { slipNo: eqi(q)! } : null,
+            ids: (w, take) =>
+            tx.brokerSlip.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+            fetch: (w, skip, take) => tx.brokerSlip.findMany({ where: w, orderBy, skip, take }),
+            skip: cursor,
+            take: PAGE,
+          }),
           tx.brokerSlip.count({ where }),
           tx.brokerSlip.aggregate({ where, _sum: { pChalanAmt: true, vChalanAmt: true } }),
         ]);
@@ -519,7 +579,16 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         ...(input.partyId ? { partyId: input.partyId } : {}),
       };
       const [rows, count, sums] = await Promise.all([
-        tx.invoice.findMany({ where, orderBy: [{ invoiceDate: "desc" }, { id: "desc" }], skip: cursor, take: PAGE }),
+        findExactFirst({
+          where,
+          exact: q ? { invoiceNo: eqi(q)! } : null,
+          ids: (w, take) =>
+            tx.invoice.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+          fetch: (w, skip, take) =>
+            tx.invoice.findMany({ where: w, orderBy: [{ invoiceDate: "desc" }, { id: "desc" }], skip, take }),
+          skip: cursor,
+          take: PAGE,
+        }),
         tx.invoice.count({ where }),
         tx.invoice.aggregate({ where, _sum: { grandTotal: true } }),
       ]);
@@ -793,6 +862,8 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         input.partyId ? p.partyId === input.partyId || p.partyName != null : true
       );
       list = list.sort((a, b) => b.date.getTime() - a.date.getTime());
+      // exact ref no. first, date order within each group
+      list = rankByMatch(list, q ?? "", (p) => p.refNo);
       const page = list.slice(cursor, cursor + PAGE);
       const maps = await nameMaps(tx, { partyIds: page.map((p) => p.partyId ?? "") });
       return {
@@ -845,7 +916,16 @@ export async function fetchBrowse(input: BrowseInput): Promise<BrowseResult> {
         ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}),
       };
       const [rows, count, sums] = await Promise.all([
-        tx.voucher.findMany({ where, orderBy: [{ voucherDate: "desc" }, { id: "desc" }], skip: cursor, take: PAGE }),
+        findExactFirst({
+          where,
+          exact: q ? { OR: [{ voucherNo: eqi(q)! }, { remarks: eqi(q)! }] } : null,
+          ids: (w, take) =>
+            tx.voucher.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+          fetch: (w, skip, take) =>
+            tx.voucher.findMany({ where: w, orderBy: [{ voucherDate: "desc" }, { id: "desc" }], skip, take }),
+          skip: cursor,
+          take: PAGE,
+        }),
         tx.voucher.count({ where }),
         tx.voucher.aggregate({ where, _sum: { amount: true, netAmount: true } }),
       ]);

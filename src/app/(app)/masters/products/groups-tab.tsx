@@ -2,6 +2,7 @@
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { ProductGroupsClient } from "@/components/masters/product-groups-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function ProductGroupsTab({
   searchParams,
@@ -18,6 +19,8 @@ export async function ProductGroupsTab({
       include: { _count: { select: { products: true } } },
       orderBy: { name: "asc" },
     })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.name))
   );
 
   const canDelete = session.role === "ADMIN" || session.role === "OWNER";

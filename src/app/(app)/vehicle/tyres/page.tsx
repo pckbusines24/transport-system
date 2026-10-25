@@ -5,6 +5,7 @@ import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { TyreClient, type TyreRow } from "@/components/vehicle/tyre-client";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 const PAGE_SIZE = 100;
 
@@ -64,12 +65,23 @@ export default async function TyresPage({
       };
     }
     const [tyres, total, nameRows, vehicles] = await Promise.all([
-      tx.tyre.findMany({
+findExactFirst({
         where,
-        include: { cycles: { orderBy: { instDate: "asc" } } },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: PAGE_SIZE,
+        exact: eqi(searchParams.q?.replace(/\s+/g, ""))
+          ? { tyreNo: eqi(searchParams.q?.replace(/\s+/g, ""))! }
+          : null,
+        ids: (w, take) =>
+          tx.tyre.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+        fetch: (w, skip, take) =>
+          tx.tyre.findMany({
+            where: w,
+            include: { cycles: { orderBy: { instDate: "asc" } } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take,
+            skip,
+          }),
         skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
       tx.tyre.count({ where }),
       // Tyre Name filter options come from the FULL filtered set, not the page

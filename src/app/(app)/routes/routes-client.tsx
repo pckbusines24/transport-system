@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ExportButton } from "@/components/data/export-button";
+import { rankByMatch } from "@/lib/search-rank";
+import { useUrlState } from "@/components/data/use-url-state";
 
 export interface RouteRow {
   route: string;
@@ -42,14 +44,20 @@ function Trend({ now, prev }: { now: number; prev: number }) {
 }
 
 export function RoutesClient({ rows }: { rows: RouteRow[] }) {
-  const [status, setStatus] = React.useState<"ALL" | RouteRow["status"]>("ALL");
-  const [q, setQ] = React.useState("");
+  // filters live in the URL, so a refresh keeps them
+  const [statusRaw, setStatus] = useUrlState("status", "ALL");
+  const status = statusRaw as "ALL" | RouteRow["status"];
+  const [q, setQ] = useUrlState("q");
 
-  const list = rows.filter((r) => {
-    if (status !== "ALL" && r.status !== status) return false;
-    if (q && !r.route.toLowerCase().includes(q.toLowerCase())) return false;
-    return true;
-  });
+  const list = rankByMatch(
+    rows.filter((r) => {
+      if (status !== "ALL" && r.status !== status) return false;
+      if (q && !r.route.toLowerCase().includes(q.toLowerCase())) return false;
+      return true;
+    }),
+    q,
+    (r) => r.route
+  );
 
   const counts = {
     ALIVE: rows.filter((r) => r.status === "ALIVE").length,

@@ -6,6 +6,7 @@ import { roundWt, toNum } from "@/lib/utils";
 import { invoiceSettlement, payableSettlement } from "@/lib/settlement";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { ChalanRegisterClient, type ChalanRegisterRow } from "./register-client";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 export const dynamic = "force-dynamic";
 
@@ -91,13 +92,24 @@ export default async function ChalanRegisterPage({
             : {}),
     };
     const [chalans, totalCount] = await Promise.all([
-      tx.chalan.findMany({
+      // exact chalan no. first (see lib/exact-first)
+      findExactFirst({
         where,
-        include: {
-          lrs: { include: { lr: { include: { pods: true, invoiceLrs: { include: { invoice: true } } } } } },
-        },
-        orderBy: { chalanDate: "desc" },
-        ...(dbPaged ? { take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE } : {}),
+        exact: eqi(q) ? { chalanNo: eqi(q)! } : null,
+        ids: (w, take) =>
+          tx.chalan.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+        fetch: (w, skip, take) =>
+          tx.chalan.findMany({
+            where: w,
+            include: {
+              lrs: { include: { lr: { include: { pods: true, invoiceLrs: { include: { invoice: true } } } } } },
+            },
+            orderBy: { chalanDate: "desc" },
+            take,
+            skip,
+          }),
+        skip: dbPaged ? (page - 1) * PAGE_SIZE : 0,
+        take: dbPaged ? PAGE_SIZE : undefined,
       }),
       tx.chalan.count({ where }),
     ]);

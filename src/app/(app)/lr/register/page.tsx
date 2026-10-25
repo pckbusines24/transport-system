@@ -9,6 +9,7 @@ import { formatDate, toNum } from "@/lib/utils";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { LrRegisterTable, type LrRegisterRow } from "@/components/lr/lr-register-table";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 const PAGE_SIZE = 100;
 
@@ -95,15 +96,35 @@ export default async function LrRegisterPage({
     where.status = searchParams.status as (typeof LR_STATUSES)[number];
   }
 
+  // exact matches on any typed search lead page one (see lib/exact-first)
+  const exactOr: Prisma.LrWhereInput[] = [];
+  const eqQ = eqi(searchParams.q);
+  if (eqQ) exactOr.push({ lrNo: eqQ }, { refLrNo: eqQ }, { privateMarka: eqQ });
+  const eqObd = eqi(searchParams.obd);
+  if (eqObd) exactOr.push({ obdNo: eqObd }, { invoices: { some: { obdNo: eqObd } } });
+  const eqInv = eqi(searchParams.inv);
+  if (eqInv) exactOr.push({ invoiceNo: eqInv }, { invoices: { some: { invoiceNo: eqInv } } });
+  const eqRef = eqi(searchParams.ref);
+  if (eqRef) exactOr.push({ refNo: eqRef }, { refLrNo: eqRef }, { invoices: { some: { refNo: eqRef } } });
+
   const page = parsePage(searchParams.page);
   const { lrs, total, totals, cities, parties, vehicles, products } = await withTenant(session.tenantId, async (tx) => {
     const [lrs, total, freightAgg, wtAgg, cities, parties, vehicles, partyMap, products] = await Promise.all([
-      tx.lr.findMany({
+      findExactFirst({
         where,
-        include: { items: true, invoices: { orderBy: { sortOrder: "asc" } } },
-        orderBy: [{ lrDate: "desc" }, { lrNo: "desc" }],
-        take: PAGE_SIZE,
+        exact: exactOr.length ? { OR: exactOr } : null,
+        ids: (w, take) =>
+          tx.lr.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+        fetch: (w, skip, take) =>
+          tx.lr.findMany({
+            where: w,
+            include: { items: true, invoices: { orderBy: { sortOrder: "asc" } } },
+            orderBy: [{ lrDate: "desc" }, { lrNo: "desc" }],
+            take,
+            skip,
+          }),
         skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
       tx.lr.count({ where }),
       // register-wide totals over the full filtered set — the table only

@@ -4,6 +4,7 @@ import { withTenant } from "@/lib/db";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport, type ReportRow } from "@/components/accounts/simple-report";
 import { buildTdsPayableRows } from "./payable-rows";
+import { rankByMatch } from "@/lib/search-rank";
 
 /**
  * TDS PAYABLE Register — TDS OUR company deducts while MAKING payments.
@@ -53,6 +54,8 @@ export async function TdsPayableTab({
   if (searchParams.q) {
     const q = searchParams.q.toLowerCase();
     filtered = filtered.filter((r) => String(r.refNo).toLowerCase().includes(q));
+    // exact reference no. first
+    filtered = rankByMatch(filtered, q, (r) => r.refNo);
   }
   if (searchParams.tds) {
     filtered = filtered.filter((r) => String(r.tdsPct) === searchParams.tds?.trim());

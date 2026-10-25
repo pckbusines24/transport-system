@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { BrokerRegisterTable, type BrokerRegisterRow } from "@/components/broker/register-table";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 export const dynamic = "force-dynamic";
 
@@ -84,10 +85,23 @@ export default async function BrokerRegisterPage({
       }
 
       const [slips, totalCount, vehicleRows, partyRows, cityRows, userRows] = await Promise.all([
-        tx.brokerSlip.findMany({
+        // exact slip no. first (see lib/exact-first)
+        findExactFirst({
           where,
-          orderBy: [{ slipDate: "desc" }, { slipNo: "desc" }],
-          ...(dbPaged ? { take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE } : {}),
+          exact: eqi(searchParams.q) ? { slipNo: eqi(searchParams.q)! } : null,
+          ids: (w, take) =>
+            tx.brokerSlip
+              .findMany({ where: w, select: { id: true }, take })
+              .then((r) => r.map((x) => x.id)),
+          fetch: (w, skip, take) =>
+            tx.brokerSlip.findMany({
+              where: w,
+              orderBy: [{ slipDate: "desc" }, { slipNo: "desc" }],
+              take,
+              skip,
+            }),
+          skip: dbPaged ? (page - 1) * PAGE_SIZE : 0,
+          take: dbPaged ? PAGE_SIZE : undefined,
         }),
         tx.brokerSlip.count({ where }),
         tx.vehicle.findMany({

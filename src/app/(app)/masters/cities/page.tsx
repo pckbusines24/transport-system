@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { CitiesClient } from "@/components/masters/cities-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export default async function CitiesPage({
   searchParams,
@@ -21,7 +22,9 @@ export default async function CitiesPage({
       },
       include: { state: true },
       orderBy: { name: "asc" },
-    });
+    })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.name));
     const states = await tx.state.findMany({ orderBy: { name: "asc" } });
     return { rows, states };
   });

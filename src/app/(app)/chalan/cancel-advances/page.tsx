@@ -6,6 +6,7 @@ import { formatDate, formatMoney, toNum } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { InfoHint } from "@/components/ui/info-hint";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function ChalanCancelAdvancesPage({
   const statusOf = (balance: number, consumed: number) =>
     balance <= 0.009 ? "RECOVERED" : consumed > 0.009 ? "PARTLY" : "OPEN";
   const chalanQ = searchParams.chalan?.trim().toLowerCase() ?? "";
-  const rows = advances.map((a) => {
+  const rowsUnranked = advances.map((a) => {
     const amount = toNum(String(a.amount));
     const consumed = toNum(String(a.consumedAmount));
     const balance = Math.round((amount - consumed) * 100) / 100;
@@ -109,6 +110,8 @@ export default async function ChalanCancelAdvancesPage({
       (!searchParams.broker || r.partyId === searchParams.broker) &&
       (!searchParams.status || r.status === searchParams.status)
   );
+  // exact chalan no. first
+  const rows = rankByMatch(rowsUnranked, chalanQ, (r) => r.chalanNo);
 
   const totalOpen = rows.reduce((s, r) => s + r.balance, 0);
   const filters: FilterDef[] = [

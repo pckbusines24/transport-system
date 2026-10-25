@@ -7,6 +7,7 @@ import {
   VehicleExpenseClient,
   type VehicleExpenseRow,
 } from "@/components/vehicle/vehicle-expense-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function VehicleExpensesTab({
   searchParams,
@@ -56,7 +57,9 @@ export async function VehicleExpensesTab({
           where,
           include: { items: true, lines: true },
           orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-        }),
+        })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, searchParams.q ?? "", (r) => [r.voucherNo, r.refNo])),
         tx.vehicle.findMany({ where: { isActive: true }, orderBy: { number: "asc" } }),
         tx.accountHead.findMany({
           where: { kind: { in: ["INCOME", "EXPENSE"] } },

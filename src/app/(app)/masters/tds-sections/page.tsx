@@ -3,6 +3,7 @@ import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { toNum } from "@/lib/utils";
 import { TdsSectionsClient } from "./tds-sections-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,9 @@ export default async function TdsSectionsPage({
             : {}),
         },
         orderBy: { code: "asc" },
-      }),
+      })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => [r.code, r.oldCode, r.name])),
       tx.accountHead.findMany({ where: { kind: "EXPENSE" }, orderBy: { name: "asc" } }),
     ]);
     return { sections, heads };

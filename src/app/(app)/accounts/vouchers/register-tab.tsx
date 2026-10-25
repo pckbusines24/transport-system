@@ -10,6 +10,7 @@ import {
   type VoucherRegisterTotals,
 } from "@/components/accounts/voucher-register-table";
 import { VoucherType, ModuleLink, Prisma } from "@prisma/client";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 
 const PAGE_SIZE = 100;
 
@@ -73,14 +74,23 @@ export async function VoucherRegisterTab({
   const page = parsePage(searchParams.page);
   const { rows, total, totals } = await withTenant(session.tenantId, async (tx) => {
     const [vouchers, total, agg, parties] = await Promise.all([
-      tx.voucher.findMany({
+findExactFirst({
         where,
-        // allocation remarks carry the settlement markers — the table hides
-        // Edit on auto-created chalan/slip settlement vouchers
-        include: { allocations: { select: { remarks: true } } },
-        orderBy: [{ voucherDate: "asc" }, { voucherNo: "asc" }],
-        take: PAGE_SIZE,
+        exact: eqi(searchParams.q) ? { voucherNo: eqi(searchParams.q)! } : null,
+        ids: (w, take) =>
+          tx.voucher.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+        fetch: (w, skip, take) =>
+          tx.voucher.findMany({
+            where: w,
+            // allocation remarks carry the settlement markers — the table hides
+            // Edit on auto-created chalan/slip settlement vouchers
+            include: { allocations: { select: { remarks: true } } },
+            orderBy: [{ voucherDate: "asc" }, { voucherNo: "asc" }],
+            take,
+            skip,
+          }),
         skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
       tx.voucher.count({ where }),
       // footer totals over the FULL filtered set — the table only gets one page

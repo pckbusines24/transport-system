@@ -2,6 +2,7 @@
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { UnitsClient } from "@/components/masters/units-client";
+import { rankByMatch } from "@/lib/search-rank";
 
 export async function UnitsTab({ searchParams }: { searchParams: { q?: string } }) {
   const session = requireSession();
@@ -13,6 +14,8 @@ export async function UnitsTab({ searchParams }: { searchParams: { q?: string } 
       where: q ? { name: { contains: q, mode: "insensitive" } } : undefined,
       orderBy: { name: "asc" },
     })
+      // exact match on the typed search first
+      .then((rows) => rankByMatch(rows, q ?? "", (r) => r.name))
   );
 
   const canDelete = session.role === "ADMIN" || session.role === "OWNER";

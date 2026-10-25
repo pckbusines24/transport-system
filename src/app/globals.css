@@ -353,3 +353,17 @@
     display: none !important;
   }
 }
+
+/* Number fields are typed, never stepped: no up/down spinner arrows in any
+   browser (WebKit/Blink pseudo-elements, Firefox appearance). The mouse wheel
+   and Arrow Up/Down are blocked too — see components/app/number-input-guard
+   and components/ui/input. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
