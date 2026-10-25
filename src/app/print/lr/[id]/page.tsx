@@ -83,6 +83,12 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
       ? lr.invoices
       : [{ invoiceNo: lr.invoiceNo, invoiceDate: lr.invoiceDate, ewayBillNo: lr.ewayBillNo, ewayExpiry: lr.ewayExpiry }];
   const showAmounts = lr.printFreight;
+  // goods value is declared per invoice line; the LR's own column mirrors only
+  // the first line, so total the lines. Not freight — printed either way.
+  const goodsValue =
+    lr.invoices.length > 0
+      ? lr.invoices.reduce((s, r) => s + Number(r.goodsValue ?? 0), 0)
+      : Number(lr.goodsValue ?? 0);
 
   const addr = (p: { address1?: string | null; address2?: string | null } | null) =>
     [p?.address1, p?.address2].filter(Boolean).join(", ");
@@ -103,6 +109,15 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
     { label: "IGST", amount: Number(lr.igstAmt) },
     { label: "Any Other Char.", amount: Number(lr.otherCharge) },
   ];
+
+  const LR_TYPE_STAMP: Record<typeof lr.lrType, string> = {
+    TO_PAY: "TO PAY",
+    TBB: "TO BE BILLED",
+    PAID: "PAID",
+    FOC: "FOC",
+    CANCELLED: "CANCELLED",
+    PAPER_CHANGE: "PAPER CHANGE",
+  };
 
   const liable =
     lr.lrType === "TO_PAY" ? "CONSIGNEE" : lr.lrType === "PAID" ? "CONSIGNOR" : "CONSIGNOR";
@@ -498,7 +513,7 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
                             className="inline-block rotate-[-6deg] border-2 px-2 py-0.5 text-[11px] font-black tracking-widest"
                             style={{ borderColor: RED, color: RED }}
                           >
-                            TO BE BILLED
+                            {LR_TYPE_STAMP[lr.lrType]}
                           </span>
                         </td>
                       </tr>
@@ -513,7 +528,7 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
               <div className="flex items-end gap-1">
                 Value
                 <span className="inline-block w-[130px] border-b border-black px-1 text-right tabular-nums">
-                  {lr.goodsValue != null && showAmounts ? formatMoney(Number(lr.goodsValue)) : " "}
+                  {goodsValue > 0 ? formatMoney(goodsValue) : " "}
                 </span>
               </div>
               <div className="flex-1 text-center">
