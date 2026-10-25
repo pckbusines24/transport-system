@@ -2856,8 +2856,33 @@ model TallyExportEntry {
   remoteId   Boolean  @default(false)
   vchType    String?
   vchDate    String? // yyyymmdd as last sent
+  // sorted ledger names of the voucher as last sent: a changed set (party
+  // changed, a line dropped) goes as Delete + Create, never Alter
+  ledgerSig  String?
 
   @@unique([firmId, key])
+  @@index([tenantId])
+}
+
+/// One downloaded Tally XML file. The export register (TallyExportEntry) is
+/// only updated when the user confirms the file imported into Tally; a failed
+/// import changes nothing, so the vouchers go across again next time.
+model TallyExportBatch {
+  id         String    @id @default(cuid())
+  tenantId   String
+  firmId     String
+  module     String
+  fileName   String
+  xml        String
+  status     String    @default("PENDING") // PENDING | IMPORTED | FAILED
+  /// [{ key, docId, op: "UPSERT" | "DELETE", hash?, remoteId?, vchType?, vchDate?, ledgerSig? }]
+  ops        Json
+  vouchers   Int       @default(0)
+  deletes    Int       @default(0)
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([firmId, module, status])
   @@index([tenantId])
 }
 

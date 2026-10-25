@@ -5,14 +5,16 @@ import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
+import type { Prisma } from "@prisma/client";
 import {
   buildMastersXml,
   buildVouchersXml,
-  voucherHash,
   type TallyVoucher,
   type TallyVoucherDelete,
 } from "@/lib/tally";
+import { planDoc, type SyncOp } from "@/lib/tally-sync";
 import { buildModuleDocs, type TallyModule } from "./build";
+import { loadExportState } from "./sync-state";
 
 const moduleSchema = z.enum(["CHALAN", "BILLING", "SLIP", "VOUCHERS", "EXPENSES", "OFFICE"]);
 
@@ -23,6 +25,8 @@ const exportSchema = z.object({
   docIds: z.array(z.string()).min(1, "Select at least one document"),
   /** false (default): only NEW / CHANGED vouchers; true: everything selected */
   includeExported: z.boolean().default(false),
+  /** documents whose pre-tracking copies the user deleted in Tally by hand */
+  legacyConfirmed: z.array(z.string()).default([]),
 });
 
 const toRange = (from?: string | null, to?: string | null) => ({
@@ -30,15 +34,54 @@ const toRange = (from?: string | null, to?: string | null) => ({
   dateTo: to ? new Date(`${to}T23:59:59`) : null,
 });
 
+/** Write a confirmed file's register changes (UPSERT / DELETE per voucher). */
+async function applyOpsToRegister(
+  tx: Prisma.TransactionClient,
+  session: { tenantId: string; firmId: string },
+  ops: SyncOp[]
+) {
+  for (const o of ops) {
+    if (o.op === "DELETE") {
+      await tx.tallyExportEntry.deleteMany({ where: { firmId: session.firmId, key: o.key } });
+      continue;
+    }
+    const meta = {
+      hash: o.hash,
+      remoteId: o.remoteId,
+      vchType: o.vchType,
+      vchDate: o.vchDate,
+      ledgerSig: o.ledgerSig,
+    };
+    await tx.tallyExportEntry.upsert({
+      where: { firmId_key: { firmId: session.firmId, key: o.key } },
+      create: { tenantId: session.tenantId, firmId: session.firmId, key: o.key, ...meta },
+      update: { ...meta, exportedAt: new Date() },
+    });
+  }
+}
+
 /**
- * Generate the Tally vouchers XML for the selected documents of one module
- * and stamp the export register (firm+key → content hash) so the next run
- * skips unchanged vouchers.
+ * Generate the Tally vouchers XML for the selected documents of one module.
+ *
+ * Nothing is marked exported here: the file is recorded as PENDING and the
+ * export register only changes when the user confirms Tally imported it
+ * (confirmTallyBatch). With the module's sync switch on, vouchers go as
+ * Create / Alter / Delete by REMOTEID (see lib/tally-sync).
  */
 export async function runTallyExport(
   input: unknown
 ): Promise<
-  | { ok: true; xml: string; fileName: string; exported: number; skipped: number; legacyChanged: number }
+  | {
+      ok: true;
+      xml: string | null;
+      fileName: string;
+      exported: number;
+      deleted: number;
+      skipped: number;
+      legacyChanged: number;
+      blocked: string[];
+      batchId: string | null;
+    }
   | { ok: false; error: string }
 > {
   const session = requireSession();
@@ -51,92 +94,150 @@ export async function runTallyExport(
 
   try {
     return await withTenant(session.tenantId, async (tx) => {
-      const { docs } = await buildModuleDocs(
+      const state = await loadExportState(
         tx,
         session,
         data.module as TallyModule,
         toRange(data.dateFrom, data.dateTo)
       );
-      const wanted = docs.filter((d) => data.docIds.includes(d.id));
-      const keys = wanted.flatMap((d) => d.vouchers.map((v) => v.key));
-      const registry = new Map(
-        (
-          await tx.tallyExportEntry.findMany({
-            where: { firmId: session.firmId, key: { in: keys } },
-          })
-        ).map((r) => [r.key, r])
-      );
+      const wanted = state.docs.filter((d) => data.docIds.includes(d.id));
+      const awaiting = wanted.filter((d) => state.pendingDocIds.has(d.id));
+      if (awaiting.length) {
+        return {
+          ok: false as const,
+          error: `${awaiting.map((d) => d.refNo).join(", ")}: already in a file awaiting import — confirm that file (Imported OK / Import failed) first.`,
+        };
+      }
 
-      const out: (typeof wanted)[number]["vouchers"] = [];
+      const vouchers: TallyVoucher[] = [];
       const deletes: TallyVoucherDelete[] = [];
+      const ops: SyncOp[] = [];
+      const blocked: string[] = [];
       let skipped = 0;
-      // REMOTEID vouchers already in Tally from before REMOTEID tracking —
-      // Tally can't match them, so the edit goes as a fresh Create and the
-      // old copy must be deleted in Tally by hand
       let legacyChanged = 0;
       for (const d of wanted) {
-        for (const raw of d.vouchers) {
-          // Tally's VOUCHERNUMBER carries the SOURCE document's own number
-          // (chalan no / invoice no / voucher no) so Tally never assigns a
-          // manual number of its own
-          let v: TallyVoucher = { ...raw, voucherNo: raw.voucherNo ?? d.refNo };
-          const hash = voucherHash(v);
-          const prev = registry.get(v.key);
-          if (!data.includeExported && prev?.hash === hash) {
-            skipped += 1; // unchanged and already in Tally — never send twice
-            continue;
-          }
-          if (v.remoteId && prev) {
-            if (!prev.remoteId) {
-              if (prev.hash !== hash) legacyChanged += 1;
-            } else if (prev.vchType && prev.vchType !== v.type) {
-              // a type change (e.g. Cash -> Diesel = Payment -> Journal) can't
-              // be altered: remove the old voucher, then create the new one
-              deletes.push({
-                remoteId: v.remoteId,
-                type: prev.vchType as TallyVoucher["type"],
-                date: prev.vchDate ?? v.date,
-                voucherNo: v.voucherNo,
-              });
-            } else {
-              v = { ...v, action: "Alter" };
-            }
-          }
-          out.push(v);
-          const meta = { remoteId: !!v.remoteId, vchType: v.type, vchDate: v.date };
-          await tx.tallyExportEntry.upsert({
-            where: { firmId_key: { firmId: session.firmId, key: v.key } },
-            create: { tenantId: session.tenantId, firmId: session.firmId, key: v.key, hash, ...meta },
-            update: { hash, exportedAt: new Date(), ...meta },
-          });
+        const plan = planDoc(d, state.rowsByDoc.get(d.id) ?? [], {
+          sync: state.sync,
+          includeExported: data.includeExported,
+          legacyConfirmed: data.legacyConfirmed.includes(d.id),
+        });
+        if (plan.blocked) {
+          blocked.push(plan.blocked);
+          continue;
         }
+        vouchers.push(...plan.vouchers);
+        deletes.push(...plan.deletes);
+        ops.push(...plan.ops);
+        skipped += plan.skipped;
+        legacyChanged += plan.legacyChanged;
       }
-      if (out.length === 0) {
+
+      const range = [data.dateFrom, data.dateTo].filter(Boolean).join("_to_") || "all";
+      const fileName = `tally-${data.module.toLowerCase()}-${range}.xml`;
+      const result = {
+        fileName,
+        exported: vouchers.length,
+        deleted: deletes.length,
+        skipped,
+        legacyChanged,
+        blocked,
+      };
+
+      if (vouchers.length === 0 && deletes.length === 0) {
+        if (ops.length > 0) {
+          // only register clean-up (old copies the user deleted by hand) —
+          // nothing for Tally to import, so apply it straight away
+          await applyOpsToRegister(tx, session, ops);
+          return { ok: true as const, xml: null, batchId: null, ...result };
+        }
+        if (blocked.length) return { ok: true as const, xml: null, batchId: null, ...result };
         return {
           ok: false as const,
           error:
             "Everything is already exported — nothing new found. (For a full re-export, tick 'include already exported'.)",
         };
       }
+
+      const xml = buildVouchersXml(vouchers, deletes);
+      const batch = await tx.tallyExportBatch.create({
+        data: {
+          tenantId: session.tenantId,
+          firmId: session.firmId,
+          module: data.module,
+          fileName,
+          xml,
+          ops: ops as unknown as Prisma.InputJsonValue,
+          vouchers: vouchers.length,
+          deletes: deletes.length,
+        },
+      });
       await audit(tx, session, {
         entity: "TallyExport",
-        entityId: session.firmId,
+        entityId: batch.id,
         action: "CREATE",
-        after: { module: data.module, vouchers: out.length, skipped, deletes: deletes.length },
+        after: { module: data.module, vouchers: vouchers.length, deletes: deletes.length, skipped, sync: state.sync },
       });
-      const range = [data.dateFrom, data.dateTo].filter(Boolean).join("_to_") || "all";
-      return {
-        ok: true as const,
-        xml: buildVouchersXml(out, deletes),
-        fileName: `tally-${data.module.toLowerCase()}-${range}.xml`,
-        exported: out.length,
-        skipped,
-        legacyChanged,
-      };
+      return { ok: true as const, xml, batchId: batch.id, ...result };
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Export failed" };
   }
+}
+
+/**
+ * The user's answer after importing a downloaded file into Tally:
+ * IMPORTED writes the register (those vouchers now count as in Tally);
+ * FAILED changes nothing, so the same vouchers go across next time.
+ */
+export async function confirmTallyBatch(
+  input: unknown
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = requireSession();
+  const parsed = z
+    .object({ batchId: z.string(), outcome: z.enum(["IMPORTED", "FAILED"]) })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+  await authorize(session, "tally", "export");
+  try {
+    return await withTenant(session.tenantId, async (tx) => {
+      const batch = await tx.tallyExportBatch.findFirst({
+        where: { id: parsed.data.batchId, firmId: session.firmId },
+      });
+      if (!batch) return { ok: false as const, error: "File not found." };
+      if (batch.status !== "PENDING") return { ok: false as const, error: "This file was already confirmed." };
+      if (parsed.data.outcome === "IMPORTED") {
+        await applyOpsToRegister(tx, session, batch.ops as unknown as SyncOp[]);
+      }
+      await tx.tallyExportBatch.update({
+        where: { id: batch.id },
+        data: { status: parsed.data.outcome, resolvedAt: new Date() },
+      });
+      await audit(tx, session, {
+        entity: "TallyExport",
+        entityId: batch.id,
+        action: "UPDATE",
+        after: { outcome: parsed.data.outcome, module: batch.module },
+      });
+      return { ok: true as const };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not record the result" };
+  }
+}
+
+/** Download a pending file again (lost download, second try at importing). */
+export async function getTallyBatchXml(
+  input: unknown
+): Promise<{ ok: true; xml: string; fileName: string } | { ok: false; error: string }> {
+  const session = requireSession();
+  const parsed = z.object({ batchId: z.string() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+  await authorize(session, "tally", "export");
+  const batch = await withTenant(session.tenantId, (tx) =>
+    tx.tallyExportBatch.findFirst({ where: { id: parsed.data.batchId, firmId: session.firmId } })
+  );
+  if (!batch) return { ok: false, error: "File not found." };
+  return { ok: true, xml: batch.xml, fileName: batch.fileName };
 }
 
 /** Party ledger masters for the module's documents — first-time import. */

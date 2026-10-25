@@ -2,11 +2,16 @@ import Link from "next/link";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { voucherHash } from "@/lib/tally";
+import { planDoc } from "@/lib/tally-sync";
 import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/components/data/filter-bar";
-import { TallyExportClient, type TallyExportRow } from "@/components/reports/tally-export-client";
-import { buildModuleDocs, type TallyModule } from "./build";
+import {
+  TallyExportClient,
+  type TallyExportRow,
+  type TallyPendingFile,
+} from "@/components/reports/tally-export-client";
+import type { TallyModule } from "./build";
+import { loadExportState } from "./sync-state";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +26,9 @@ const MODULES: { value: TallyModule; label: string }[] = [
 
 const HINTS: Record<TallyModule, string> = {
   CHALAN:
-    "Only FINAL chalans of Broker / Relative vehicles — an own vehicle's chalan does not go to Tally. The period matches on any chalan/advance/balance entry.",
+    "Only FINAL chalans of Broker / Relative vehicles — an own vehicle's chalan does not go to Tally. The period matches on any chalan/advance/balance entry. An edited chalan updates its own vouchers in Tally, a zero amount or a cancelled chalan removes them; Detention, ODC, Fine Slip and Mamool go as their own journals.",
   BILLING:
-    "Each bill is one Sales voucher — full amount in a single line, ref = bill no. Money-received entries go from the 'Receipts / Payments' module.",
+    "Each bill is one Sales voucher — full amount in a single line, ref = bill no. An edited bill updates its voucher in Tally, a deleted bill removes it. Money-received entries go from the 'Receipts / Payments' module.",
   SLIP: "Party side (Sales + deduction journals + receipts) always; owner side only on Broker/Relative vehicles — an own vehicle gets the party side only.",
   VOUCHERS:
     "Receipt/Payment vouchers from Accounts — separate TDS/Shortage/Other/Round-off lines, bill-wise Agst Refs from the allocations (billing receipts, voucher-settled chalans and supplier payments all come from here).",
@@ -48,26 +53,10 @@ export default async function TallyExportPage({
   const dateFrom = searchParams.date_from ? new Date(`${searchParams.date_from}T00:00:00`) : null;
   const dateTo = searchParams.date_to ? new Date(`${searchParams.date_to}T23:59:59`) : null;
 
-  const rows = await withTenant(session.tenantId, async (tx) => {
-    const { docs } = await buildModuleDocs(tx, session, activeModule, { dateFrom, dateTo });
-    const keys = docs.flatMap((d) => d.vouchers.map((v) => v.key));
-    const registry = new Map(
-      (
-        await tx.tallyExportEntry.findMany({
-          where: { firmId: session.firmId, key: { in: keys } },
-        })
-      ).map((r) => [r.key, r.hash])
-    );
-    return docs.map((d): TallyExportRow => {
-      let fresh = 0;
-      let changed = 0;
-      let done = 0;
-      for (const v of d.vouchers) {
-        const prev = registry.get(v.key);
-        if (prev === undefined) fresh += 1;
-        else if (prev === voucherHash(v)) done += 1;
-        else changed += 1;
-      }
+  const { rows, pendingFiles } = await withTenant(session.tenantId, async (tx) => {
+    const state = await loadExportState(tx, session, activeModule, { dateFrom, dateTo });
+    const rows = state.docs.map((d): TallyExportRow => {
+      const plan = planDoc(d, state.rowsByDoc.get(d.id) ?? [], { sync: state.sync });
       return {
         docId: d.id,
         refNo: d.refNo,
@@ -76,11 +65,27 @@ export default async function TallyExportPage({
         detail: d.detail,
         amount: d.amount,
         voucherCount: d.vouchers.length,
-        fresh,
-        changed,
-        done,
+        fresh: plan.fresh,
+        changed: plan.changed,
+        done: plan.done,
+        obsolete: plan.obsolete,
+        status: state.pendingDocIds.has(d.id) ? "AWAITING" : plan.status,
+        blocked: plan.blocked,
       };
     });
+    const files = await tx.tallyExportBatch.findMany({
+      where: { firmId: session.firmId, module: activeModule, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, fileName: true, createdAt: true, vouchers: true, deletes: true },
+    });
+    const pendingFiles: TallyPendingFile[] = files.map((f) => ({
+      id: f.id,
+      fileName: f.fileName,
+      createdIso: f.createdAt.toISOString(),
+      vouchers: f.vouchers,
+      deletes: f.deletes,
+    }));
+    return { rows, pendingFiles };
   });
 
   return (
@@ -93,8 +98,8 @@ export default async function TallyExportPage({
       </div>
       <p className="text-sm text-muted-foreground">
         {HINTS[activeModule]} After the download, in Tally Prime: <b>Alt+O → Import → Transactions</b>;
-        the first time, &quot;Party Masters&quot; as well. Each voucher goes across only once — a changed
-        document shows as &quot;CHANGED&quot; and goes across again.
+        the first time, &quot;Party Masters&quot; as well. Then come back here and press <b>Imported OK</b> on
+        the file (or <b>Import failed</b>) — only then do its entries count as exported.
       </p>
       <FilterBar
         filters={[
@@ -112,6 +117,7 @@ export default async function TallyExportPage({
         key={`${activeModule}:${searchParams.date_from ?? ""}:${searchParams.date_to ?? ""}`}
         rows={rows}
         module={activeModule}
+        pendingFiles={pendingFiles}
         dateFrom={searchParams.date_from ?? null}
         dateTo={searchParams.date_to ?? null}
       />

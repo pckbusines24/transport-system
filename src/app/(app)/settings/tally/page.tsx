@@ -42,7 +42,7 @@ export default async function TallyMappingPage() {
   const sections: MapSection[] = [
     {
       title: "📦 Chalan",
-      desc: "Purchase component-wise + TDS as a separate journal + Commission-Mamool together + Courier separate",
+      desc: "Purchase (freight + other) + Detention, ODC, Fine Slip, Commission, Mamool, TDS, Courier each as a separate journal",
       rows: concepts("CHALAN", CHALAN_CONCEPTS),
     },
     {

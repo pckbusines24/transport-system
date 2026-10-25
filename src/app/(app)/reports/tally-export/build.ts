@@ -42,9 +42,20 @@ interface Session {
   fyId: string;
 }
 
-interface Range {
+export interface Range {
   dateFrom: Date | null;
   dateTo: Date | null;
+  /** exactly these documents, whatever their date / FY (removal detection);
+      the builders' other rules (final, not cancelled...) still apply */
+  ids?: string[];
+}
+
+/** Builder options. `sync` (Chalan and Billing): every voucher carries its
+ *  key as REMOTEID, and the chalan splits Detention / ODC / Fine Slip / Mamool
+ *  into their own journals. Without it: the original create-only shapes, used
+ *  by the modules not yet on update/delete sync. */
+export interface BuildOpts {
+  sync?: boolean;
 }
 
 interface Ctx {
@@ -320,7 +331,8 @@ function settlementVouchers(opts: {
 export async function buildChalanDocs(
   tx: Tx,
   session: Session,
-  r: Range
+  r: Range,
+  opts: BuildOpts = {}
 ): Promise<{ docs: ExportDoc[]; masters: TallyLedgerMaster[] }> {
   const ctx = await loadCtx(tx, session);
   const range =
@@ -333,11 +345,11 @@ export async function buildChalanDocs(
     // its settlement vouchers here, not vanish behind the year boundary
     where: {
       firmId: session.firmId,
-      ...(range ? {} : { fyId: session.fyId }),
+      ...(r.ids ? { id: { in: r.ids } } : range ? {} : { fyId: session.fyId }),
       deletedAt: null,
       cancelledAt: null,
       isFinal: true,
-      ...(range
+      ...(range && !r.ids
         ? {
             OR: [
               { chalanDate: range },
@@ -375,14 +387,20 @@ export async function buildChalanDocs(
     const purchaseRate = rateText(toNum(c.rate), c.rateBasis);
 
     const isDecl = broker.tdsMode === "DECLARATION";
+    const freightLine: [string, number] = [
+      isDecl ? C("freight_decl", "TRANSPORTING EXP (DECLARATION)") : C("freight_tds", "TRANSPORTING EXP (TDS)"),
+      toNum(c.freight),
+    ];
+    // sync mode: Detention / ODC / Fine Slip are their own journals (below),
+    // so a change or a zero touches only that entry in Tally
+    const extraCharges: [string, string, number, string][] = [
+      ["DET", C("detention", "DETENTION CHARGES"), toNum(c.detention), "Detention"],
+      ["ODC", C("odc", "ODC CHARGES"), toNum(c.odcAmt), "ODC"],
+      ["FINE", C("fine_slip", "FINE SLIP CHARGES"), toNum(c.fineSlip), "Fine Slip"],
+    ];
     const components: [string, number][] = [
-      [
-        isDecl ? C("freight_decl", "TRANSPORTING EXP (DECLARATION)") : C("freight_tds", "TRANSPORTING EXP (TDS)"),
-        toNum(c.freight),
-      ],
-      [C("detention", "DETENTION CHARGES"), toNum(c.detention)],
-      [C("odc", "ODC CHARGES"), toNum(c.odcAmt)],
-      [C("fine_slip", "FINE SLIP CHARGES"), toNum(c.fineSlip)],
+      freightLine,
+      ...(opts.sync ? [] : extraCharges.map(([, l, a]) => [l, a] as [string, number])),
       [C("other", "OTHER CHALAN CHARGES"), toNum(c.otherAmt)],
     ];
     const earnTotal = round2(components.reduce((s, [, a]) => s + a, 0));
@@ -404,6 +422,22 @@ export async function buildChalanDocs(
       });
     }
 
+    if (opts.sync) {
+      // Detention / ODC / Fine Slip: each its own journal — the charge is
+      // still owed to the broker against this chalan (same bill ref as the
+      // purchase), so Dr the charge ledger, Cr the broker
+      for (const [suffix, ledger, amount, what] of extraCharges) {
+        if (amount <= 0.009) continue;
+        vouchers.push({
+          key: `CHALAN:${c.id}:${suffix}`,
+          type: "Journal",
+          date: chDate,
+          narration: docNarration([`${what} against ${docRef}`, c.remarks]),
+          lines: [drLine(ledger, amount), crLine(brokerLedger, amount, { name: refNo, type: "New Ref" })],
+        });
+      }
+    }
+
     const dedJournal = (suffix: string, total: number, credits: [string, number][], what: string) => {
       if (total <= 0.009) return;
       vouchers.push({
@@ -421,15 +455,21 @@ export async function buildChalanDocs(
     dedJournal("TDS", tds, [[C("tds", "TDS ON TRANSPORT 194C"), tds]], "TDS");
     const comm = toNum(c.commissionAmt);
     const mamool = toNum(c.mamool);
-    dedJournal(
-      "COMM",
-      round2(comm + mamool),
-      [
-        [C("commission", "COMMISSION INCOME"), comm],
-        [C("mamool", "MAMOOL INCOME"), mamool],
-      ],
-      "Commission / Mamool"
-    );
+    if (opts.sync) {
+      // separate journals: a zero mamool deletes only the mamool entry
+      dedJournal("COMM", comm, [[C("commission", "COMMISSION INCOME"), comm]], "Commission");
+      dedJournal("MAMOOL", mamool, [[C("mamool", "MAMOOL INCOME"), mamool]], "Mamool");
+    } else {
+      dedJournal(
+        "COMM",
+        round2(comm + mamool),
+        [
+          [C("commission", "COMMISSION INCOME"), comm],
+          [C("mamool", "MAMOOL INCOME"), mamool],
+        ],
+        "Commission / Mamool"
+      );
+    }
     const courier = toNum(c.courierCharge);
     dedJournal("COURIER", courier, [[C("courier", "COURIER CHARGES"), courier]], "Courier");
     const ld = toNum(c.ldCharge);
@@ -521,6 +561,8 @@ export async function buildChalanDocs(
     }
 
     if (!vouchers.length) continue;
+    // sync mode: every voucher's key is its permanent Tally REMOTEID
+    if (opts.sync) for (const v of vouchers) v.remoteId = v.key;
     docs.push({
       id: c.id,
       refNo: c.chalanNo,
@@ -542,17 +584,18 @@ export async function buildChalanDocs(
 export async function buildBillingDocs(
   tx: Tx,
   session: Session,
-  r: Range
+  r: Range,
+  opts: BuildOpts = {}
 ): Promise<{ docs: ExportDoc[]; masters: TallyLedgerMaster[] }> {
   const ctx = await loadCtx(tx, session);
   const invoices = await tx.invoice.findMany({
     // date filter beats FY (FY continuity)
     where: {
       firmId: session.firmId,
-      ...(r.dateFrom || r.dateTo ? {} : { fyId: session.fyId }),
+      ...(r.ids ? { id: { in: r.ids } } : r.dateFrom || r.dateTo ? {} : { fyId: session.fyId }),
       deletedAt: null,
       kind: { not: "GST" }, // unregistered firm — GST-kind bills out of scope
-      ...(r.dateFrom || r.dateTo
+      ...((r.dateFrom || r.dateTo) && !r.ids
         ? {
             invoiceDate: {
               ...(r.dateFrom ? { gte: r.dateFrom } : {}),
@@ -585,6 +628,8 @@ export async function buildBillingDocs(
       vouchers: [
         {
           key: `BILL:${inv.id}:MAIN`,
+          // sync mode: the key is the voucher's permanent Tally REMOTEID
+          ...(opts.sync ? { remoteId: `BILL:${inv.id}:MAIN` } : {}),
           type: "Sales",
           date: tallyDate(inv.invoiceDate),
           reference: inv.invoiceNo,
@@ -1323,13 +1368,14 @@ export async function buildModuleDocs(
   tx: Tx,
   session: Session,
   module: TallyModule,
-  r: Range
+  r: Range,
+  opts: BuildOpts = {}
 ): Promise<{ docs: ExportDoc[]; masters: TallyLedgerMaster[] }> {
   switch (module) {
     case "CHALAN":
-      return buildChalanDocs(tx, session, r);
+      return buildChalanDocs(tx, session, r, opts);
     case "BILLING":
-      return buildBillingDocs(tx, session, r);
+      return buildBillingDocs(tx, session, r, opts);
     case "SLIP":
       return buildSlipDocs(tx, session, r);
     case "VOUCHERS":
