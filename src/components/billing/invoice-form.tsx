@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { InvoiceKind } from "@prisma/client";
@@ -13,7 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -35,6 +35,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
 import { BankCashCombobox } from "@/components/fleet/fields";
+import { useNewTab } from "@/components/data/use-new-tab";
 import { PartyCreateDialog } from "@/components/masters/inline-dialogs";
 import {
   getBillingLrsByIds,
@@ -198,7 +199,9 @@ export function InvoiceForm({
   const withLines = kind === "MANUAL" || kind === "GST";
 
   const [saving, setSaving] = React.useState(false);
-  const [previewOpen, setPreviewOpen] = React.useState(false);
+  // Full Truck bill preview renders into its own browser tab (live state)
+  const previewTab = useNewTab(() => setPreviewError(null));
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
   const [partyOptions, setPartyOptions] = React.useState(partyOptions0);
 
   // header
@@ -564,7 +567,14 @@ export function InvoiceForm({
       toast({ variant: "destructive", title: "Select at least one LR" });
       return;
     }
-    setPreviewOpen(true);
+    setPreviewError(null);
+    if (!previewTab.open(`Bill Preview ${invoiceNo}`.trim())) {
+      toast({
+        variant: "destructive",
+        title: "Could not open the preview tab",
+        description: "Allow pop-ups for this site, then try again.",
+      });
+    }
   };
 
   const handleSave = async () => {
@@ -617,12 +627,12 @@ export function InvoiceForm({
       if (res.ok) {
         toast({ title: `Invoice ${invoiceNo} saved` });
         if (kind === "FULL_TRUCK") {
-          // open the print window automatically after a successful save
-          window.open(`/print/invoice/${res.id}`, "_blank");
+          // the preview tab turns into the print page after a successful save
+          previewTab.navigate(`/print/invoice/${res.id}`);
         }
         router.push(`/billing/register?kind=${kind}`);
       } else {
-        setPreviewOpen(false);
+        setPreviewError(res.error ?? "Save failed");
         toast({ variant: "destructive", title: "Save failed", description: res.error });
       }
     } finally {
@@ -1466,56 +1476,71 @@ export function InvoiceForm({
         )}
       </div>
 
-      {/* bill preview (Full Truck) — review, adjust, then final save + auto print */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Bill Preview — as it will be printed</DialogTitle>
-          </DialogHeader>
-          {/* identical layout to the printed invoice */}
-          <InvoicePrintView
-            data={previewData}
-            lrActions={(lr) => (
-              <span className="flex gap-1">
-                <button
-                  type="button"
-                  className="text-primary underline disabled:opacity-50"
-                  disabled={lrEditLoading !== null}
-                  title="Edit this LR — the preview updates as soon as you save"
-                  onClick={() => void openLrEdit(lr.id)}
-                >
-                  {lrEditLoading === lr.id ? "Loading..." : "Edit"}
-                </button>
-                <button
-                  type="button"
-                  className="text-destructive underline"
-                  title="Remove this LR from the bill"
-                  onClick={() => toggleLr(lr.id, false)}
-                >
-                  Remove
-                </button>
-              </span>
+      {/* bill preview (Full Truck) — opens in a new browser tab; review, adjust,
+          then final save + auto print (the same tab becomes the print page) */}
+      {previewTab.container &&
+        createPortal(
+          <div className="mx-auto max-w-[300mm] space-y-4 bg-background p-4 text-foreground">
+            <h1 className="text-lg font-semibold">Bill Preview — as it will be printed</h1>
+            {lrEdit && (
+              <div className="rounded border border-amber-400 bg-amber-50 p-2 text-sm text-amber-900">
+                LR {lrEdit.defaults.lrNo} is open for editing in the billing tab. Switch back to
+                that tab to edit it — this preview updates as soon as you save.
+              </div>
             )}
-          />
-          <div className="space-y-1">
-            <Label className="text-xs">Remarks (optional — printed on the bill)</Label>
-            <Textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              rows={2}
-              placeholder="Add or edit bill remarks..."
+            {previewError && (
+              <div className="rounded border border-destructive bg-destructive/10 p-2 text-sm text-destructive">
+                Save failed: {previewError}
+              </div>
+            )}
+            {/* identical layout to the printed invoice */}
+            <InvoicePrintView
+              data={previewData}
+              lrActions={(lr) => (
+                <span className="flex gap-1">
+                  <button
+                    type="button"
+                    className="text-primary underline disabled:opacity-50"
+                    disabled={lrEditLoading !== null}
+                    title="Edit this LR in the billing tab — the preview updates as soon as you save"
+                    onClick={() => {
+                      window.focus();
+                      void openLrEdit(lr.id);
+                    }}
+                  >
+                    {lrEditLoading === lr.id ? "Loading..." : "Edit"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-destructive underline"
+                    title="Remove this LR from the bill"
+                    onClick={() => toggleLr(lr.id, false)}
+                  >
+                    Remove
+                  </button>
+                </span>
+              )}
             />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={saving}>
-              Back to Edit
-            </Button>
-            <Button onClick={handleSave} disabled={saving || selectedLrs.length === 0}>
-              {saving ? "Saving..." : "Final Save & Print"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="space-y-1">
+              <Label className="text-xs">Remarks (optional — printed on the bill)</Label>
+              <Textarea
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                rows={2}
+                placeholder="Add or edit bill remarks..."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={previewTab.close} disabled={saving}>
+                Back to Edit
+              </Button>
+              <Button onClick={handleSave} disabled={saving || selectedLrs.length === 0}>
+                {saving ? "Saving..." : "Final Save & Print"}
+              </Button>
+            </div>
+          </div>,
+          previewTab.container
+        )}
 
       {/* in-place LR edit — full LR form on top of the preview; saving updates
           the LR and refreshes the preview without leaving the page */}
