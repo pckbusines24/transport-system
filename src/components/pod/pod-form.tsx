@@ -355,9 +355,9 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                 <TableHead>Dest</TableHead>
                 <TableHead>Billed Party</TableHead>
                 <TableHead>Cargo Type</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Actual Wt</TableHead>
                 <TableHead className="text-right">Rate</TableHead>
+                <TableHead>Remarks</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -387,9 +387,9 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                         {lr.cargoType === "ODC" ? "ODC" : "Normal"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{lr.qty}</TableCell>
                     <TableCell className="text-right tabular-nums">{lr.actualWt}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(lr.rate)}</TableCell>
+                    <TableCell className="max-w-[240px] whitespace-normal break-words">{lr.remarks}</TableCell>
                   </TableRow>
                 ))
               )}

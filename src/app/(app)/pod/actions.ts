@@ -23,6 +23,8 @@ export interface PodPendingLr {
   obdNo: string;
   /** highest item rate — the same per-LR rate the chalan LR list shows */
   rate: number;
+  /** remarks entered on the LR */
+  remarks: string;
 }
 
 function mapLr(lr: {
@@ -30,6 +32,7 @@ function mapLr(lr: {
   lrNo: string;
   lrDate: Date;
   obdNo?: string | null;
+  remarks?: string | null;
   items: { qty: unknown; actualWt: unknown; rate: unknown }[];
   sourceCity?: { name: string } | null;
   destCity?: { name: string } | null;
@@ -48,6 +51,7 @@ function mapLr(lr: {
     actualWt: lr.items.reduce((s, i) => s + toNum(String(i.actualWt)), 0),
     obdNo: lr.obdNo?.trim() || "0",
     rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(String(i.rate)))) : 0,
+    remarks: lr.remarks?.trim() ?? "",
   };
 }
 
@@ -165,6 +169,7 @@ async function withNames(
     consignorId: string;
     cargoType?: string;
     obdNo?: string | null;
+    remarks?: string | null;
     items: { qty: unknown; actualWt: unknown; rate: unknown }[];
   }[]
 ): Promise<PodPendingLr[]> {
