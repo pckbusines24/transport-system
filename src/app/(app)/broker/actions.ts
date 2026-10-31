@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -34,6 +35,7 @@ import {
 const rateBasisSchema = z.enum(["QTY", "ACTUAL_WT", "CHARGE_WT", "FIXED"]);
 
 const advanceSchema = z.object({
+  id: z.string().nullish(),
   side: z.enum(["P", "V"]),
   type: z.enum(ADVANCE_TYPES),
   headKind: z.enum(["INCOME", "EXPENSE", "BANK", "CASH"]).nullish(),
@@ -158,11 +160,15 @@ export async function saveBrokerSlip(input: unknown): Promise<SaveBrokerSlipResu
   const data = parsed.data;
   await authorize(session, "broker", data.id ? "edit" : "create");
 
-  // never trust client totals — recompute everything server-side
-  const advances: BrokerAdvance[] = data.advances.map((a) => ({
-    ...a,
-    amount: advanceAmount(a as BrokerAdvance),
-  }));
+  // never trust client totals — recompute everything server-side.
+  // Every row keeps (or gets) a permanent id: it is the row's Tally REMOTEID,
+  // so an edit alters that voucher instead of re-pointing another one.
+  const seenIds = new Set<string>();
+  const advances: BrokerAdvance[] = data.advances.map((a) => {
+    const id = a.id && !seenIds.has(a.id) ? a.id : randomUUID();
+    seenIds.add(id);
+    return { ...a, id, amount: advanceAmount(a as BrokerAdvance) };
+  });
   const pAdvance = sideAdvanceTotal(advances, "P");
   const vAdvance = sideAdvanceTotal(advances, "V");
 

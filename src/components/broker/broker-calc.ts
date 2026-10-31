@@ -106,6 +106,10 @@ export const ADVANCE_HEAD_KIND_LABELS: Record<AdvanceHeadKind, string> = {
 };
 
 export interface BrokerAdvance {
+  /** permanent row id — the Tally voucher key (SLIP:<slip>:PADV:<id>), so
+   *  deleting or reordering rows never re-points another advance's voucher.
+   *  Rows saved before ids existed were backfilled with their array index. */
+  id?: string | null;
   side: "P" | "V";
   type: BrokerAdvanceType;
   /** master-driven head selection (new UI); legacy rows may only have type/bankName */

@@ -164,6 +164,24 @@ async function removedDocs(
         !b || b.deletedAt ? "Deleted" : "Zero amount");
     });
   }
+  if (module === "SLIP") {
+    // a live slip outside the date filter still builds when asked by id; one
+    // that builds nothing (all amounts zero) has no vouchers left in Tally
+    const { docs: live } = await buildModuleDocs(tx, session, module, { dateFrom: null, dateTo: null, ids }, { sync: true });
+    const liveIds = new Set(live.map((d) => d.id));
+    const rows = await tx.brokerSlip.findMany({
+      where: { id: { in: ids }, firmId: session.firmId },
+      select: { id: true, slipNo: true, slipDate: true, partyId: true, deletedAt: true },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const gone = ids.filter((id) => !liveIds.has(id));
+    const parties = await partyNames(tx, rows.filter((r) => gone.includes(r.id) && r.partyId).map((r) => r.partyId!));
+    return gone.map((id) => {
+      const s = byId.get(id);
+      return removedDoc(id, s?.slipNo ?? "(deleted slip)", s?.slipDate ?? null, s?.partyId ? parties.get(s.partyId) ?? "" : "",
+        !s || s.deletedAt ? "Deleted" : "No entries left");
+    });
+  }
   return [];
 }
 

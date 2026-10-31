@@ -50,7 +50,7 @@ export interface Range {
   ids?: string[];
 }
 
-/** Builder options. `sync` (Chalan and Billing): every voucher carries its
+/** Builder options. `sync` (Chalan, Billing, Broker Slip): every voucher carries its
  *  key as REMOTEID, and the chalan splits Detention / ODC / Fine Slip / Mamool
  *  into their own journals. Without it: the original create-only shapes, used
  *  by the modules not yet on update/delete sync. */
@@ -806,6 +806,8 @@ export async function buildVoucherDocs(
 // ---------------------------------------------------------------- BROKER SLIP
 
 interface SlipAdvance {
+  /** permanent row id (backfilled = array index for rows saved before ids) */
+  id?: string | null;
   side?: "P" | "V";
   type?: string;
   headKind?: string | null;
@@ -822,7 +824,8 @@ interface SlipAdvance {
 export async function buildSlipDocs(
   tx: Tx,
   session: Session,
-  r: Range
+  r: Range,
+  opts: BuildOpts = {}
 ): Promise<{ docs: ExportDoc[]; masters: TallyLedgerMaster[] }> {
   const ctx = await loadCtx(tx, session);
   const range =
@@ -834,9 +837,9 @@ export async function buildSlipDocs(
     // period must export its settlement entries here
     where: {
       firmId: session.firmId,
-      ...(range ? {} : { fyId: session.fyId }),
+      ...(r.ids ? { id: { in: r.ids } } : range ? {} : { fyId: session.fyId }),
       deletedAt: null,
-      ...(range
+      ...(range && !r.ids
         ? { OR: [{ slipDate: range }, { pPaymentDate: range }, { vPaymentDate: range }] }
         : {}),
     },
@@ -945,7 +948,7 @@ export async function buildSlipDocs(
           const partyCr = crLine(pLedger, amt, { name: refNo, type: "Agst Ref" });
           if (a.headKind === "BANK" || a.headKind === "CASH") {
             vouchers.push({
-              key: `SLIP:${s.id}:PADV:${i}`,
+              key: `SLIP:${s.id}:PADV:${a.id ?? i}`,
               type: "Receipt",
               date: aDate,
               narration: nar,
@@ -953,7 +956,7 @@ export async function buildSlipDocs(
             });
           } else {
             vouchers.push({
-              key: `SLIP:${s.id}:PADV:${i}`,
+              key: `SLIP:${s.id}:PADV:${a.id ?? i}`,
               type: "Journal",
               date: aDate,
               narration: nar,
@@ -1086,7 +1089,7 @@ export async function buildSlipDocs(
                   ? moneyLedger(ctx, a.headId, a.bankName?.trim() || "BANK")
                   : a.bankName?.trim() || "BANK";
             vouchers.push({
-              key: `SLIP:${s.id}:VADV:${i}`,
+              key: `SLIP:${s.id}:VADV:${a.id ?? i}`,
               // advance PAID to the owner: money out -> Payment (Journal on a card)
               type: a.headKind === "CASH" ? "Payment" : moneyVoucherType(ctx, a.headId, "Payment"),
               date: aDate,
@@ -1095,7 +1098,7 @@ export async function buildSlipDocs(
             });
           } else {
             vouchers.push({
-              key: `SLIP:${s.id}:VADV:${i}`,
+              key: `SLIP:${s.id}:VADV:${a.id ?? i}`,
               type: "Journal",
               date: aDate,
               narration: nar,
@@ -1138,6 +1141,7 @@ export async function buildSlipDocs(
     }
 
     if (!vouchers.length) continue;
+    if (opts.sync) for (const v of vouchers) v.remoteId = v.key;
     docs.push({
       id: s.id,
       refNo: s.slipNo,
@@ -1377,7 +1381,7 @@ export async function buildModuleDocs(
     case "BILLING":
       return buildBillingDocs(tx, session, r, opts);
     case "SLIP":
-      return buildSlipDocs(tx, session, r);
+      return buildSlipDocs(tx, session, r, opts);
     case "VOUCHERS":
       return buildVoucherDocs(tx, session, r);
     case "EXPENSES":

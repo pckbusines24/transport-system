@@ -266,10 +266,10 @@ export function applyOps(rows: Map<string, RegistryRow>, ops: SyncOp[]): Map<str
 }
 
 /** Register key prefix of one document's vouchers, per module. */
-export const SYNC_PREFIX: Record<string, string> = { CHALAN: "CHALAN:", BILLING: "BILL:" };
+export const SYNC_PREFIX: Record<string, string> = { CHALAN: "CHALAN:", BILLING: "BILL:", SLIP: "SLIP:" };
 
 /** Modules whose exports update / delete their own vouchers in Tally. */
-export const SYNC_MODULES = ["CHALAN", "BILLING"] as const;
+export const SYNC_MODULES = ["CHALAN", "BILLING", "SLIP"] as const;
 
 /** "CHALAN:<id>:MAIN" -> "<id>" for a module prefix. */
 export function docIdOfKey(key: string, prefix: string): string | null {

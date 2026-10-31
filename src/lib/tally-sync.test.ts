@@ -160,6 +160,28 @@ describe("Tally sync planner — sync ON", () => {
   });
 });
 
+describe("Tally sync planner — broker slip advances", () => {
+  // advance vouchers are keyed by the row's permanent id, not its position
+  const slip = (advs: [string, number][]): SyncDoc => ({
+    id: "s1",
+    refNo: "12",
+    vouchers: [
+      v("SLIP:s1:PMAIN", [["PARTY", 90000, "DR"], ["FREIGHT RECEIPTS", 90000, "CR"]], { type: "Sales" }),
+      ...advs.map(([id, amt]) =>
+        v(`SLIP:s1:VADV:${id}`, [["OWNER", amt, "DR"], ["BANK", amt, "CR"]], { type: "Payment" })
+      ),
+    ],
+  });
+
+  it("deleting the middle advance deletes only that voucher, the others stay put", () => {
+    const { reg } = exportAndConfirm(slip([["0", 5000], ["1", 3000], ["2", 2000]]), new Map());
+    const { plan } = exportAndConfirm(slip([["0", 5000], ["2", 2000]]), reg);
+    expect(plan.vouchers).toEqual([]);
+    expect(plan.deletes.map((d) => d.remoteId)).toEqual(["SLIP:s1:VADV:1"]);
+    expect(docIdOfKey("SLIP:s1:VADV:abc", "SLIP:")).toBe("s1");
+  });
+});
+
 describe("Tally sync planner — sync OFF keeps the old export", () => {
   it("creates everything, never deletes", () => {
     const doc = chalan();
