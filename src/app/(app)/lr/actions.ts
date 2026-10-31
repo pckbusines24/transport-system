@@ -13,6 +13,7 @@ import { lrNumberAllocator, nextLrNumber, syncSequenceTo } from "@/lib/sequences
 import { stateCodeFromGstin } from "@/lib/calc/gst";
 import { computeLrTotals, itemAmount } from "@/components/lr/lr-calc";
 import { resyncInvoicesForLr } from "@/app/(app)/billing/actions";
+import { restateChalansForLr } from "@/app/(app)/chalan/actions";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { loadLrFormData, type LrFormData } from "./form-data";
 
@@ -344,6 +345,15 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
         // invoice totals are snapshots — a billed LR edited here (e.g. from
         // the bill preview) must flow through to its live bills
         await resyncInvoicesForLr(tx, session, savedId);
+        // a rate-based chalan's hire is rate × these sums — keep it in step
+        // (a chalan whose balance is already paid refuses, rolling this back)
+        const sums = (rows: { qty: unknown; actualWt: unknown; chargeWt: unknown }[]) =>
+          ["qty", "actualWt", "chargeWt"]
+            .map((k) => rows.reduce((s, r) => s + toNum(r[k as keyof typeof r]), 0).toFixed(3))
+            .join("|");
+        if (sums(before.items) !== sums(data.items)) {
+          await restateChalansForLr(tx, session, savedId);
+        }
       } else {
         const created = await tx.lr.create({
           data: {

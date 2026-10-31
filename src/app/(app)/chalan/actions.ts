@@ -309,6 +309,286 @@ async function recomputeAndStore(
   };
 }
 
+/** The chalan save itself, inside the caller's transaction — also used to
+ *  restate a chalan when one of its LRs changes (see restateChalansForLr). */
+async function saveChalanTx(
+  tx: Tx,
+  session: ReturnType<typeof requireSession>,
+  data: z.infer<typeof chalanSchema>
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const existing = data.id
+    ? await tx.chalan.findFirst({
+        where: { id: data.id, firmId: session.firmId, deletedAt: null },
+        include: {
+          advances: true,
+          lrs: { include: { lr: { include: { invoiceLrs: true, pods: true } } } },
+        },
+      })
+    : null;
+  if (data.id && !existing) return { ok: false as const, error: "Chalan not found" };
+  // a cancelled chalan owes nothing — editing it would re-post the accrual
+  // behind the CANCELLED stamp; Restore it first
+  if (existing?.cancelledAt) {
+    return { ok: false as const, error: "This chalan is cancelled — restore it before editing." };
+  }
+
+  // an edit stays in the chalan's own financial year — its date, ledger
+  // legs and shortage entries all keep that year's stamp; only a fresh
+  // chalan belongs to the session FY (FY continuity: old docs edit from here)
+  const docFyId = existing?.fyId ?? session.fyId;
+  const docSession = { ...session, fyId: docFyId };
+  // wrong-FY guard: the date must belong to the document's own FY
+  await assertDateInFy(tx, { fyId: docFyId }, new Date(data.chalanDate), "chalan entry");
+  const clash = await tx.chalan.findFirst({
+    where: {
+      // chalan numbers CONTINUE across financial years, so uniqueness is
+      // firm-wide — last year's 498 blocks a new 498 this year
+      firmId: session.firmId,
+      chalanNo: data.chalanNo,
+      deletedAt: null,
+      ...(data.id ? { id: { not: data.id } } : {}),
+    },
+    select: { id: true },
+  });
+  if (clash) {
+    return { ok: false as const, error: `Chalan No ${data.chalanNo} already exists — use a different number.` };
+  }
+  // an LR can ride only ONE live chalan — a second link would accrue the
+  // same hire twice
+  if (data.lrIds.length) {
+    const otherLinks = await tx.chalanLr.findMany({
+      where: {
+        lrId: { in: data.lrIds },
+        ...(data.id ? { chalanId: { not: data.id } } : {}),
+      },
+      include: {
+        chalan: { select: { chalanNo: true, deletedAt: true, cancelledAt: true } },
+        lr: { select: { lrNo: true } },
+      },
+    });
+    const live = otherLinks.find((l) => !l.chalan.deletedAt && !l.chalan.cancelledAt);
+    if (live) {
+      return {
+        ok: false as const,
+        error: `LR ${live.lr.lrNo} is already loaded on chalan ${live.chalan.chalanNo} — one LR rides one chalan.`,
+      };
+    }
+  }
+
+  const advances = existing?.advances.map((a) => toNum(a.amount)) ?? [];
+  const { fields } = await recomputeAndStore(tx, session, data, advances);
+
+  // a financially settled chalan's money story is frozen: with a balance
+  // payment or voucher allocation against it, changing the totals would
+  // strand the recorded settlement against figures that no longer exist
+  if (existing) {
+    const ownSettled = round2(
+      toNum(existing.balPaidAmount) +
+        toNum(existing.balShortage) +
+        toNum(existing.balRoundOff) +
+        toNum(existing.balAdvanceAdjusted)
+    );
+    const voucherSettled =
+      (
+        await settledByRef(tx, {
+          firmId: session.firmId,
+          fyId: session.fyId,
+          refTypes: ["FREIGHT_CHALLAN"],
+          refIds: [existing.id],
+        })
+      ).get(existing.id) ?? 0;
+    if (
+      round2(ownSettled + voucherSettled) > 0.009 &&
+      (round2(fields.grandTotal) !== round2(toNum(existing.grandTotal)) ||
+        data.brokerId !== existing.brokerId)
+    ) {
+      return {
+        ok: false as const,
+        error:
+          "This chalan already has payments/settlements recorded against it — its amounts and broker cannot be changed. Reverse the payment (or delete the settling voucher) first.",
+      };
+    }
+    // saved advances are posted against (and consumed from) the CURRENT
+    // broker — switching brokers underneath them would leave his ledger
+    // debited for advances that now belong to someone else
+    if (data.brokerId !== existing.brokerId && existing.advances.length > 0) {
+      return {
+        ok: false as const,
+        error:
+          "This chalan has saved advances posted against its broker — the broker cannot be changed. Remove the advances first, then change the broker and re-enter them.",
+      };
+    }
+  }
+
+  // LRs removed by this edit must not stay ON_CHALAN forever — a billed
+  // one cannot leave at all, the rest return to their correct status
+  const removedLrs = existing
+    ? existing.lrs.filter((l) => !data.lrIds.includes(l.lrId))
+    : [];
+  const removedBilled = removedLrs.find(
+    (l) => l.lr.invoiceLrs.length > 0 || l.lr.status === "BILLED"
+  );
+  if (removedBilled) {
+    return {
+      ok: false as const,
+      error: `LR ${removedBilled.lr.lrNo} is already billed — delete its bill before removing it from this chalan.`,
+    };
+  }
+
+  let id: string;
+  if (existing) {
+    await tx.chalan.update({ where: { id: existing.id }, data: fields });
+    await tx.chalanLr.deleteMany({ where: { chalanId: existing.id } });
+    id = existing.id;
+  } else {
+    const created = await tx.chalan.create({
+      data: {
+        tenantId: session.tenantId,
+        firmId: session.firmId,
+        fyId: session.fyId,
+        createdById: session.userId,
+        ...fields,
+      },
+    });
+    id = created.id;
+  }
+  if (data.lrIds.length) {
+    await tx.chalanLr.createMany({
+      data: data.lrIds.map((lrId) => ({ tenantId: session.tenantId, chalanId: id, lrId })),
+    });
+  }
+  // removed LRs leave the chalan properly: back to PENDING (or DELIVERED
+  // when a POD exists) instead of being stranded ON_CHALAN with no chalan
+  for (const l of removedLrs) {
+    if (l.lr.lrType === "CANCELLED" || l.lr.lrType === "PAPER_CHANGE") continue;
+    await tx.lr.update({
+      where: { id: l.lrId },
+      data: { status: l.lr.pods.length ? "DELIVERED" : "PENDING" },
+    });
+  }
+  // An already-final chalan keeps its LR set consistent — LRs ADDED by
+  // this edit go ON_CHALAN now (finalize only runs once).
+  //
+  // This used to update every LR on the chalan, so re-saving a final
+  // chalan for any reason dragged its delivered and BILLED LRs back to
+  // ON_CHALAN — the bill kept its links, but the LR Register showed the
+  // LRs un-billed again. Only genuinely new LRs are touched, and only
+  // forward: see `@/lib/lr-status`.
+  if (existing?.isFinal && data.lrIds.length) {
+    const addedLrIds = newlyLinkedLrIds(
+      data.lrIds,
+      existing.lrs.map((l) => l.lrId)
+    );
+    if (addedLrIds.length) {
+      await tx.lr.updateMany({
+        where: {
+          id: { in: addedLrIds },
+          status: { in: [...ON_CHALAN_SOURCE_STATUSES] },
+        },
+        data: { status: "ON_CHALAN" },
+      });
+    }
+  }
+  // ledger accrual: hire expense vs broker/owner payable — the advances and
+  // balance payment then debit the broker against this credit
+  await reverseLedger(tx, "CHALAN", id);
+  // Every component of the settlement posts on its own line so the ledger
+  // shows exactly how the payable was arrived at, instead of one opaque
+  // net figure. Earnings credit the broker against an expense head;
+  // deductions debit him back against a recovery / income head. The two
+  // sides net to grandTotal, which is what computeChalan produces.
+  const common = {
+    date: fields.chalanDate,
+    refType: "CHALAN",
+    refId: id,
+    refNo: fields.chalanNo,
+  };
+  const entries: Parameters<typeof postLedger>[2] = [];
+  const tag = `chalan ${fields.chalanNo}`;
+
+  const earning = async (label: string, amount: number, headName: string) => {
+    if (amount <= 0) return;
+    const headId = await ensureAccountHead(tx, session, headName, "EXPENSE");
+    entries.push(
+      { ...common, accountHeadId: headId, side: "DEBIT", amount, narration: `${label} — ${tag}` },
+      {
+        ...common,
+        partyId: fields.brokerId,
+        side: "CREDIT",
+        amount,
+        narration: `${label} payable — ${tag}`,
+      }
+    );
+  };
+  const deduction = async (label: string, amount: number, headName: string) => {
+    if (amount <= 0) return;
+    const headId = await ensureAccountHead(tx, session, headName, "INCOME");
+    entries.push(
+      {
+        ...common,
+        partyId: fields.brokerId,
+        side: "DEBIT",
+        amount,
+        narration: `${label} deducted — ${tag}`,
+      },
+      { ...common, accountHeadId: headId, side: "CREDIT", amount, narration: `${label} — ${tag}` }
+    );
+  };
+
+  await earning("Lorry hire", fields.freight, "Lorry Hire Expense");
+  await earning("Detention", fields.detention, "Detention Charges");
+  await earning("ODC", fields.odcAmt, "ODC Charges");
+  await earning("Fine slip", fields.fineSlip, "Fine Slip Charges");
+  await earning("Other charges", fields.otherAmt, "Other Chalan Charges");
+
+  await deduction("LD charge", fields.ldCharge, "LD Charge Recovered");
+  // shortage is only the party leg here — the shortage register posts the
+  // matching credit to the one common Shortage ledger and records the
+  // recovery, so the settlement report can trace it
+  if (fields.shortageAmt > 0) {
+    entries.push({
+      ...common,
+      partyId: fields.brokerId,
+      side: "DEBIT",
+      amount: fields.shortageAmt,
+      narration: `Shortage deducted — ${tag}`,
+    });
+  }
+  await deduction("Commission", fields.commissionAmt, "Commission Income");
+  await deduction("TDS", fields.tdsAmt, "TDS Payable");
+  await deduction("Mamool", fields.mamool, "Mamool Recovered");
+  await deduction("Courier", fields.courierCharge, "Courier Recovered");
+
+  // docSession: an old chalan's re-posted legs stay stamped in ITS year
+  await postLedger(tx, docSession, entries);
+  // recovered from the owner: his payable dropped by the shortage.
+  // FULL teardown first (not just the recoveries): editing the shortage
+  // down to zero must also remove the recovery's ledger credit and the
+  // auto-raised entry, or a phantom open shortage survives the edit
+  await releaseShortage(tx, "CHALAN", id);
+  if (fields.shortageAmt > 0) {
+    await recoverShortage(tx, docSession, {
+      date: fields.chalanDate,
+      module: "CHALAN",
+      refId: id,
+      refNo: fields.chalanNo,
+      source: "OWNER",
+      partyId: fields.brokerId,
+      partyKind: "OWNER",
+      amount: fields.shortageAmt,
+      remarks: `Deducted from chalan ${fields.chalanNo}`,
+    });
+  }
+  await audit(tx, session, {
+    entity: "Chalan",
+    entityId: id,
+    action: existing ? "UPDATE" : "CREATE",
+    before: existing ?? undefined,
+    after: fields,
+  });
+  return { ok: true as const, id };
+}
+
 /** Step-1 save (draft) — creates or updates the chalan and its LR links. */
 export async function saveChalan(input: unknown): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const session = requireSession();
@@ -318,283 +598,79 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
   await authorize(session, "chalan", data.id ? "edit" : "create");
 
   try {
-    const res = await withTenant(session.tenantId, async (tx) => {
-      const existing = data.id
-        ? await tx.chalan.findFirst({
-            where: { id: data.id, firmId: session.firmId, deletedAt: null },
-            include: {
-              advances: true,
-              lrs: { include: { lr: { include: { invoiceLrs: true, pods: true } } } },
-            },
-          })
-        : null;
-      if (data.id && !existing) return { ok: false as const, error: "Chalan not found" };
-      // a cancelled chalan owes nothing — editing it would re-post the accrual
-      // behind the CANCELLED stamp; Restore it first
-      if (existing?.cancelledAt) {
-        return { ok: false as const, error: "This chalan is cancelled — restore it before editing." };
-      }
-
-      // an edit stays in the chalan's own financial year — its date, ledger
-      // legs and shortage entries all keep that year's stamp; only a fresh
-      // chalan belongs to the session FY (FY continuity: old docs edit from here)
-      const docFyId = existing?.fyId ?? session.fyId;
-      const docSession = { ...session, fyId: docFyId };
-      // wrong-FY guard: the date must belong to the document's own FY
-      await assertDateInFy(tx, { fyId: docFyId }, new Date(data.chalanDate), "chalan entry");
-      const clash = await tx.chalan.findFirst({
-        where: {
-          // chalan numbers CONTINUE across financial years, so uniqueness is
-          // firm-wide — last year's 498 blocks a new 498 this year
-          firmId: session.firmId,
-          chalanNo: data.chalanNo,
-          deletedAt: null,
-          ...(data.id ? { id: { not: data.id } } : {}),
-        },
-        select: { id: true },
-      });
-      if (clash) {
-        return { ok: false as const, error: `Chalan No ${data.chalanNo} already exists — use a different number.` };
-      }
-      // an LR can ride only ONE live chalan — a second link would accrue the
-      // same hire twice
-      if (data.lrIds.length) {
-        const otherLinks = await tx.chalanLr.findMany({
-          where: {
-            lrId: { in: data.lrIds },
-            ...(data.id ? { chalanId: { not: data.id } } : {}),
-          },
-          include: {
-            chalan: { select: { chalanNo: true, deletedAt: true, cancelledAt: true } },
-            lr: { select: { lrNo: true } },
-          },
-        });
-        const live = otherLinks.find((l) => !l.chalan.deletedAt && !l.chalan.cancelledAt);
-        if (live) {
-          return {
-            ok: false as const,
-            error: `LR ${live.lr.lrNo} is already loaded on chalan ${live.chalan.chalanNo} — one LR rides one chalan.`,
-          };
-        }
-      }
-
-      const advances = existing?.advances.map((a) => toNum(a.amount)) ?? [];
-      const { fields } = await recomputeAndStore(tx, session, data, advances);
-
-      // a financially settled chalan's money story is frozen: with a balance
-      // payment or voucher allocation against it, changing the totals would
-      // strand the recorded settlement against figures that no longer exist
-      if (existing) {
-        const ownSettled = round2(
-          toNum(existing.balPaidAmount) +
-            toNum(existing.balShortage) +
-            toNum(existing.balRoundOff) +
-            toNum(existing.balAdvanceAdjusted)
-        );
-        const voucherSettled =
-          (
-            await settledByRef(tx, {
-              firmId: session.firmId,
-              fyId: session.fyId,
-              refTypes: ["FREIGHT_CHALLAN"],
-              refIds: [existing.id],
-            })
-          ).get(existing.id) ?? 0;
-        if (
-          round2(ownSettled + voucherSettled) > 0.009 &&
-          (round2(fields.grandTotal) !== round2(toNum(existing.grandTotal)) ||
-            data.brokerId !== existing.brokerId)
-        ) {
-          return {
-            ok: false as const,
-            error:
-              "This chalan already has payments/settlements recorded against it — its amounts and broker cannot be changed. Reverse the payment (or delete the settling voucher) first.",
-          };
-        }
-        // saved advances are posted against (and consumed from) the CURRENT
-        // broker — switching brokers underneath them would leave his ledger
-        // debited for advances that now belong to someone else
-        if (data.brokerId !== existing.brokerId && existing.advances.length > 0) {
-          return {
-            ok: false as const,
-            error:
-              "This chalan has saved advances posted against its broker — the broker cannot be changed. Remove the advances first, then change the broker and re-enter them.",
-          };
-        }
-      }
-
-      // LRs removed by this edit must not stay ON_CHALAN forever — a billed
-      // one cannot leave at all, the rest return to their correct status
-      const removedLrs = existing
-        ? existing.lrs.filter((l) => !data.lrIds.includes(l.lrId))
-        : [];
-      const removedBilled = removedLrs.find(
-        (l) => l.lr.invoiceLrs.length > 0 || l.lr.status === "BILLED"
-      );
-      if (removedBilled) {
-        return {
-          ok: false as const,
-          error: `LR ${removedBilled.lr.lrNo} is already billed — delete its bill before removing it from this chalan.`,
-        };
-      }
-
-      let id: string;
-      if (existing) {
-        await tx.chalan.update({ where: { id: existing.id }, data: fields });
-        await tx.chalanLr.deleteMany({ where: { chalanId: existing.id } });
-        id = existing.id;
-      } else {
-        const created = await tx.chalan.create({
-          data: {
-            tenantId: session.tenantId,
-            firmId: session.firmId,
-            fyId: session.fyId,
-            createdById: session.userId,
-            ...fields,
-          },
-        });
-        id = created.id;
-      }
-      if (data.lrIds.length) {
-        await tx.chalanLr.createMany({
-          data: data.lrIds.map((lrId) => ({ tenantId: session.tenantId, chalanId: id, lrId })),
-        });
-      }
-      // removed LRs leave the chalan properly: back to PENDING (or DELIVERED
-      // when a POD exists) instead of being stranded ON_CHALAN with no chalan
-      for (const l of removedLrs) {
-        if (l.lr.lrType === "CANCELLED" || l.lr.lrType === "PAPER_CHANGE") continue;
-        await tx.lr.update({
-          where: { id: l.lrId },
-          data: { status: l.lr.pods.length ? "DELIVERED" : "PENDING" },
-        });
-      }
-      // An already-final chalan keeps its LR set consistent — LRs ADDED by
-      // this edit go ON_CHALAN now (finalize only runs once).
-      //
-      // This used to update every LR on the chalan, so re-saving a final
-      // chalan for any reason dragged its delivered and BILLED LRs back to
-      // ON_CHALAN — the bill kept its links, but the LR Register showed the
-      // LRs un-billed again. Only genuinely new LRs are touched, and only
-      // forward: see `@/lib/lr-status`.
-      if (existing?.isFinal && data.lrIds.length) {
-        const addedLrIds = newlyLinkedLrIds(
-          data.lrIds,
-          existing.lrs.map((l) => l.lrId)
-        );
-        if (addedLrIds.length) {
-          await tx.lr.updateMany({
-            where: {
-              id: { in: addedLrIds },
-              status: { in: [...ON_CHALAN_SOURCE_STATUSES] },
-            },
-            data: { status: "ON_CHALAN" },
-          });
-        }
-      }
-      // ledger accrual: hire expense vs broker/owner payable — the advances and
-      // balance payment then debit the broker against this credit
-      await reverseLedger(tx, "CHALAN", id);
-      // Every component of the settlement posts on its own line so the ledger
-      // shows exactly how the payable was arrived at, instead of one opaque
-      // net figure. Earnings credit the broker against an expense head;
-      // deductions debit him back against a recovery / income head. The two
-      // sides net to grandTotal, which is what computeChalan produces.
-      const common = {
-        date: fields.chalanDate,
-        refType: "CHALAN",
-        refId: id,
-        refNo: fields.chalanNo,
-      };
-      const entries: Parameters<typeof postLedger>[2] = [];
-      const tag = `chalan ${fields.chalanNo}`;
-
-      const earning = async (label: string, amount: number, headName: string) => {
-        if (amount <= 0) return;
-        const headId = await ensureAccountHead(tx, session, headName, "EXPENSE");
-        entries.push(
-          { ...common, accountHeadId: headId, side: "DEBIT", amount, narration: `${label} — ${tag}` },
-          {
-            ...common,
-            partyId: fields.brokerId,
-            side: "CREDIT",
-            amount,
-            narration: `${label} payable — ${tag}`,
-          }
-        );
-      };
-      const deduction = async (label: string, amount: number, headName: string) => {
-        if (amount <= 0) return;
-        const headId = await ensureAccountHead(tx, session, headName, "INCOME");
-        entries.push(
-          {
-            ...common,
-            partyId: fields.brokerId,
-            side: "DEBIT",
-            amount,
-            narration: `${label} deducted — ${tag}`,
-          },
-          { ...common, accountHeadId: headId, side: "CREDIT", amount, narration: `${label} — ${tag}` }
-        );
-      };
-
-      await earning("Lorry hire", fields.freight, "Lorry Hire Expense");
-      await earning("Detention", fields.detention, "Detention Charges");
-      await earning("ODC", fields.odcAmt, "ODC Charges");
-      await earning("Fine slip", fields.fineSlip, "Fine Slip Charges");
-      await earning("Other charges", fields.otherAmt, "Other Chalan Charges");
-
-      await deduction("LD charge", fields.ldCharge, "LD Charge Recovered");
-      // shortage is only the party leg here — the shortage register posts the
-      // matching credit to the one common Shortage ledger and records the
-      // recovery, so the settlement report can trace it
-      if (fields.shortageAmt > 0) {
-        entries.push({
-          ...common,
-          partyId: fields.brokerId,
-          side: "DEBIT",
-          amount: fields.shortageAmt,
-          narration: `Shortage deducted — ${tag}`,
-        });
-      }
-      await deduction("Commission", fields.commissionAmt, "Commission Income");
-      await deduction("TDS", fields.tdsAmt, "TDS Payable");
-      await deduction("Mamool", fields.mamool, "Mamool Recovered");
-      await deduction("Courier", fields.courierCharge, "Courier Recovered");
-
-      // docSession: an old chalan's re-posted legs stay stamped in ITS year
-      await postLedger(tx, docSession, entries);
-      // recovered from the owner: his payable dropped by the shortage.
-      // FULL teardown first (not just the recoveries): editing the shortage
-      // down to zero must also remove the recovery's ledger credit and the
-      // auto-raised entry, or a phantom open shortage survives the edit
-      await releaseShortage(tx, "CHALAN", id);
-      if (fields.shortageAmt > 0) {
-        await recoverShortage(tx, docSession, {
-          date: fields.chalanDate,
-          module: "CHALAN",
-          refId: id,
-          refNo: fields.chalanNo,
-          source: "OWNER",
-          partyId: fields.brokerId,
-          partyKind: "OWNER",
-          amount: fields.shortageAmt,
-          remarks: `Deducted from chalan ${fields.chalanNo}`,
-        });
-      }
-      await audit(tx, session, {
-        entity: "Chalan",
-        entityId: id,
-        action: existing ? "UPDATE" : "CREATE",
-        before: existing ?? undefined,
-        after: fields,
-      });
-      return { ok: true as const, id };
-    });
+    const res = await withTenant(session.tenantId, (tx) => saveChalanTx(tx, session, data));
     if (res.ok) revalidateOutstanding(session.tenantId);
     return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
+  }
+}
+
+/**
+ * An LR's qty/weights changed: re-save every live, rate-based chalan it rides
+ * so the vehicle freight, TDS, commission, balance and ledger follow the new
+ * weights. A chalan with a balance payment / settling voucher refuses the
+ * change (saveChalanTx's settled guard) and the LR save is rolled back.
+ * Manual-freight chalans (rate 0) don't depend on weight and are left alone.
+ */
+export async function restateChalansForLr(
+  tx: Tx,
+  session: ReturnType<typeof requireSession>,
+  lrId: string
+): Promise<void> {
+  const chalans = await tx.chalan.findMany({
+    where: {
+      firmId: session.firmId,
+      deletedAt: null,
+      cancelledAt: null,
+      rate: { gt: 0 },
+      lrs: { some: { lrId } },
+    },
+    include: { lrs: { select: { lrId: true } } },
+  });
+  for (const c of chalans) {
+    const data = chalanSchema.parse({
+      id: c.id,
+      chalanNo: c.chalanNo,
+      chalanDate: c.chalanDate.toISOString(),
+      brokerId: c.brokerId,
+      vehicleId: c.vehicleId,
+      driverName: c.driverName,
+      driverMobile: c.driverMobile,
+      licenseNo: c.licenseNo,
+      payableAt: c.payableAt,
+      transportName: c.transportName,
+      ownerName: c.ownerName,
+      remarks: c.remarks,
+      lrIds: c.lrs.map((l) => l.lrId),
+      freight: toNum(c.freight),
+      rate: toNum(c.rate),
+      rateBasis: c.rateBasis,
+      detention: toNum(c.detention),
+      odcAmt: toNum(c.odcAmt),
+      fineSlip: toNum(c.fineSlip),
+      ldCharge: toNum(c.ldCharge),
+      shortageAmt: toNum(c.shortageAmt),
+      otherAmt: toNum(c.otherAmt),
+      otherRemarks: c.otherRemarks,
+      commissionPct: toNum(c.commissionPct),
+      commissionAmt: toNum(c.commissionAmt),
+      mamool: toNum(c.mamool),
+      courierCharge: toNum(c.courierCharge),
+      tdsPct: toNum(c.tdsPct),
+      startKm: c.startKm == null ? null : toNum(c.startKm),
+      unloadDate: c.unloadDate ? c.unloadDate.toISOString() : null,
+      unloadKm: c.unloadKm == null ? null : toNum(c.unloadKm),
+      unloadRemarks: c.unloadRemarks,
+    });
+    const res = await saveChalanTx(tx, session, data);
+    if (!res.ok) {
+      throw new Error(
+        res.error.startsWith("This chalan already has payments")
+          ? `This LR is on chalan ${c.chalanNo}, whose balance is already paid — changing Qty/weights would change its freight. Reverse the chalan's balance payment first, or leave the weights as they are.`
+          : `Chalan ${c.chalanNo} could not be updated with this LR's new weights: ${res.error}`
+      );
+    }
   }
 }
 

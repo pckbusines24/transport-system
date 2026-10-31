@@ -160,6 +160,11 @@ function toIso(text: string): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** rows whose Charge Wt was set apart from Actual Wt — those keep their own value */
+function manualChargeWtRows(items: LrFormItem[]): number[] {
+  return items.flatMap((i, idx) => (toNum(i.chargeWt) !== toNum(i.actualWt) ? [idx] : []));
+}
+
 /** Enter advances to the next field (form-entry convention). */
 function handleEnterAdvance(e: React.KeyboardEvent<HTMLFormElement>) {
   if (e.key !== "Enter") return;
@@ -255,9 +260,10 @@ export function LrForm(props: LrFormProps) {
   const [productOptions, setProductOptions] = React.useState(props.productOptions);
 
   const freightTouched = React.useRef(props.mode === "edit");
-  // rows where the user typed Charge Wt manually — stop mirroring Actual Wt there
+  // rows where the user typed Charge Wt manually — stop mirroring Actual Wt there.
+  // A loaded row counts as manual only if its Charge Wt differs from Actual Wt.
   const chargeWtTouched = React.useRef<Set<number>>(
-    new Set(props.mode === "edit" ? (props.defaults.items ?? []).map((_, i) => i) : [])
+    new Set(props.mode === "edit" ? manualChargeWtRows(props.defaults.items ?? []) : [])
   );
 
   const form = useForm<LrFormValues>({ defaultValues: props.defaults });
@@ -275,7 +281,7 @@ export function LrForm(props: LrFormProps) {
   React.useEffect(() => {
     if (props.batchEditing) {
       freightTouched.current = true;
-      (getValues().items ?? []).forEach((_, i) => chargeWtTouched.current.add(i));
+      chargeWtTouched.current = new Set(manualChargeWtRows(getValues().items ?? []));
     }
   }, [props.batchEditing, getValues]);
 
@@ -295,6 +301,25 @@ export function LrForm(props: LrFormProps) {
       rateBasis: i.rateBasis,
     }))
   );
+
+  // any change in Product Details (qty, weights, rate, basis, rows) re-enables
+  // auto freight, so Freight and Grand Total follow the new Items Total — also
+  // in edit mode, where freight starts out as the saved value
+  const reenableAutoFreight = () => {
+    freightTouched.current = false;
+  };
+
+  const removeItemRow = (index: number) => {
+    reenableAutoFreight();
+    // keep the manual Charge Wt flags lined up with the rows that shift up
+    const next = new Set<number>();
+    chargeWtTouched.current.forEach((i) => {
+      if (i < index) next.add(i);
+      else if (i > index) next.add(i - 1);
+    });
+    chargeWtTouched.current = next;
+    items.remove(index);
+  };
 
   // freight auto = sum of item amounts, until manually edited
   React.useEffect(() => {
@@ -882,7 +907,10 @@ export function LrForm(props: LrFormProps) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => items.append(emptyLrItem())}
+            onClick={() => {
+              reenableAutoFreight();
+              items.append(emptyLrItem());
+            }}
           >
             <Plus className="h-4 w-4" /> Add Row
           </Button>
@@ -961,7 +989,10 @@ export function LrForm(props: LrFormProps) {
                   <Input
                     type="number"
                     step="any"
-                    {...register(`items.${index}.qty`, { valueAsNumber: true })}
+                    {...register(`items.${index}.qty`, {
+                      valueAsNumber: true,
+                      onChange: reenableAutoFreight,
+                    })}
                     className={numCls}
                     onFocus={(e) => e.target.select()}
                   />
@@ -971,6 +1002,7 @@ export function LrForm(props: LrFormProps) {
                     {...register(`items.${index}.actualWt`, {
                       valueAsNumber: true,
                       onChange: (e) => {
+                        reenableAutoFreight();
                         if (!chargeWtTouched.current.has(index)) {
                           setValue(`items.${index}.chargeWt`, toNum(e.target.value));
                         }
@@ -984,7 +1016,10 @@ export function LrForm(props: LrFormProps) {
                     step="any"
                     {...register(`items.${index}.chargeWt`, {
                       valueAsNumber: true,
-                      onChange: () => chargeWtTouched.current.add(index),
+                      onChange: () => {
+                        reenableAutoFreight();
+                        chargeWtTouched.current.add(index);
+                      },
                     })}
                     className={numCls}
                     onFocus={(e) => e.target.select()}
@@ -995,11 +1030,7 @@ export function LrForm(props: LrFormProps) {
                     step="any"
                     {...register(`items.${index}.rate`, {
                       valueAsNumber: true,
-                      // changing a rate (also in edit mode) re-enables auto freight
-                      // so Freight and Grand Total recalculate from the new rate
-                      onChange: () => {
-                        freightTouched.current = false;
-                      },
+                      onChange: reenableAutoFreight,
                     })}
                     className={numCls}
                     onFocus={(e) => e.target.select()}
@@ -1007,7 +1038,7 @@ export function LrForm(props: LrFormProps) {
                   <Select
                     value={row?.rateBasis ?? "CHARGE_WT"}
                     onValueChange={(val) => {
-                      freightTouched.current = false;
+                      reenableAutoFreight();
                       setValue(`items.${index}.rateBasis`, val as RateBasis);
                     }}
                   >
@@ -1031,7 +1062,7 @@ export function LrForm(props: LrFormProps) {
                     size="icon"
                     className="h-8 w-8 text-destructive"
                     disabled={items.fields.length <= 1}
-                    onClick={() => items.remove(index)}
+                    onClick={() => removeItemRow(index)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
