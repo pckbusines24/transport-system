@@ -330,10 +330,10 @@ export default async function ChalanPrintPage({
             </td>
             {/* totals come from the saved chalan so print always matches the record */}
             <td className="border border-black px-1 py-0.5 text-right">
-              {formatWt(chalan.actualWt)}
+              {formatWt(toNum(chalan.actualWt))}
             </td>
             <td className="border border-black px-1 py-0.5 text-right">
-              {formatWt(chalan.chargeWt)}
+              {formatWt(toNum(chalan.chargeWt))}
             </td>
           </tr>
         </tfoot>
