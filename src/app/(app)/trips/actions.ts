@@ -10,6 +10,7 @@ import { audit } from "@/lib/audit";
 import { nextDocNumber, syncSequenceTo } from "@/lib/sequences";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { round2 } from "@/lib/calc/tds";
+import { roundWt } from "@/lib/utils";
 import { tripLegTotal, tripLegBalance } from "@/lib/calc/trip";
 import { chalanTotals, slipTotals } from "@/lib/trip-docs";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
@@ -659,7 +660,7 @@ export async function findTripSources(vehicleId: string, dateIso: string): Promi
         sourceCity: cityName.get(lr.sourceCityId) ?? null,
         destCityId: lr.destCityId,
         destCity: cityName.get(lr.destCityId) ?? null,
-        weight: lr.items.reduce((s, i) => s + Number(i.chargeWt), 0),
+        weight: roundWt(lr.items.reduce((s, i) => s + Number(i.chargeWt), 0)),
         freight: Number(lr.freight),
         advance: Number(lr.advance),
       });

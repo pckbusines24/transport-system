@@ -28,8 +28,8 @@ import { MasterCombobox, type MasterOption } from "@/components/data/master-comb
 import { Field, NumInput, PartyCombobox, VehicleCombobox, enterAdvances, BankCashCombobox } from "@/components/fleet/fields";
 import { LrPicker, SelectedLrList, type PendingLrRow } from "@/components/fleet/lr-picker";
 import { computeChalan, dieselAdvanceAmount } from "@/lib/calc/chalan";
-import { tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
-import { formatDate, formatMoney, parseDdMmYyyy } from "@/lib/utils";
+import { round2, tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
+import { formatDate, formatMoney, parseDdMmYyyy, roundWt } from "@/lib/utils";
 import {
   AdvanceAdjustGrid,
   advanceAdjustError,
@@ -346,14 +346,16 @@ export function ChalanForm({
         ) / 100
       : a.amount;
 
-  const bookingFreight = selected.reduce((s, r) => s + r.freight, 0);
-  const actualWt = selected.reduce((s, r) => s + r.actualWt, 0);
-  const chargeWt = selected.reduce((s, r) => s + r.chargeWt, 0);
+  // LR sums: JS float addition leaves noise (0.30000000000000004) — round to
+  // the stored precision (money 2, weight/qty 3) before showing or using them
+  const bookingFreight = round2(selected.reduce((s, r) => s + r.freight, 0));
+  const actualWt = roundWt(selected.reduce((s, r) => s + r.actualWt, 0));
+  const chargeWt = roundWt(selected.reduce((s, r) => s + r.chargeWt, 0));
 
   const totals = computeChalan({
     rate,
     rateBasis,
-    qty: selected.reduce((s, r) => s + r.qty, 0),
+    qty: roundWt(selected.reduce((s, r) => s + r.qty, 0)),
     actualWt,
     chargeWt,
     manualFreight: rate > 0 ? 0 : freight,

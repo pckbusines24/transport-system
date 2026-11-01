@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatDate, formatMoney, toNum } from "@/lib/utils";
+import { formatDate, formatMoney, formatWt, toNum } from "@/lib/utils";
 import { payableSettlement } from "@/lib/settlement";
 import { firmImageUrl } from "@/lib/branding";
 import { PrintToolbar } from "./print-toolbar";
@@ -303,13 +303,13 @@ export default async function ChalanPrintPage({
                 {partyName(lr.consignorId)}
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
-                {lr.items.reduce((s, it) => s + toNum(it.qty), 0)}
+                {formatWt(lr.items.reduce((s, it) => s + toNum(it.qty), 0))}
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
-                {lr.items.reduce((s, it) => s + toNum(it.actualWt), 0)}
+                {formatWt(lr.items.reduce((s, it) => s + toNum(it.actualWt), 0))}
               </td>
               <td className="border border-black px-1 py-0.5 text-right">
-                {lr.items.reduce((s, it) => s + toNum(it.chargeWt), 0)}
+                {formatWt(lr.items.reduce((s, it) => s + toNum(it.chargeWt), 0))}
               </td>
             </tr>
           ))}
@@ -320,18 +320,20 @@ export default async function ChalanPrintPage({
               Total ({chalan.lrs.length} LRs)
             </td>
             <td className="border border-black px-1 py-0.5 text-right">
-              {chalan.lrs.reduce(
-                (s, { lr }) =>
-                  s + lr.items.reduce((a, it) => a + toNum(it.qty), 0),
-                0,
+              {formatWt(
+                chalan.lrs.reduce(
+                  (s, { lr }) =>
+                    s + lr.items.reduce((a, it) => a + toNum(it.qty), 0),
+                  0,
+                ),
               )}
             </td>
             {/* totals come from the saved chalan so print always matches the record */}
             <td className="border border-black px-1 py-0.5 text-right">
-              {toNum(chalan.actualWt)}
+              {formatWt(chalan.actualWt)}
             </td>
             <td className="border border-black px-1 py-0.5 text-right">
-              {toNum(chalan.chargeWt)}
+              {formatWt(chalan.chargeWt)}
             </td>
           </tr>
         </tfoot>

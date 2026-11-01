@@ -12,7 +12,7 @@ import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { consumeAdvances, partyAdvanceBalance, restoreAdvanceUses } from "@/lib/party-advance";
 import { gstSplit, stateCodeFromGstin } from "@/lib/calc/gst";
 import { round2 } from "@/lib/calc/tds";
-import { toNum } from "@/lib/utils";
+import { roundWt, toNum } from "@/lib/utils";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import type { InvoiceKind } from "@prisma/client";
 
@@ -144,7 +144,7 @@ async function decorateLrs(
   const pmap = new Map(consignees.map((p) => [p.id, p.name]));
   const podByLr = new Map(pods.map((p) => [p.lrId, p]));
   return lrs.map((lr) => {
-    const actualWt = lr.items.reduce((s, i) => s + toNum(String(i.actualWt)), 0);
+    const actualWt = roundWt(lr.items.reduce((s, i) => s + toNum(String(i.actualWt)), 0));
     const pod = podByLr.get(lr.id);
     return {
       id: lr.id,
@@ -153,9 +153,9 @@ async function decorateLrs(
       source: cmap.get(lr.sourceCityId) ?? "",
       dest: cmap.get(lr.destCityId) ?? "",
       vehicle: (lr.vehicleId && vmap.get(lr.vehicleId)) || lr.vehicleText || "",
-      qty: lr.items.reduce((s, i) => s + toNum(String(i.qty)), 0),
+      qty: roundWt(lr.items.reduce((s, i) => s + toNum(String(i.qty)), 0)),
       actualWt,
-      chargeWt: lr.items.reduce((s, i) => s + toNum(String(i.chargeWt)), 0),
+      chargeWt: roundWt(lr.items.reduce((s, i) => s + toNum(String(i.chargeWt)), 0)),
       amount: toNum(String(lr.total)),
       // PO / gate entry come from the POD entry, falling back to the LR fields
       poNumber: pod?.poNumber || lr.poNumber || "",

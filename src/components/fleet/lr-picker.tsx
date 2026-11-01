@@ -189,7 +189,7 @@ export function SelectedLrList({
           <TableRow className="font-medium">
             <TableCell colSpan={5}>Total ({rows.length} LRs)</TableCell>
             <TableCell className="text-right tabular-nums">
-              {rows.reduce((s, r) => s + r.qty, 0)}
+              {formatWt(rows.reduce((s, r) => s + r.qty, 0))}
             </TableCell>
             <TableCell className="text-right tabular-nums">
               {formatWt(rows.reduce((s, r) => s + r.actualWt, 0))}

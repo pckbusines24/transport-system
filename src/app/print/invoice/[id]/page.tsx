@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { compareLrNo, formatDate, formatMoney, toNum } from "@/lib/utils";
+import { compareLrNo, formatDate, formatMoney, roundWt, toNum } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 import { gstSplit, stateCodeFromGstin } from "@/lib/calc/gst";
 import { firmImageUrl } from "@/lib/branding";
@@ -140,9 +140,9 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
         material: lr.items.map((i) => i.productName).filter(Boolean).join(", "),
         consignee: partyName(lr.consigneeId),
         unloadDate: lr.pods[0]?.unloadDate ? formatDate(lr.pods[0].unloadDate) : "",
-        qty: lr.items.reduce((s, i) => s + toNum(i.qty), 0),
-        actualWt: lr.items.reduce((s, i) => s + toNum(i.actualWt), 0),
-        chargeWt: lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0),
+        qty: roundWt(lr.items.reduce((s, i) => s + toNum(i.qty), 0)),
+        actualWt: roundWt(lr.items.reduce((s, i) => s + toNum(i.actualWt), 0)),
+        chargeWt: roundWt(lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0)),
         rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(i.rate))) : 0,
         amount: toNum(lr.total),
       })),

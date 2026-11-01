@@ -13,7 +13,7 @@ import { nextDocNumber, syncSequenceTo } from "@/lib/sequences";
 import { ensureAccountHead, postLedger, reverseLedger } from "@/lib/ledger";
 import { computeChalan } from "@/lib/calc/chalan";
 import { newlyLinkedLrIds, ON_CHALAN_SOURCE_STATUSES } from "@/lib/lr-status";
-import { toNum } from "@/lib/utils";
+import { roundWt, toNum } from "@/lib/utils";
 import {
   applyManualAdvanceUses,
   listOpenAdvances,
@@ -107,9 +107,9 @@ export async function getPendingLrsForVehicle(
     source: cityName(lr.sourceCityId),
     destination: cityName(lr.destCityId),
     consignor: partyName(lr.consignorId),
-    qty: lr.items.reduce((s, i) => s + toNum(i.qty), 0),
-    actualWt: lr.items.reduce((s, i) => s + toNum(i.actualWt), 0),
-    chargeWt: lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0),
+    qty: roundWt(lr.items.reduce((s, i) => s + toNum(i.qty), 0)),
+    actualWt: roundWt(lr.items.reduce((s, i) => s + toNum(i.actualWt), 0)),
+    chargeWt: roundWt(lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0)),
     freight: toNum(lr.freight),
     rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(i.rate))) : 0,
     rateBasis: (lr.items.find((i) => toNum(i.rate) > 0)?.rateBasis ?? "CHARGE_WT") as
@@ -1810,7 +1810,7 @@ export async function getChalanStatus(
         lrDate: lr.lrDate.toISOString(),
         consignor: partyName(lr.consignorId),
         consignee: partyName(lr.consigneeId),
-        qty: lr.items.reduce((s, i) => s + toNum(i.qty), 0),
+        qty: roundWt(lr.items.reduce((s, i) => s + toNum(i.qty), 0)),
         freight: toNum(lr.freight),
         status: lr.status,
         billed: !!inv,

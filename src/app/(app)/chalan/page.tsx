@@ -157,9 +157,9 @@ export default async function ChalanPage({
               source: cityName(lr.sourceCityId),
               destination: cityName(lr.destCityId),
               consignor: partyName(lr.consignorId),
-              qty: lr.items.reduce((s, i) => s + toNum(i.qty), 0),
-              actualWt: lr.items.reduce((s, i) => s + toNum(i.actualWt), 0),
-              chargeWt: lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0),
+              qty: roundWt(lr.items.reduce((s, i) => s + toNum(i.qty), 0)),
+              actualWt: roundWt(lr.items.reduce((s, i) => s + toNum(i.actualWt), 0)),
+              chargeWt: roundWt(lr.items.reduce((s, i) => s + toNum(i.chargeWt), 0)),
               freight: toNum(lr.freight),
               rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(i.rate))) : 0,
               rateBasis: (lr.items.find((i) => toNum(i.rate) > 0)?.rateBasis ?? "CHARGE_WT") as

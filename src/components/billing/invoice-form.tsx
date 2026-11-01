@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { InvoiceKind } from "@prisma/client";
-import { compareLrNo, formatDate, formatMoney, parseDdMmYyyy, toNum } from "@/lib/utils";
+import { compareLrNo, formatDate, formatMoney, formatWt, parseDdMmYyyy, toNum } from "@/lib/utils";
 import { computeInvoice, roundInvoiceNet } from "@/lib/calc/invoice";
 import { gstSplit } from "@/lib/calc/gst";
 import { round2 } from "@/lib/calc/tds";
@@ -1040,10 +1040,10 @@ export function InvoiceForm({
                     <TableRow>
                       <TableCell colSpan={7}>Selected total</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {selectedLrs.reduce((s, l) => s + l.qty, 0)}
+                        {formatWt(selectedLrs.reduce((s, l) => s + l.qty, 0))}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {round2(selectedLrs.reduce((s, l) => s + l.chargeWt, 0))}
+                        {formatWt(selectedLrs.reduce((s, l) => s + l.chargeWt, 0))}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatMoney(selectedLrs.reduce((s, l) => s + l.amount, 0))}
