@@ -7,6 +7,7 @@ import { runImport, enumKey, type ImportSummary } from "@/lib/import-core";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { formatDate } from "@/lib/utils";
 import { actionError, optStr, parseDateInput, zodError, type ActionResult } from "../_lib/util";
 
 const schema = z.object({
@@ -35,7 +36,9 @@ export async function saveVehicleDocument(input: unknown): Promise<ActionResult>
   if (data.status === "PROBLEM" && !data.remarks?.trim()) {
     return { ok: false, error: "Remarks are required when the status is Problem — state the issue (e.g. Fitness Failed, RTO Query Pending)." };
   }
-  const entryDate = parseDateInput(data.entryDate);
+  // an edit restamps the entry date to today (IST) — the date of the last
+  // change, whatever the form sent; a new entry keeps the date the user chose
+  const entryDate = parseDateInput(data.id ? formatDate(new Date()) : data.entryDate);
   if (!entryDate) return { ok: false, error: "Invalid entry date" };
   try {
     const id = await withTenant(session.tenantId, async (tx) => {

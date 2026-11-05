@@ -151,7 +151,8 @@ export function VehicleDocumentsClient({
           }}
         />
       )}
-      toForm={(r) => ({ ...r })}
+      // an edit restamps the entry date to the day of the edit (server enforces it)
+      toForm={(r) => ({ ...r, entryDate: formatDate(new Date()) })}
       getId={(r) => r.id}
       save={saveVehicleDocument}
       remove={deleteVehicleDocument}

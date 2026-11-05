@@ -26,6 +26,7 @@ import {
   saveVehicleDocument,
 } from "@/app/(app)/masters/vehicle-documents/actions";
 import { rankByMatch } from "@/lib/search-rank";
+import { formatDate } from "@/lib/utils";
 import { useUrlNullable, useUrlState } from "@/components/data/use-url-state";
 
 export interface DocStatusRow {
@@ -107,7 +108,8 @@ export function DocStatusClient({
     setForm({
       docNo: r.docNo,
       companyName: r.companyName,
-      entryDate: r.entryDate,
+      // an edit restamps the entry date to the day of the edit (server enforces it)
+      entryDate: formatDate(new Date()),
       effectiveDate: r.effectiveDate,
       expiryDate: r.expiryDate,
       status: r.status,
