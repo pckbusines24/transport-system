@@ -6,7 +6,7 @@ import { Copy, Plus, Trash2 } from "lucide-react";
 import { formatDate, formatMoney, parseDdMmYyyy, toNum } from "@/lib/utils";
 import type { RateBasis } from "@/lib/calc/rate";
 import { Badge } from "@/components/ui/badge";
-import { tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
+import { round2, tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -120,6 +120,8 @@ export interface SideSettlement {
   settledPaid?: number;
   settledShortage?: number;
   settledRoundOff?: number;
+  /** the side's balance as last SAVED — the balance payment settles this one */
+  savedBalance?: number;
 }
 
 const emptySide = (): SideValues => ({
@@ -513,8 +515,25 @@ export function BrokerSlipForm({
   const settlePreview = (side: "P" | "V") =>
     Math.round((settleBalance(side) - settle[side].roundOff - settle[side].shortage) * 100) / 100;
 
+  /** the on-screen balance differs from the saved one: a payment now would
+   *  settle the OLD amount, and the slip could no longer be saved after it */
+  const balanceUnsaved = (side: "P" | "V") => {
+    const saved = initial?.settle?.[side].savedBalance;
+    return saved !== undefined && round2(settleBalance(side)) !== round2(saved);
+  };
+
   const submitSettle = async (side: "P" | "V") => {
     if (!form.id) return;
+    if (balanceUnsaved(side)) {
+      toast({
+        variant: "destructive",
+        title: "Save the slip first",
+        description:
+          "The slip has unsaved changes that change this balance — click Save Changes above, then record the balance payment for the new amount.",
+      });
+      document.getElementById("save-before-balance")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     const d = parseDdMmYyyy(settleDateText[side]);
     if (!d) {
       toast({ variant: "destructive", title: "Valid payment date is required" });
@@ -703,7 +722,7 @@ export function BrokerSlipForm({
    * opened after the await would be blocked as a pop-up) and gets the print
    * only once the save succeeds.
    */
-  const handleSave = async (opts?: { print?: boolean }) => {
+  const handleSave = async (opts?: { print?: boolean; stay?: boolean }) => {
     const slipDateIso = textToIso(slipDateText);
     if (!form.slipNo.trim()) {
       toast({ variant: "destructive", title: "Slip number is required" });
@@ -736,7 +755,16 @@ export function BrokerSlipForm({
           else window.open(url, "_blank");
         }
         toast({ title: `Broker slip ${form.slipNo} saved` });
-        router.push(registerReturn);
+        if (opts?.stay) {
+          // stay on the slip: a new `v` remounts the form on the saved data
+          // (fresh balances and advance ids) so the balance payment can follow
+          const sp = new URLSearchParams(searchParamsNav.toString());
+          sp.set("id", res.id);
+          sp.set("v", String(Date.now()));
+          router.replace(`/broker/slip?${sp.toString()}`, { scroll: false });
+        } else {
+          router.push(registerReturn);
+        }
       } else {
         tab?.close();
         toast({ variant: "destructive", title: "Save failed", description: res.error });
@@ -1318,10 +1346,29 @@ export function BrokerSlipForm({
       {/* balance settlement — one block per side, in the same left/right order
           as the two sides above. Only a saved slip has a balance to settle. */}
       {form.id && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {settleCard("P")}
-          {settleCard("V")}
-        </div>
+        <>
+          {/* save in place before paying: the balance payment settles the
+              SAVED balance, so commission / mamool / advance edits go first */}
+          <div
+            id="save-before-balance"
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+              balanceUnsaved("P") || balanceUnsaved("V") ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : ""
+            }`}
+          >
+            <span className="text-sm text-muted-foreground">
+              {balanceUnsaved("P") || balanceUnsaved("V")
+                ? "Unsaved changes have changed the balance — save before the balance payment so it uses the new amount."
+                : "Save before the balance payment so it uses the new amount."}
+            </span>
+            <Button size="sm" onClick={() => void handleSave({ stay: true })} disabled={saving}>
+              {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {settleCard("P")}
+            {settleCard("V")}
+          </div>
+        </>
       )}
 
       {/* payment summary */}

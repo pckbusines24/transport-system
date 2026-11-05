@@ -21,7 +21,8 @@ const n = (v: unknown) => Number(v ?? 0);
 export default async function BrokerSlipPage({
   searchParams,
 }: {
-  searchParams: { id?: string };
+  /** v: bumped by the form's "Save Changes" so it reloads with the saved slip */
+  searchParams: { id?: string; v?: string };
 }) {
   const session = requireSession();
   await authorize(session, "broker", "view");
@@ -216,6 +217,7 @@ export default async function BrokerSlipPage({
             (pPos?.voucherOther ?? 0),
           settledShortage: n(slip.pShortage) + (pPos?.voucherShortage ?? 0),
           settledRoundOff: n(slip.pRoundOff) + (pPos?.voucherRoundOff ?? 0),
+          savedBalance: n(slip.pBalance),
         },
         V: {
           // a voucher-settled owner side reads as PAID even though the slip's
@@ -237,6 +239,7 @@ export default async function BrokerSlipPage({
           settledPaid: n(slip.vPaidAmount) + (vPos?.voucherPaid ?? 0),
           settledShortage: n(slip.vShortage) + (vPos?.voucherShortage ?? 0),
           settledRoundOff: n(slip.vRoundOff) + (vPos?.voucherRoundOff ?? 0),
+          savedBalance: n(slip.vBalance),
         },
       },
     };
@@ -248,6 +251,9 @@ export default async function BrokerSlipPage({
         {initial ? `Edit Broker Slip ${initial.slipNo}` : "Broker Slip Entry"}
       </h1>
       <BrokerSlipForm
+        // a new key after "Save Changes" remounts the form on the saved slip
+        // (fresh figures and advance ids); other refreshes keep unsaved edits
+        key={`${initial?.id ?? "new"}:${searchParams.v ?? ""}`}
         initial={initial}
         nextSlipNo={nextNo ?? "1"}
         cityOptions={cityOptions}
