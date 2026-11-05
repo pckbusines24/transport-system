@@ -7,7 +7,7 @@ import { withTenant } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { syncSequenceTo } from "@/lib/sequences";
-import { toNum } from "@/lib/utils";
+import { compareLrNo, formatDate, toNum } from "@/lib/utils";
 
 export interface PodPendingLr {
   cargoType?: string;
@@ -113,6 +113,17 @@ export async function getPendingBalanceChalans(): Promise<PodChalanOption[]> {
 }
 
 /** LRs on a chalan that still need a POD. */
+/**
+ * Pending-POD order: LR date ascending, then LR number ascending within the
+ * same day. LR numbers are text, so the database would put "10" before "9" —
+ * compareLrNo compares them as numbers. Days compare by IST calendar date, so
+ * two LRs of one day stay together however their dates were stored.
+ */
+function byDateThenLrNo(a: { lrDate: Date; lrNo: string }, b: { lrDate: Date; lrNo: string }): number {
+  const day = (d: Date) => formatDate(d).split("/").reverse().join("");
+  return day(a.lrDate).localeCompare(day(b.lrDate)) || compareLrNo(a.lrNo, b.lrNo);
+}
+
 export async function getChalanPodLrs(chalanId: string): Promise<PodPendingLr[]> {
   const session = requireSession();
   await authorize(session, "pod", "view");
@@ -129,7 +140,7 @@ export async function getChalanPodLrs(chalanId: string): Promise<PodPendingLr[]>
       orderBy: { lrDate: "asc" },
     })
   );
-  return withNames(session.tenantId, lrs);
+  return withNames(session.tenantId, lrs.sort(byDateThenLrNo));
 }
 
 /** LRs on a vehicle that have no POD yet. */
@@ -154,7 +165,7 @@ export async function getVehiclePendingPodLrs(vehicleId: string): Promise<PodPen
       orderBy: { lrDate: "asc" },
     })
   );
-  return withNames(session.tenantId, lrs);
+  return withNames(session.tenantId, lrs.sort(byDateThenLrNo));
 }
 
 async function withNames(
