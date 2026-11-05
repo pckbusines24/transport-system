@@ -399,9 +399,13 @@ const podUpdateSchema = z.object({
   poNumber: z.string().optional(),
   gateEntryNo: z.string().optional(),
   remarks: z.string().optional(),
+  /** a newly uploaded POD file (attach a forgotten one, or replace it);
+   *  omitted = the current file stays */
+  filePath: z.string().optional().nullable(),
+  fileSize: z.number().int().optional().nullable(),
 });
 
-/** Edit an existing POD's details (file stays as uploaded). */
+/** Edit an existing POD's details, and optionally attach / replace its file. */
 export async function updatePod(
   input: unknown
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -412,6 +416,11 @@ export async function updatePod(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const data = parsed.data;
+  // same file checks as the POD Confirmation save
+  if (data.filePath) {
+    if ((data.fileSize ?? 0) > MAX_SIZE) return { ok: false, error: "POD file must be at most 10 MB." };
+    if (!data.filePath.startsWith(`${session.tenantId}/`)) return { ok: false, error: "Invalid file path." };
+  }
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const before = await tx.pod.findFirst({
@@ -435,6 +444,7 @@ export async function updatePod(
           poNumber: data.poNumber || null,
           gateEntryNo: data.gateEntryNo || null,
           remarks: data.remarks || null,
+          ...(data.filePath ? { filePath: data.filePath, fileSize: data.fileSize ?? null } : {}),
         },
       });
       await audit(tx, session, {

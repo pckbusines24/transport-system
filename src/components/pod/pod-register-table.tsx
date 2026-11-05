@@ -69,7 +69,15 @@ interface EditState {
   poNumber: string;
   gateEntryNo: string;
   remarks: string;
+  /** the file already on the POD */
+  filePath: string | null;
+  /** a file uploaded in this dialog — saved with the edit */
+  newFile: { path: string; size: number; name: string } | null;
+  uploading: boolean;
 }
+
+/** same limit as POD Confirmation and the server */
+const MAX_SIZE = 10 * 1024 * 1024;
 
 export function PodRegisterTable({
   rows,
@@ -95,7 +103,41 @@ export function PodRegisterTable({
       poNumber: r.poNumber,
       gateEntryNo: r.gateEntryNo,
       remarks: r.remarks,
+      filePath: r.filePath,
+      newFile: null,
+      uploading: false,
     }), []);
+
+  // upload straight away (like POD Confirmation); the POD row changes on Save
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > MAX_SIZE) {
+      toast({
+        variant: "destructive",
+        title: "File too large",
+        description: `POD file must be at most 10 MB. This file is ${(file.size / (1024 * 1024)).toFixed(2)} MB.`,
+      });
+      return;
+    }
+    setEditing((e) => (e ? { ...e, uploading: true } : e));
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/uploads/pod", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Upload failed");
+      setEditing((e) =>
+        e ? { ...e, uploading: false, newFile: { path: json.path, size: json.size, name: file.name } } : e
+      );
+    } catch (err) {
+      setEditing((e) => (e ? { ...e, uploading: false } : e));
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  };
 
   const saveEdit = async () => {
     if (!editing) return;
@@ -115,6 +157,7 @@ export function PodRegisterTable({
         poNumber: editing.poNumber,
         gateEntryNo: editing.gateEntryNo,
         remarks: editing.remarks,
+        ...(editing.newFile ? { filePath: editing.newFile.path, fileSize: editing.newFile.size } : {}),
       });
       if (res.ok) {
         toast({ title: `POD ${editing.docNo} updated` });
@@ -280,7 +323,7 @@ export function PodRegisterTable({
           <DialogHeader>
             <DialogTitle>Edit POD {editing?.docNo}</DialogTitle>
             <DialogDescription>
-              The uploaded POD file is kept; only the details below change.
+              Change the details below, or upload the POD file if it was missed.
             </DialogDescription>
           </DialogHeader>
           {editing && (
@@ -337,13 +380,44 @@ export function PodRegisterTable({
                   onChange={(e) => setEditing({ ...editing, remarks: e.target.value })}
                 />
               </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs">
+                  {editing.filePath ? "Replace POD File" : "Upload POD File"} (pdf / jpg / png, max 10 MB)
+                </Label>
+                {editing.filePath && !editing.newFile && (
+                  <div className="text-xs">
+                    Current file:{" "}
+                    <a
+                      href={`/api/uploads/${editing.filePath}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline"
+                    >
+                      View
+                    </a>
+                  </div>
+                )}
+                <Input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                  disabled={editing.uploading || busy}
+                  onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
+                />
+                {editing.uploading && <div className="text-xs text-muted-foreground">Uploading...</div>}
+                {editing.newFile && !editing.uploading && (
+                  <div className="text-xs text-green-600">
+                    {editing.newFile.name} ({(editing.newFile.size / (1024 * 1024)).toFixed(2)} MB) — saved with
+                    the changes
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={saveEdit} disabled={busy}>
+            <Button onClick={saveEdit} disabled={busy || !!editing?.uploading}>
               {busy ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
