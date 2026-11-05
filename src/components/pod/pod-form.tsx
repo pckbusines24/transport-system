@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { compareLrDateThenNo, formatDate, formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -141,8 +141,9 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
       else toast({ variant: "destructive", title: "LR not added", description: res.error });
       return;
     }
+    // a typed-in LR takes its place in the date / LR-number order
     setPendingLrs((prev) =>
-      prev.some((l) => l.id === res.lr.id) ? prev : [...prev, res.lr]
+      prev.some((l) => l.id === res.lr.id) ? prev : [...prev, res.lr].sort(compareLrDateThenNo)
     );
     setSelected((prev) => ({ ...prev, [res.lr.id]: true }));
     setManualLrNo("");

@@ -95,6 +95,19 @@ export function compareLrNo(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
+/**
+ * LR list order: LR date ascending, then LR number ascending within the same
+ * day (numerically — "9" before "10"). Days compare by IST calendar date, so
+ * LRs of one day stay together however their dates were stored.
+ */
+export function compareLrDateThenNo(
+  a: { lrDate: Date | string; lrNo: string },
+  b: { lrDate: Date | string; lrNo: string }
+): number {
+  const day = (d: Date | string) => formatDate(d).split("/").reverse().join("");
+  return day(a.lrDate).localeCompare(day(b.lrDate)) || compareLrNo(a.lrNo, b.lrNo);
+}
+
 export function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
   // handles strings, numbers AND Prisma Decimal objects (via toString)
