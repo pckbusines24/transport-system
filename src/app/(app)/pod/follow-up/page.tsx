@@ -1,13 +1,14 @@
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatDate, formatMoney, toNum } from "@/lib/utils";
+import { formatDate, formatMoney, istDayEnd, istDayStart, toNum } from "@/lib/utils";
 import { waLink } from "@/lib/phone";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
+import { ExportButton } from "@/components/data/export-button";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,12 @@ export const dynamic = "force-dynamic";
  */
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const DAY_MS = 24 * 3600 * 1000;
+/** a date's IST calendar day as yyyy-mm-dd */
+const istIso = (d: Date) => formatDate(d).split("/").reverse().join("-");
+/** whole IST calendar days from `d` to today (an LR dated today is 0) */
+const istDaysOld = (d: Date, todayIso: string) =>
+  Math.round((istDayStart(todayIso).getTime() - istDayStart(istIso(d)).getTime()) / DAY_MS);
 
 type FollowRow = {
   lrId: string;
@@ -44,18 +51,24 @@ type FollowRow = {
 export default async function PodFollowUpPage({
   searchParams,
 }: {
-  searchParams: { stage?: string; contact?: string };
+  searchParams: { stage?: string; contact?: string; date_from?: string; date_to?: string; min_days?: string };
 }) {
   const session = requireSession();
   await authorize(session, "pod", "view");
   const stage = searchParams.stage === "BILL" ? "BILL" : "POD";
+  // LR date period, IST day boundaries like every other date filter
+  const dateFrom = searchParams.date_from ? istDayStart(searchParams.date_from) : null;
+  const dateTo = searchParams.date_to ? istDayEnd(searchParams.date_to) : null;
+  // "N days and above": replaces the firm's follow-up threshold for this view
+  const minDaysRaw = parseInt(searchParams.min_days ?? "", 10);
+  const minDays = Number.isFinite(minDaysRaw) && minDaysRaw >= 0 ? minDaysRaw : null;
+  const todayIso = istIso(new Date());
 
   const data = await withTenant(session.tenantId, async (tx) => {
     const firm = await tx.firm.findUniqueOrThrow({ where: { id: session.firmId } });
-    const days = firm.podFollowUpDays ?? 15;
-    const cutoff = new Date();
-    cutoff.setHours(0, 0, 0, 0);
-    cutoff.setDate(cutoff.getDate() - days);
+    const days = minDays ?? firm.podFollowUpDays ?? 15;
+    // at least `days` IST calendar days old = dated on or before this IST day
+    const cutoff = istDayEnd(istIso(new Date(istDayStart(todayIso).getTime() - days * DAY_MS)));
 
     const lrs = await tx.lr.findMany({
       where: {
@@ -63,7 +76,10 @@ export default async function PodFollowUpPage({
         firmId: session.firmId,
         deletedAt: null,
         lrType: { notIn: ["CANCELLED", "PAPER_CHANGE"] },
-        lrDate: { lte: cutoff },
+        lrDate: {
+          lte: dateTo && dateTo < cutoff ? dateTo : cutoff,
+          ...(dateFrom ? { gte: dateFrom } : {}),
+        },
         ...(stage === "POD"
           ? // POD stage: no completed POD yet
             { pods: { none: { status: "COMPLETED" } } }
@@ -96,7 +112,6 @@ export default async function PodFollowUpPage({
   const partyById = new Map(parties.map((p) => [p.id, p]));
   const vehicleById = new Map(vehicles.map((v) => [v.id, v]));
   const driverById = new Map(drivers.map((d) => [d.id, d]));
-  const today = new Date();
 
   const driverAt = (vehicleId: string, at: Date) => {
     const a = assignments.find(
@@ -133,7 +148,7 @@ export default async function PodFollowUpPage({
       lrId: lr.id,
       lrNo: lr.lrNo,
       lrDate: lr.lrDate,
-      daysOld: Math.floor((today.getTime() - lr.lrDate.getTime()) / (24 * 3600 * 1000)),
+      daysOld: istDaysOld(lr.lrDate, todayIso),
       party: billParty?.name ?? "",
       route: `${cityName.get(lr.sourceCityId) ?? ""} → ${cityName.get(lr.destCityId) ?? ""}`,
       amount: r2(toNum(String(lr.total))),
@@ -185,6 +200,8 @@ export default async function PodFollowUpPage({
         { value: "BILL", label: "POD Received — Bill Pending" },
       ],
     },
+    { type: "daterange", key: "date", label: "LR Date" },
+    { type: "text", key: "min_days", label: "Min Days (and above)" },
     {
       type: "select",
       key: "contact",
@@ -194,13 +211,34 @@ export default async function PodFollowUpPage({
   ];
 
   const cell = "border px-2 py-1";
+  // plain values only: the export button is a client component, so no
+  // accessor functions can cross from this server page
+  const exportRows = filtered.map((rw) => ({
+    lrNo: rw.lrNo,
+    lrDate: formatDate(rw.lrDate),
+    daysOld: rw.daysOld,
+    party: rw.party,
+    route: rw.route,
+    amount: rw.amount,
+    vehicle: rw.vehicleNo ? `${rw.vehicleNo} (${rw.ownership})` : "",
+    delivered: rw.delivered ? "YES" : "NO",
+    contact: rw.contactName ? `${rw.contactName} (${rw.contactRole})` : "",
+    mobile: rw.contactMobile,
+  }));
+  // contact chips narrow the list without dropping the date / days filters
+  const keepParams: Record<string, string> = {};
+  for (const k of ["date_from", "date_to", "min_days"] as const) {
+    const v = searchParams[k];
+    if (v) keepParams[k] = v;
+  }
 
   return (
     <div className="space-y-4 p-4">
       <h1 className="page-title flex items-center gap-2">
         POD &amp; Billing Follow-up
         <InfoHint>
-          LRs older than {days} days from the LR date (threshold in Settings → Firm).
+          LRs {days} or more days old from the LR date (default threshold in Settings → Firm; the
+          Min Days filter overrides it).
           {stage === "POD"
             ? " Shows LRs whose POD has not arrived — the broker's number for market vehicles, that day's driver for own/relative vehicles, with one-click call/WhatsApp."
             : " Shows LRs whose POD is in but the bill is not yet made — revenue waiting only on billing."}
@@ -226,7 +264,11 @@ export default async function PodFollowUpPage({
             {contactGroups.slice(0, 12).map((g) => (
               <a
                 key={g.name}
-                href={`?stage=POD&contact=${encodeURIComponent(g.name)}`}
+                href={`?${new URLSearchParams({
+                  ...keepParams,
+                  stage: "POD",
+                  contact: g.name,
+                }).toString()}`}
                 className="rounded-md border px-2 py-1 hover:bg-muted"
               >
                 <b>{g.name}</b> — {g.count} POD · {formatMoney(g.amount)}
@@ -236,6 +278,30 @@ export default async function PodFollowUpPage({
           </CardContent>
         </Card>
       )}
+
+      <div className="flex justify-end">
+        <ExportButton
+          rows={exportRows}
+          fileName={stage === "POD" ? "pod-follow-up" : "bill-pending-follow-up"}
+          sheetName={stage === "POD" ? "POD Pending" : "Bill Pending"}
+          columns={[
+            { header: "LR No", key: "lrNo" },
+            { header: "LR Date", key: "lrDate" },
+            { header: "Days", key: "daysOld", numeric: true },
+            { header: "Party", key: "party" },
+            { header: "Route", key: "route" },
+            { header: "Freight", key: "amount", numeric: true },
+            { header: "Vehicle", key: "vehicle" },
+            { header: "Delivered?", key: "delivered" },
+            { header: "Follow-up", key: "contact" },
+            { header: "Mobile", key: "mobile" },
+          ]}
+          summary={[
+            { label: "LRs", value: filtered.length },
+            { label: "Freight on Hold", value: totalAmount },
+          ]}
+        />
+      </div>
 
       <div className="overflow-x-auto rounded-md border">
         <table className="w-full border-collapse text-xs">
