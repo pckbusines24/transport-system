@@ -36,7 +36,8 @@ export default async function PodRegisterPage({
   // unload date, IST day boundaries like every other date filter
   const unloadFrom = searchParams.unload_from ? istDayStart(searchParams.unload_from) : null;
   const unloadTo = searchParams.unload_to ? istDayEnd(searchParams.unload_to) : null;
-  const lrQ = searchParams.lr?.trim() || "";
+  // one search box: Ack No, LR number or PO Number
+  const q = searchParams.q?.trim() || "";
   const status = searchParams.status;
   const sourceType = SOURCE_TYPES.includes(searchParams.sourceType as PodSourceType)
     ? (searchParams.sourceType as PodSourceType)
@@ -62,8 +63,20 @@ export default async function PodRegisterPage({
               },
             }
           : {}),
-        // AND, not a second `lr` key: the status filter below also filters on lr
-        ...(lrQ ? { AND: [{ lr: { lrNo: { contains: lrQ, mode: "insensitive" } } }] } : {}),
+        // AND, not a top-level OR / `lr` key: the status filter below also uses lr
+        ...(q
+          ? {
+              AND: [
+                {
+                  OR: [
+                    { ackNo: { contains: q, mode: "insensitive" } },
+                    { lr: { lrNo: { contains: q, mode: "insensitive" } } },
+                    { poNumber: { contains: q, mode: "insensitive" } },
+                  ],
+                },
+              ],
+            }
+          : {}),
         // Pending  = the LR's chalan is still awaiting balance payment
         // Completed = POD done AND the chalan's balance payment is finalized
         ...(status === "PENDING"
@@ -86,10 +99,12 @@ export default async function PodRegisterPage({
         ...(vehicleId ? { vehicleId } : {}),
       };
       const [rows, total] = await Promise.all([
-        // an exact LR number leads page one (see lib/exact-first)
+        // an exact Ack No / LR number / PO Number leads page one (see lib/exact-first)
         findExactFirst({
           where,
-          exact: eqi(lrQ) ? { lr: { lrNo: eqi(lrQ) } } : null,
+          exact: eqi(q)
+            ? { OR: [{ ackNo: eqi(q) }, { lr: { lrNo: eqi(q) } }, { poNumber: eqi(q) }] }
+            : null,
           ids: (w, take) =>
             tx.pod.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
           fetch: (w, skip, take) =>
@@ -149,7 +164,7 @@ export default async function PodRegisterPage({
       </div>
       <FilterBar
         filters={[
-          { type: "text", key: "lr", label: "LR No" },
+          { type: "text", key: "q", label: "Search Ack No / LR No / PO No" },
           { type: "daterange", key: "date", label: "Date" },
           { type: "daterange", key: "unload", label: "Unload Date" },
           {
