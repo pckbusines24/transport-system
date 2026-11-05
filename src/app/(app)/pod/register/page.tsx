@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { getVehicleOptions } from "@/lib/lookups";
 import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/components/data/filter-bar";
+import { eqi, findExactFirst } from "@/lib/exact-first";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { PodRegisterTable, type PodRegisterRow } from "@/components/pod/pod-register-table";
 import type { Prisma, PodSourceType } from "@prisma/client";
@@ -30,6 +33,10 @@ export default async function PodRegisterPage({
 
   const dateFrom = searchParams.date_from ? istDayStart(searchParams.date_from) : null;
   const dateTo = searchParams.date_to ? istDayEnd(searchParams.date_to) : null;
+  // unload date, IST day boundaries like every other date filter
+  const unloadFrom = searchParams.unload_from ? istDayStart(searchParams.unload_from) : null;
+  const unloadTo = searchParams.unload_to ? istDayEnd(searchParams.unload_to) : null;
+  const lrQ = searchParams.lr?.trim() || "";
   const status = searchParams.status;
   const sourceType = SOURCE_TYPES.includes(searchParams.sourceType as PodSourceType)
     ? (searchParams.sourceType as PodSourceType)
@@ -44,7 +51,19 @@ export default async function PodRegisterPage({
         firmId: session.firmId,
         ...(dateFrom || dateTo
           ? { docDate: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } }
-          : { fyId: session.fyId }),
+          : unloadFrom || unloadTo
+            ? {}
+            : { fyId: session.fyId }),
+        ...(unloadFrom || unloadTo
+          ? {
+              unloadDate: {
+                ...(unloadFrom ? { gte: unloadFrom } : {}),
+                ...(unloadTo ? { lte: unloadTo } : {}),
+              },
+            }
+          : {}),
+        // AND, not a second `lr` key: the status filter below also filters on lr
+        ...(lrQ ? { AND: [{ lr: { lrNo: { contains: lrQ, mode: "insensitive" } } }] } : {}),
         // Pending  = the LR's chalan is still awaiting balance payment
         // Completed = POD done AND the chalan's balance payment is finalized
         ...(status === "PENDING"
@@ -67,12 +86,22 @@ export default async function PodRegisterPage({
         ...(vehicleId ? { vehicleId } : {}),
       };
       const [rows, total] = await Promise.all([
-        tx.pod.findMany({
+        // an exact LR number leads page one (see lib/exact-first)
+        findExactFirst({
           where,
-          include: { lr: { include: { chalanLrs: { include: { chalan: true } } } } },
-          orderBy: { docDate: "desc" },
-          take: PAGE_SIZE,
+          exact: eqi(lrQ) ? { lr: { lrNo: eqi(lrQ) } } : null,
+          ids: (w, take) =>
+            tx.pod.findMany({ where: w, select: { id: true }, take }).then((r) => r.map((x) => x.id)),
+          fetch: (w, skip, take) =>
+            tx.pod.findMany({
+              where: w,
+              include: { lr: { include: { chalanLrs: { include: { chalan: true } } } } },
+              orderBy: { docDate: "desc" },
+              take,
+              skip,
+            }),
           skip: (page - 1) * PAGE_SIZE,
+          take: PAGE_SIZE,
         }),
         tx.pod.count({ where }),
       ]);
@@ -112,10 +141,17 @@ export default async function PodRegisterPage({
 
   return (
     <div className="space-y-4 p-4">
-      <h1 className="text-xl font-semibold">POD Register</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">POD Register</h1>
+        <Button asChild size="sm">
+          <Link href="/pod">+ New</Link>
+        </Button>
+      </div>
       <FilterBar
         filters={[
+          { type: "text", key: "lr", label: "LR No" },
           { type: "daterange", key: "date", label: "Date" },
+          { type: "daterange", key: "unload", label: "Unload Date" },
           {
             type: "select",
             key: "status",
