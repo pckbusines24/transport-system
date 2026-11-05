@@ -4,7 +4,7 @@ import { unstable_cache } from "next/cache";
 import { requireSession } from "@/lib/session";
 import { withTenant, type Tx } from "@/lib/db";
 import { outstandingTag } from "@/lib/outstanding-cache";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 import {
   driverNetFigures,
@@ -694,7 +694,7 @@ async function computeOutstanding(
     const fyEndFull = viewFy ? new Date(viewFy.endDate) : null;
     fyEndFull?.setHours(23, 59, 59, 999);
     const asOfDate = asOfStr
-      ? new Date(asOfStr + "T23:59:59")
+      ? istDayEnd(asOfStr)
       : input.fyId && fyEndFull
         ? fyEndFull
         : null;

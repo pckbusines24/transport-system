@@ -13,6 +13,7 @@ import {
   QUARTER_MONTHS,
 } from "./data";
 import { TdsQuarterlyClient } from "./quarterly-client";
+import { istDayEnd, istDayStart } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,8 @@ export default async function TdsQuarterlyPage({
   const dateWhere =
     searchParams.date_from || searchParams.date_to
       ? {
-          ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
-          ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+          ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+          ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
         }
       : undefined;
 

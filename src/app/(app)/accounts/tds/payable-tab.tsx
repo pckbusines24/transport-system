@@ -5,6 +5,7 @@ import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport, type ReportRow } from "@/components/accounts/simple-report";
 import { buildTdsPayableRows } from "./payable-rows";
 import { rankByMatch } from "@/lib/search-rank";
+import { istDayEnd, istDayStart } from "@/lib/utils";
 
 /**
  * TDS PAYABLE Register — TDS OUR company deducts while MAKING payments.
@@ -31,8 +32,8 @@ export async function TdsPayableTab({
   const dateWhere =
     searchParams.date_from || searchParams.date_to
       ? {
-          ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
-          ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+          ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+          ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
         }
       : undefined;
 

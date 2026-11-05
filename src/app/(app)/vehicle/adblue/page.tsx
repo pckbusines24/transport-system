@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { AdblueClient, type AdblueRow } from "@/components/vehicle/adblue-client";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { settledByRef } from "@/lib/settlement";
@@ -55,8 +55,8 @@ export default async function AdbluePage({
     if (searchParams.vehicle) where.vehicleId = searchParams.vehicle;
     if (searchParams.date_from || searchParams.date_to) {
       where.date = {
-        ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
-        ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+        ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+        ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
       };
     }
     const [txns, dbTotal, allTxns, vehicles, banks, suppliers] = await Promise.all([

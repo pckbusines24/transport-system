@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/session";
 import { withTenant, type Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { invoiceSettlement } from "@/lib/settlement";
 import { eqi, findExactFirst } from "@/lib/exact-first";
 
@@ -109,8 +109,8 @@ export async function getInvoicesForSubmission(
         ...(dateFrom || dateTo
           ? {
               invoiceDate: {
-                ...(dateFrom ? { gte: new Date(dateFrom + "T00:00:00") } : {}),
-                ...(dateTo ? { lte: new Date(dateTo + "T23:59:59") } : {}),
+                ...(dateFrom ? { gte: istDayStart(dateFrom) } : {}),
+                ...(dateTo ? { lte: istDayEnd(dateTo) } : {}),
               },
             }
           : {}),

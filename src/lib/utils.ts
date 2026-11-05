@@ -27,9 +27,26 @@ export function formatDate(d: Date | string | null | undefined): string {
  * chalan into July. Works for 00:00Z-stored rows too — both fall inside.
  */
 export function istDayRange(fromIso: string, toIso: string): { gte: Date; lt: Date } {
-  const gte = new Date(`${fromIso}T00:00:00+05:30`);
-  const lt = new Date(new Date(`${toIso}T00:00:00+05:30`).getTime() + 24 * 3600 * 1000);
-  return { gte, lt };
+  return { gte: istDayStart(fromIso), lt: new Date(istDayEnd(toIso).getTime() + 1) };
+}
+
+/**
+ * First instant of a yyyy-mm-dd day in IST — the `gte` of a date filter.
+ * `new Date(iso + "T00:00:00")` is server-local (UTC in production), which
+ * dropped documents of the first day (stored at IST midnight = 18:30Z the
+ * day before) from every register's period.
+ */
+export function istDayStart(iso: string): Date {
+  return new Date(`${iso}T00:00:00+05:30`);
+}
+
+/**
+ * Last instant of a yyyy-mm-dd day in IST — the `lte` of a date filter.
+ * `new Date(iso + "T23:59:59")` is UTC in production and reached 05:29 IST
+ * of the NEXT day, pulling 1 November documents into a 1–31 October period.
+ */
+export function istDayEnd(iso: string): Date {
+  return new Date(istDayStart(iso).getTime() + 24 * 3600 * 1000 - 1);
 }
 
 export function parseDdMmYyyy(s: string): Date | null {

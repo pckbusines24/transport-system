@@ -7,6 +7,7 @@ import {
   type CourierDispatchRow,
 } from "@/components/broker/courier-dispatch-client";
 import { rankByMatch } from "@/lib/search-rank";
+import { istDayEnd, istDayStart } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,8 @@ export default async function CourierDispatchPage({
     };
     if (date_from || date_to) {
       where.dispatchDate = {
-        ...(date_from ? { gte: new Date(date_from + "T00:00:00") } : {}),
-        ...(date_to ? { lte: new Date(date_to + "T23:59:59") } : {}),
+        ...(date_from ? { gte: istDayStart(date_from) } : {}),
+        ...(date_to ? { lte: istDayEnd(date_to) } : {}),
       };
     }
     if (q) {

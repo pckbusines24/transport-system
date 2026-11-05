@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
 import { getVehicleOptions } from "@/lib/lookups";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { FilterBar } from "@/components/data/filter-bar";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { PodRegisterTable, type PodRegisterRow } from "@/components/pod/pod-register-table";
@@ -28,8 +28,8 @@ export default async function PodRegisterPage({
   const session = requireSession();
   await authorize(session, "pod", "view");
 
-  const dateFrom = searchParams.date_from ? new Date(searchParams.date_from + "T00:00:00") : null;
-  const dateTo = searchParams.date_to ? new Date(searchParams.date_to + "T23:59:59.999") : null;
+  const dateFrom = searchParams.date_from ? istDayStart(searchParams.date_from) : null;
+  const dateTo = searchParams.date_to ? istDayEnd(searchParams.date_to) : null;
   const status = searchParams.status;
   const sourceType = SOURCE_TYPES.includes(searchParams.sourceType as PodSourceType)
     ? (searchParams.sourceType as PodSourceType)

@@ -12,6 +12,7 @@ import {
 } from "@/components/reports/tally-export-client";
 import type { TallyModule } from "./build";
 import { loadExportState } from "./sync-state";
+import { istDayEnd, istDayStart } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -50,8 +51,8 @@ export default async function TallyExportPage({
   const activeModule = (MODULES.some((m) => m.value === searchParams.module)
     ? searchParams.module
     : "CHALAN") as TallyModule;
-  const dateFrom = searchParams.date_from ? new Date(`${searchParams.date_from}T00:00:00`) : null;
-  const dateTo = searchParams.date_to ? new Date(`${searchParams.date_to}T23:59:59`) : null;
+  const dateFrom = searchParams.date_from ? istDayStart(searchParams.date_from) : null;
+  const dateTo = searchParams.date_to ? istDayEnd(searchParams.date_to) : null;
 
   const { rows, pendingFiles } = await withTenant(session.tenantId, async (tx) => {
     const state = await loadExportState(tx, session, activeModule, { dateFrom, dateTo });

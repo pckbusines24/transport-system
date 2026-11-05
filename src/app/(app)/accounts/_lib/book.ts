@@ -1,6 +1,6 @@
 import type { LedgerGroup, Prisma } from "@prisma/client";
 import { withTenant } from "@/lib/db";
-import { formatDate, toNum } from "@/lib/utils";
+import { formatDate, toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import type { Session } from "@/lib/session";
 import type { ReportRow } from "@/components/accounts/simple-report";
 
@@ -200,8 +200,8 @@ export async function ledgerBookRows(params: BookParams): Promise<{
     };
     if (params.dateFrom || params.dateTo) {
       where.date = {
-        ...(params.dateFrom ? { gte: new Date(params.dateFrom + "T00:00:00") } : {}),
-        ...(params.dateTo ? { lte: new Date(params.dateTo + "T23:59:59") } : {}),
+        ...(params.dateFrom ? { gte: istDayStart(params.dateFrom) } : {}),
+        ...(params.dateTo ? { lte: istDayEnd(params.dateTo) } : {}),
       };
     }
     if (params.refType) where.refType = params.refType;
@@ -386,12 +386,12 @@ export async function ledgerBookRows(params: BookParams): Promise<{
                 // use must not forward-leak into this book); an explicit date
                 // filter or a cross-FY reference search widens it
                 ...(params.dateFrom
-                  ? { gte: new Date(params.dateFrom + "T00:00:00") }
+                  ? { gte: istDayStart(params.dateFrom) }
                   : crossFyRef || !currentFy
                     ? {}
                     : { gte: currentFy.startDate }),
                 ...(params.dateTo
-                  ? { lte: new Date(params.dateTo + "T23:59:59") }
+                  ? { lte: istDayEnd(params.dateTo) }
                   : crossFyRef || !currentFy
                     ? {}
                     : { lte: currentFy.endDate }),
@@ -451,7 +451,7 @@ export async function ledgerBookRows(params: BookParams): Promise<{
         where: {
           firmId: session.firmId,
           ...(params.headId ? { accountHeadId: params.headId } : { partyId: params.partyId }),
-          date: { lt: new Date(params.dateFrom + "T00:00:00") },
+          date: { lt: istDayStart(params.dateFrom) },
         },
         _sum: { amount: true },
       });
@@ -473,7 +473,7 @@ export async function ledgerBookRows(params: BookParams): Promise<{
       trackRunning && (params.dateFrom || (params.partyId && !dateDriven))
         ? {
             date: (params.dateFrom
-              ? new Date(params.dateFrom + "T00:00:00")
+              ? istDayStart(params.dateFrom)
               : currentFy?.startDate ?? new Date()
             ).toISOString(),
             party:

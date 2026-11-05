@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatMoney, toNum } from "@/lib/utils";
+import { formatMoney, toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -96,8 +96,8 @@ export default async function OperationalPnlPage({
   const dateWhere =
     searchParams.date_from || searchParams.date_to
       ? {
-          ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
-          ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+          ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+          ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
         }
       : undefined;
 

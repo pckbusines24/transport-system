@@ -1,7 +1,7 @@
 import type { LrType, Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
-import { formatDate, toNum } from "@/lib/utils";
+import { formatDate, toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import {
   LrTypeReportTable,
@@ -38,8 +38,8 @@ export async function LrTypeReportPage({
     if (searchParams.q) where.lrNo = { contains: searchParams.q, mode: "insensitive" };
     if (searchParams.date_from || searchParams.date_to) {
       where.lrDate = {
-        ...(searchParams.date_from ? { gte: new Date(`${searchParams.date_from}T00:00:00`) } : {}),
-        ...(searchParams.date_to ? { lte: new Date(`${searchParams.date_to}T23:59:59`) } : {}),
+        ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+        ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
       };
     }
     const [lrs, cities, parties, vehicles] = await Promise.all([

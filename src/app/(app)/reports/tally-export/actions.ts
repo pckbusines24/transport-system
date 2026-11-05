@@ -15,6 +15,7 @@ import {
 import { planDoc, type SyncOp } from "@/lib/tally-sync";
 import { buildModuleDocs, type TallyModule } from "./build";
 import { loadExportState } from "./sync-state";
+import { istDayEnd, istDayStart } from "@/lib/utils";
 
 const moduleSchema = z.enum(["CHALAN", "BILLING", "SLIP", "VOUCHERS", "EXPENSES", "OFFICE"]);
 
@@ -30,8 +31,8 @@ const exportSchema = z.object({
 });
 
 const toRange = (from?: string | null, to?: string | null) => ({
-  dateFrom: from ? new Date(`${from}T00:00:00`) : null,
-  dateTo: to ? new Date(`${to}T23:59:59`) : null,
+  dateFrom: from ? istDayStart(from) : null,
+  dateTo: to ? istDayEnd(to) : null,
 });
 
 /** Write a confirmed file's register changes (UPSERT / DELETE per voucher). */

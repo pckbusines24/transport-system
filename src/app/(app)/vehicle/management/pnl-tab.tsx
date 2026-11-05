@@ -1,7 +1,7 @@
 ﻿import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { tripGrandTotals } from "@/lib/trip-docs";
 import { partyMeta } from "@/lib/party-option";
 import {
@@ -59,8 +59,8 @@ export async function VehiclePnlTab({
   const session = requireSession();
   await authorize(session, "reports", "view");
 
-  const dateFrom = searchParams.date_from ? new Date(searchParams.date_from + "T00:00:00") : null;
-  const dateTo = searchParams.date_to ? new Date(searchParams.date_to + "T23:59:59") : null;
+  const dateFrom = searchParams.date_from ? istDayStart(searchParams.date_from) : null;
+  const dateTo = searchParams.date_to ? istDayEnd(searchParams.date_to) : null;
 
   const data = await withTenant(session.tenantId, async (tx) => {
     // everything is fetched LIFETIME (firm-scoped, no FY/date filter) and the

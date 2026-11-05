@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatDate } from "@/lib/utils";
+import { formatDate, istDayEnd, istDayStart } from "@/lib/utils";
 import { DocModule } from "@/components/data/doc-module";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { saveArrival, deleteArrival } from "./actions";
@@ -24,8 +24,8 @@ export default async function ArrivalPage({
     const where: Prisma.ArrivalWhereInput = { firmId: session.firmId, fyId: session.fyId };
     if (searchParams.date_from || searchParams.date_to) {
       where.unloadDate = {
-        ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
-        ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+        ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+        ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
       };
     }
     const [rows, total] = await Promise.all([

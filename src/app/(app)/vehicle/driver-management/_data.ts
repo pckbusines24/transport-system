@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { withTenant } from "@/lib/db";
 import { settledByRef, signedRemainder } from "@/lib/settlement";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import type { DriverSalaryRow } from "@/components/vehicle/driver-salary-client";
 import type { DriverSettlementRow } from "@/components/vehicle/driver-settlement-client";
 import type { DriverAdvanceRow } from "@/components/vehicle/driver-advance-client";
@@ -25,8 +25,8 @@ export type DriverFilters = {
 const dateRange = (f: DriverFilters) =>
   f.date_from || f.date_to
     ? {
-        ...(f.date_from ? { gte: new Date(f.date_from + "T00:00:00") } : {}),
-        ...(f.date_to ? { lte: new Date(f.date_to + "T23:59:59") } : {}),
+        ...(f.date_from ? { gte: istDayStart(f.date_from) } : {}),
+        ...(f.date_to ? { lte: istDayEnd(f.date_to) } : {}),
       }
     : undefined;
 

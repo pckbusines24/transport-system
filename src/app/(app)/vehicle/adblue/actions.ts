@@ -15,7 +15,7 @@ import {
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { settledByRef } from "@/lib/settlement";
 import { tripCoveringDate, tripFetchLockMessage } from "@/lib/trip-lock";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 
 /**
  * AdBlue (Urea) stock register.
@@ -280,8 +280,8 @@ export async function fetchAdblueForTrip(input: {
         vehicleId: input.vehicleId,
         deletedAt: null,
         date: {
-          gte: new Date(`${input.dateFrom}T00:00:00`),
-          lte: new Date(`${input.dateTo}T23:59:59`),
+          gte: istDayStart(input.dateFrom),
+          lte: istDayEnd(input.dateTo),
         },
       },
       orderBy: { date: "asc" },

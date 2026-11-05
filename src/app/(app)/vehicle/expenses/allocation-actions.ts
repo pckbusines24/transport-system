@@ -7,7 +7,7 @@ import { withTenant, type Tx } from "@/lib/db";
 import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { round2 } from "@/lib/calc/tds";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
 import { tripCoveringDate, tripFetchLockMessage } from "@/lib/trip-lock";
 
@@ -119,7 +119,7 @@ export async function allocateVehicleExpense(
               vehicleId: r.vehicleId,
               amount: r.amount,
               qty: r.qty ?? null,
-              allocDate: new Date(`${r.allocDate}T00:00:00`),
+              allocDate: istDayStart(r.allocDate),
               remarks: r.remarks || null,
             },
           })
@@ -307,8 +307,8 @@ export async function getAllocationHistory(opts?: {
         ...(opts?.dateFrom || opts?.dateTo
           ? {
               allocDate: {
-                ...(opts?.dateFrom ? { gte: new Date(`${opts.dateFrom}T00:00:00`) } : {}),
-                ...(opts?.dateTo ? { lte: new Date(`${opts.dateTo}T23:59:59`) } : {}),
+                ...(opts?.dateFrom ? { gte: istDayStart(opts.dateFrom) } : {}),
+                ...(opts?.dateTo ? { lte: istDayEnd(opts.dateTo) } : {}),
               },
             }
           : {}),

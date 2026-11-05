@@ -8,7 +8,7 @@ import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
 import { resolveRelativeOwner } from "@/lib/relative-owner";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 
 /**
  * Driver Advance Register — the PRIMARY source of driver advance data. Trip
@@ -228,8 +228,8 @@ export async function fetchDriverAdvancesForTrip(input: {
             : { status: "PENDING" as const },
         ],
         date: {
-          gte: new Date(`${input.dateFrom}T00:00:00`),
-          lte: new Date(`${input.dateTo}T23:59:59`),
+          gte: istDayStart(input.dateFrom),
+          lte: istDayEnd(input.dateTo),
         },
       },
       orderBy: { date: "asc" },

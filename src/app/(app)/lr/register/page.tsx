@@ -5,7 +5,7 @@ import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { Button } from "@/components/ui/button";
 import { withTenant } from "@/lib/db";
-import { formatDate, toNum } from "@/lib/utils";
+import { formatDate, toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { LrRegisterTable, type LrRegisterRow } from "@/components/lr/lr-register-table";
@@ -50,8 +50,8 @@ export default async function LrRegisterPage({
   }
   if (searchParams.date_from || searchParams.date_to) {
     where.lrDate = {
-      ...(searchParams.date_from ? { gte: new Date(`${searchParams.date_from}T00:00:00`) } : {}),
-      ...(searchParams.date_to ? { lte: new Date(`${searchParams.date_to}T23:59:59`) } : {}),
+      ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+      ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
     };
   }
   if (searchParams.source) where.sourceCityId = searchParams.source;

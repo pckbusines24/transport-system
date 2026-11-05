@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { TyreClient, type TyreRow } from "@/components/vehicle/tyre-client";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { eqi, findExactFirst } from "@/lib/exact-first";
@@ -57,9 +57,9 @@ export default async function TyresPage({
           ...((where.cycles as { some?: object } | undefined)?.some ?? {}),
           instDate: {
             ...(searchParams.date_from
-              ? { gte: new Date(searchParams.date_from + "T00:00:00") }
+              ? { gte: istDayStart(searchParams.date_from) }
               : {}),
-            ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+            ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
           },
         },
       };

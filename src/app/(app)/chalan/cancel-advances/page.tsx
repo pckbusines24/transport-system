@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatDate, formatMoney, toNum } from "@/lib/utils";
+import { formatDate, formatMoney, toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { InfoHint } from "@/components/ui/info-hint";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
@@ -41,10 +41,10 @@ export default async function ChalanCancelAdvancesPage({
           ? {
               date: {
                 ...(searchParams.date_from
-                  ? { gte: new Date(searchParams.date_from + "T00:00:00") }
+                  ? { gte: istDayStart(searchParams.date_from) }
                   : {}),
                 ...(searchParams.date_to
-                  ? { lte: new Date(searchParams.date_to + "T23:59:59") }
+                  ? { lte: istDayEnd(searchParams.date_to) }
                   : {}),
               },
             }

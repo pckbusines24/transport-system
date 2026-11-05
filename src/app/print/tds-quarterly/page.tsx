@@ -2,7 +2,7 @@ import * as React from "react";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatDate, formatMoney, istDayEnd, istDayStart } from "@/lib/utils";
 import { buildTdsPayableRows } from "@/app/(app)/accounts/tds/payable-rows";
 import {
   buildQuarterlyData,
@@ -36,8 +36,8 @@ export default async function TdsQuarterlyPrintPage({
   const dateWhere =
     searchParams.date_from || searchParams.date_to
       ? {
-          ...(searchParams.date_from ? { gte: new Date(searchParams.date_from + "T00:00:00") } : {}),
-          ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+          ...(searchParams.date_from ? { gte: istDayStart(searchParams.date_from) } : {}),
+          ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
         }
       : undefined;
 

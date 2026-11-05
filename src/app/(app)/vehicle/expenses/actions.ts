@@ -9,7 +9,7 @@ import { audit } from "@/lib/audit";
 import { assertDateInFy } from "@/lib/fy-guard";
 import { postLedger, reverseLedger, type LedgerPostEntry } from "@/lib/ledger";
 import { round2 } from "@/lib/calc/tds";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { settledByRef } from "@/lib/settlement";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { tripCoveringDate, tripFetchLockMessage } from "@/lib/trip-lock";
@@ -320,7 +320,7 @@ export async function saveVehicleExpenseTxn(
           vehicleId: i.vehicleId,
           amount: i.amount,
           // split at purchase time = allocated on the purchase date
-          allocDate: i.allocDate ? new Date(`${i.allocDate}T00:00:00`) : values.date,
+          allocDate: i.allocDate ? istDayStart(i.allocDate) : values.date,
           qty: i.qty ?? null,
           remarks: i.remarks || null,
         })),
@@ -574,8 +574,8 @@ export async function fetchOperatingExpensesForTrip(input: {
         // the trip sees costs ALLOCATED to the vehicle in its dates, not stock
         // purchased in that window and fitted to some other vehicle later
         allocDate: {
-          gte: new Date(`${input.dateFrom}T00:00:00`),
-          lte: new Date(`${input.dateTo}T23:59:59`),
+          gte: istDayStart(input.dateFrom),
+          lte: istDayEnd(input.dateTo),
         },
         voucher: {
           firmId: session.firmId,
@@ -639,8 +639,8 @@ export async function fetchVehicleExpensesForTrip(input: {
         // the trip sees costs ALLOCATED to the vehicle in its dates, not stock
         // purchased in that window and fitted to some other vehicle later
         allocDate: {
-          gte: new Date(`${input.dateFrom}T00:00:00`),
-          lte: new Date(`${input.dateTo}T23:59:59`),
+          gte: istDayStart(input.dateFrom),
+          lte: istDayEnd(input.dateTo),
         },
         voucher: {
           firmId: session.firmId,

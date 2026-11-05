@@ -2,7 +2,7 @@
 
 import { requireSession } from "@/lib/session";
 import { withTenant, type Tx } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayStart } from "@/lib/utils";
 import { round2 } from "@/lib/calc/tds";
 import type { LrStatus } from "@prisma/client";
 
@@ -204,8 +204,8 @@ export async function getLrDetail(input: {
       f.from && DATE_RE.test(f.from) && f.to && DATE_RE.test(f.to)
         ? {
             lrDate: {
-              gte: new Date(`${f.from}T00:00:00`),
-              lt: new Date(new Date(`${f.to}T00:00:00`).getTime() + 24 * 3600 * 1000),
+              gte: istDayStart(f.from),
+              lt: new Date(istDayStart(f.to).getTime() + 24 * 3600 * 1000),
             },
           }
         : {};

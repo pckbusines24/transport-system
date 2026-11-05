@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { FilterBar, type FilterDef } from "@/components/data/filter-bar";
 import { SimpleReport, type ReportRow } from "@/components/accounts/simple-report";
 import { COMMON_HEADS } from "@/lib/account-heads";
@@ -62,10 +62,10 @@ export default async function CommonLedgerPage({
           ? {
               date: {
                 ...(searchParams.date_from
-                  ? { gte: new Date(searchParams.date_from + "T00:00:00") }
+                  ? { gte: istDayStart(searchParams.date_from) }
                   : {}),
                 ...(searchParams.date_to
-                  ? { lte: new Date(searchParams.date_to + "T23:59:59") }
+                  ? { lte: istDayEnd(searchParams.date_to) }
                   : {}),
               },
             }

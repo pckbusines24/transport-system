@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { roundWt, toNum } from "@/lib/utils";
+import { roundWt, toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { invoiceSettlement, payableSettlement } from "@/lib/settlement";
 import { PaginationBar, parsePage } from "@/components/data/pagination-bar";
 import { ChalanRegisterClient, type ChalanRegisterRow } from "./register-client";
@@ -61,8 +61,8 @@ export default async function ChalanRegisterPage({
         ...(date_from || date_to
           ? {
               chalanDate: {
-                ...(date_from ? { gte: new Date(date_from + "T00:00:00") } : {}),
-                ...(date_to ? { lte: new Date(date_to + "T23:59:59") } : {}),
+                ...(date_from ? { gte: istDayStart(date_from) } : {}),
+                ...(date_to ? { lte: istDayEnd(date_to) } : {}),
               },
             }
           : {}),

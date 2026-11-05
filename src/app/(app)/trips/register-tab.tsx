@@ -2,7 +2,7 @@
 import { requireSession } from "@/lib/session";
 import { authorize } from "@/lib/authz";
 import { withTenant } from "@/lib/db";
-import { toNum } from "@/lib/utils";
+import { toNum, istDayEnd, istDayStart } from "@/lib/utils";
 import { tripGrandTotals } from "@/lib/trip-docs";
 import {
   TripRegisterClient,
@@ -48,9 +48,9 @@ export async function TripRegisterTab({
       if (searchParams.date_from || searchParams.date_to) {
         where.tripDate = {
           ...(searchParams.date_from
-            ? { gte: new Date(searchParams.date_from + "T00:00:00") }
+            ? { gte: istDayStart(searchParams.date_from) }
             : {}),
-          ...(searchParams.date_to ? { lte: new Date(searchParams.date_to + "T23:59:59") } : {}),
+          ...(searchParams.date_to ? { lte: istDayEnd(searchParams.date_to) } : {}),
         };
       }
       const [trips, vehicles, drivers, settlements] = await Promise.all([
