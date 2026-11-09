@@ -356,11 +356,9 @@ export async function savePodBatch(
           });
         await tx.lr.update({
           where: { id: lr.id },
-          data: {
-            status: "DELIVERED",
-            poNumber: line.poNumber || lr.poNumber,
-            gateEntryNo: line.gateEntryNo || lr.gateEntryNo,
-          },
+          // PO / gate entry live on the POD only — copying them onto the LR
+          // kept an old value alive after the POD was edited or deleted
+          data: { status: "DELIVERED" },
         });
         await audit(tx, session, {
           entity: "Pod",

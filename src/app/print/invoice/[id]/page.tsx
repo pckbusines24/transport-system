@@ -132,9 +132,9 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
         source: cityName(lr.sourceCityId),
         dest: cityName(lr.destCityId),
         obdNo: lr.obdNo ?? "",
-        // PO / gate entry come from the POD entry, falling back to the LR fields
-        poNumber: lr.pods[0]?.poNumber || lr.poNumber || "",
-        gateEntryNo: lr.pods[0]?.gateEntryNo || lr.gateEntryNo || "",
+        // PO / gate entry come from the POD only (see billing/actions)
+        poNumber: lr.pods[0]?.poNumber || "",
+        gateEntryNo: lr.pods[0]?.gateEntryNo || "",
         invoiceNo: lr.invoiceNo ?? "",
         vehicle: vehicleNo(lr.vehicleId) || lr.vehicleText || "",
         material: lr.items.map((i) => i.productName).filter(Boolean).join(", "),

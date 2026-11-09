@@ -157,9 +157,10 @@ async function decorateLrs(
       actualWt,
       chargeWt: roundWt(lr.items.reduce((s, i) => s + toNum(String(i.chargeWt)), 0)),
       amount: toNum(String(lr.total)),
-      // PO / gate entry come from the POD entry, falling back to the LR fields
-      poNumber: pod?.poNumber || lr.poNumber || "",
-      gateEntryNo: pod?.gateEntryNo || lr.gateEntryNo || "",
+      // PO / gate entry come from the POD only: falling back to the LR's
+      // copy brought a cleared (or deleted) POD's old value back
+      poNumber: pod?.poNumber || "",
+      gateEntryNo: pod?.gateEntryNo || "",
       obdNo: lr.obdNo ?? "",
       consignee: pmap.get(lr.consigneeId) ?? "",
       material: lr.items.map((i) => i.productName).filter(Boolean).join(", "),
