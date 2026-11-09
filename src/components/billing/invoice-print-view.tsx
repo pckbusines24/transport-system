@@ -142,17 +142,20 @@ const LR_COLUMNS: LrColumn[] = [
   { header: "Dispatch Date", width: "w-[20mm]", nowrap: true, value: (lr) => lr.lrDate },
   { header: "From Station", width: "w-[17mm]", value: (lr) => lr.source },
   { header: "To Station", width: "w-[17mm]", value: (lr) => lr.dest },
-  // reference numbers: 12 characters on one line, wrap only beyond that
-  { header: "OBD No", optional: true, width: "w-[21mm]", value: (lr) => lr.obdNo, raw: (lr) => lr.obdNo },
-  { header: "PO No", optional: true, width: "w-[21mm]", value: (lr) => lr.poNumber, raw: (lr) => lr.poNumber },
+  // reference numbers: ~8 characters on one line, a longer one continues on a
+  // second line. At 21mm each the four of them (with every other column
+  // present) left Consignee ~2mm and the name broke a letter per line; 15mm
+  // gives Consignee ~26mm — a name like "ULTRATECH CEMENT LTD" on two lines.
+  { header: "OBD No", optional: true, width: "w-[15mm]", value: (lr) => lr.obdNo, raw: (lr) => lr.obdNo },
+  { header: "PO No", optional: true, width: "w-[15mm]", value: (lr) => lr.poNumber, raw: (lr) => lr.poNumber },
   {
     header: "Gate Entry No",
     optional: true,
-    width: "w-[21mm]",
+    width: "w-[15mm]",
     value: (lr) => lr.gateEntryNo,
     raw: (lr) => lr.gateEntryNo,
   },
-  { header: "Invoice No", optional: true, width: "w-[21mm]", value: (lr) => lr.invoiceNo, raw: (lr) => lr.invoiceNo },
+  { header: "Invoice No", optional: true, width: "w-[15mm]", value: (lr) => lr.invoiceNo, raw: (lr) => lr.invoiceNo },
   { header: "Vehicle No", width: "w-[22mm]", nowrap: true, value: (lr) => lr.vehicle },
   { header: "Material", optional: true, width: "w-[17mm]", value: (lr) => lr.material, raw: (lr) => lr.material },
   // no width: takes all the space the fixed columns leave
