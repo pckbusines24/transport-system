@@ -13,7 +13,7 @@ import { lrNumberAllocator, nextLrNumber, syncSequenceTo } from "@/lib/sequences
 import { stateCodeFromGstin } from "@/lib/calc/gst";
 import { computeLrTotals, itemAmount } from "@/components/lr/lr-calc";
 import { resyncInvoicesForLr } from "@/app/(app)/billing/actions";
-import { restateChalansForLr } from "@/app/(app)/chalan/actions";
+import { refreshChalanBookingFreightForLr, restateChalansForLr } from "@/app/(app)/chalan/actions";
 import { revalidateOutstanding } from "@/lib/outstanding-cache";
 import { loadLrFormData, type LrFormData } from "./form-data";
 
@@ -353,6 +353,10 @@ export async function saveLr(input: unknown): Promise<SaveLrResult> {
             .join("|");
         if (sums(before.items) !== sums(data.items)) {
           await restateChalansForLr(tx, session, savedId);
+        }
+        // the chalan's stored Booking Freight feeds the dashboard margin
+        if (toNum(before.freight).toFixed(2) !== data.freight.toFixed(2)) {
+          await refreshChalanBookingFreightForLr(tx, session, savedId);
         }
       } else {
         const created = await tx.lr.create({

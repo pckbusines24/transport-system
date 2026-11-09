@@ -607,6 +607,43 @@ export async function saveChalan(input: unknown): Promise<{ ok: true; id: string
 }
 
 /**
+ * An LR's freight changed: refresh the stored Booking Freight (sum of its
+ * LRs' freight) on every chalan it rides. The dashboard's booking margin and
+ * status board read this stored figure, which otherwise only moved when the
+ * chalan itself was re-saved. Booking Freight is reference only — not part
+ * of the broker's settlement, the ledger or Tally — so a settled / paid
+ * chalan updates too and nothing financial changes.
+ */
+export async function refreshChalanBookingFreightForLr(
+  tx: Tx,
+  session: ReturnType<typeof requireSession>,
+  lrId: string
+): Promise<void> {
+  const chalans = await tx.chalan.findMany({
+    where: { firmId: session.firmId, deletedAt: null, lrs: { some: { lrId } } },
+    select: {
+      id: true,
+      bookingFreight: true,
+      lrs: { select: { lr: { select: { freight: true, deletedAt: true } } } },
+    },
+  });
+  for (const c of chalans) {
+    const bookingFreight = round2(
+      c.lrs.filter((l) => !l.lr.deletedAt).reduce((s, l) => s + toNum(l.lr.freight), 0)
+    );
+    if (bookingFreight === round2(toNum(c.bookingFreight))) continue;
+    await tx.chalan.update({ where: { id: c.id }, data: { bookingFreight } });
+    await audit(tx, session, {
+      entity: "Chalan",
+      entityId: c.id,
+      action: "UPDATE",
+      before: { bookingFreight: toNum(c.bookingFreight) },
+      after: { bookingFreight, reason: "LR freight changed" },
+    });
+  }
+}
+
+/**
  * An LR's qty/weights changed: re-save every live, rate-based chalan it rides
  * so the vehicle freight, TDS, commission, balance and ledger follow the new
  * weights. A chalan with a balance payment / settling voucher refuses the
