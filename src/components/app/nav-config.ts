@@ -68,6 +68,7 @@ export const NAV: NavGroup[] = [
       { label: "Chalan Entry", href: "/chalan" },
       { label: "Chalan Register", href: "/chalan/register" },
       { label: "Chalan Cancel Advances", href: "/chalan/cancel-advances" },
+      { label: "Balance Paid Follow-up", href: "/chalan/balance-follow-up" },
       // the less-used fleet screens sit behind one flyout so the day-to-day
       // chalan entries stay at the top of the menu
       {

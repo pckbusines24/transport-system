@@ -35,6 +35,8 @@ export interface FirmFormValues {
   igstPct: number;
   defaultTdsPct: number;
   podFollowUpDays: number;
+  balanceFollowUpEnabled: boolean;
+  balanceFollowUpDays: number;
   defaultBankPartyId: string;
   bankName: string;
   bankAccount: string;
@@ -171,6 +173,10 @@ export function FirmForm({
       igstPct: Number(values.igstPct) || 0,
       defaultTdsPct: Number(values.defaultTdsPct) || 0,
       podFollowUpDays: Math.max(1, Math.round(Number(values.podFollowUpDays) || 15)),
+      // 0 is a valid setting (list as soon as the last POD is in); blank = 15
+      balanceFollowUpDays: Number.isFinite(Number(values.balanceFollowUpDays))
+        ? Math.max(0, Math.round(Number(values.balanceFollowUpDays)))
+        : 15,
     });
     if (res.ok) toast({ title: "Firm settings saved" });
     else toast({ variant: "destructive", title: "Save failed", description: res.error });
@@ -288,6 +294,19 @@ export function FirmForm({
           </Field>
           <Field label="POD Follow-up After (days from LR date)">
             <Input type="number" step="1" {...register("podFollowUpDays", { valueAsNumber: true })} />
+          </Field>
+          <Field label="Balance Paid Follow-up">
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              value={watch("balanceFollowUpEnabled") ? "yes" : "no"}
+              onChange={(e) => setValue("balanceFollowUpEnabled", e.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </Field>
+          <Field label="Balance Follow-up After (days from last POD entry)">
+            <Input type="number" step="1" {...register("balanceFollowUpDays", { valueAsNumber: true })} />
           </Field>
         </CardContent>
       </Card>

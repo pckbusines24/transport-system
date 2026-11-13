@@ -80,6 +80,19 @@ export default async function ChalanPage({
           ).get(record.id)
         : undefined;
       const voucherSettled = balPos?.voucherSettled ?? 0;
+      // UTR / cheque no. lives on the auto-created settlement voucher
+      const balVoucher = record
+        ? await tx.voucherAllocation.findFirst({
+            where: {
+              refType: "FREIGHT_CHALLAN",
+              refId: record.id,
+              remarks: "CHALAN_BAL_SETTLEMENT",
+              voucher: { deletedAt: null, firmId: session.firmId },
+            },
+            orderBy: { voucher: { voucherDate: "desc" } },
+            select: { voucher: { select: { chequeNo: true } } },
+          })
+        : null;
       const cities = record ? await tx.city.findMany() : [];
       const parties = record ? await tx.party.findMany() : [];
       const cityName = (id: string) => cities.find((c) => c.id === id)?.name ?? "";
@@ -109,6 +122,7 @@ export default async function ChalanPage({
             balPaymentMode: record.balPaymentMode ?? "BANK",
             balRemarks: record.balRemarks ?? "",
             voucherSettled,
+            balReference: balVoucher?.voucher.chequeNo ?? "",
             // combined saved settlement (chalan-side legacy + settlement
             // voucher) — display only, never prefills the payment inputs
             settledPaid: toNum(record.balPaidAmount) + (balPos?.voucherPaid ?? 0),

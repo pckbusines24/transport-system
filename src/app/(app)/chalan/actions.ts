@@ -28,6 +28,7 @@ import { revalidateOutstanding } from "@/lib/outstanding-cache";
 /** Money figure for error messages. */
 const formatOpen = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-IN");
 import type { PendingLrRow } from "@/components/fleet/lr-picker";
+import type { BalancePaymentInfo } from "@/components/chalan/balance-payment-panel";
 
 /** PartyAdvanceUse refTypes — one per chalan section, so a save in one section
  *  never clobbers what the other section consumed. */
@@ -711,6 +712,85 @@ export async function restateChalansForLr(
   }
 }
 
+/**
+ * Everything the shared balance-payment panel needs for one chalan, loaded
+ * the same way the chalan screen loads it — for the Balance Paid Follow-up
+ * dashboard's Pay Now pop-up. The panel then saves through saveBalancePayment.
+ */
+export async function getChalanBalancePayContext(chalanId: string): Promise<
+  | {
+      ok: true;
+      info: BalancePaymentInfo;
+      brokerId: string;
+      banks: { value: string; label: string; meta?: string }[];
+    }
+  | { ok: false; error: string }
+> {
+  const session = requireSession();
+  await authorize(session, "chalan", "view");
+  return withTenant(session.tenantId, async (tx) => {
+    const c = await tx.chalan.findFirst({
+      where: { id: chalanId, firmId: session.firmId, deletedAt: null },
+      include: { lrs: { include: { lr: { include: { pods: true } } } } },
+    });
+    if (!c) return { ok: false as const, error: "Chalan not found." };
+    const [pos, advUses, balVoucher, banks] = await Promise.all([
+      payableSettlement(tx, {
+        firmId: session.firmId,
+        refType: "FREIGHT_CHALLAN",
+        docs: [{ id: c.id, balance: toNum(c.balance), ownPaid: 0, ownShortage: 0, ownRoundOff: 0 }],
+      }),
+      tx.partyAdvanceUse.findMany({ where: { refId: c.id, refType: ADV_USE_BALANCE } }),
+      tx.voucherAllocation.findFirst({
+        where: {
+          refType: "FREIGHT_CHALLAN",
+          refId: c.id,
+          remarks: "CHALAN_BAL_SETTLEMENT",
+          voucher: { deletedAt: null, firmId: session.firmId },
+        },
+        orderBy: { voucher: { voucherDate: "desc" } },
+        select: { voucher: { select: { chequeNo: true } } },
+      }),
+      tx.party.findMany({
+        where: { ledgerGroup: { in: ["BANK", "CASH", "CARD"] }, isActive: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+    const p = pos.get(c.id);
+    const operational = c.lrs.filter((l) => l.lr.lrType !== "CANCELLED" && l.lr.lrType !== "PAPER_CHANGE");
+    return {
+      ok: true as const,
+      brokerId: c.brokerId,
+      banks: banks.map((b) => ({ value: b.id, label: b.name, meta: b.ledgerGroup })),
+      info: {
+        chalanId: c.id,
+        chalanNo: c.chalanNo,
+        grossBalance: toNum(c.balance),
+        voucherSettled: p?.voucherSettled ?? 0,
+        paymentStatus: c.paymentStatus,
+        isFinal: c.isFinal,
+        podTotal: operational.length,
+        podDone: operational.filter((l) => l.lr.pods.length > 0).length,
+        podShortageWt: roundWt(
+          c.lrs.flatMap((l) => l.lr.pods).reduce((s, pod) => s + toNum(pod.shortageWt), 0)
+        ),
+        balRoundOff: toNum(c.balRoundOff),
+        balShortage: toNum(c.balShortage),
+        balPaymentDate: c.balPaymentDate ? c.balPaymentDate.toISOString() : null,
+        balPaymentHeadId: c.balPaymentHeadId,
+        balPaymentMode: c.balPaymentMode ?? "BANK",
+        balRemarks: c.balRemarks ?? "",
+        balReference: balVoucher?.voucher.chequeNo ?? "",
+        balAdvanceLines: advUses.map((u) => ({ advanceId: u.advanceId, amount: toNum(u.amount) })),
+        settledPaid: toNum(c.balPaidAmount) + (p?.voucherPaid ?? 0),
+        settledShortage: toNum(c.balShortage) + (p?.voucherShortage ?? 0),
+        settledRoundOff: toNum(c.balRoundOff) + (p?.voucherRoundOff ?? 0),
+        settledAdvanceAdj: toNum(c.balAdvanceAdjusted),
+      },
+    };
+  });
+}
+
 /** Replace advances for a chalan and recompute advance total / balance. */
 export async function saveChalanAdvances(
   chalanId: string,
@@ -1377,6 +1457,8 @@ const balancePaymentSchema = z.object({
     .enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "NEFT_RTGS", "ADVANCE_ADJ"])
     .default("BANK"),
   remarks: z.string().optional().nullable(),
+  /** UTR / cheque / transaction no. — stored on the settlement voucher */
+  reference: z.string().trim().max(60).optional().nullable(),
   /** manual voucher-wise advance adjustment applied to the balance */
   advanceLines: z
     .array(z.object({ advanceId: z.string().min(1), amount: z.number() }))
@@ -1400,6 +1482,10 @@ export async function saveBalancePayment(
   const data = parsed.data;
   try {
     const res = await withTenant(session.tenantId, async (tx) => {
+      // row lock: two users paying the same chalan at once would both read
+      // "nothing settled yet" and each create a settlement voucher. The second
+      // now waits here, then sees the first one's voucher and pays nothing.
+      await tx.$queryRaw`SELECT "id" FROM "Chalan" WHERE "id" = ${data.chalanId} FOR UPDATE`;
       const chalan = await tx.chalan.findFirst({
         where: { id: data.chalanId, firmId: session.firmId, deletedAt: null },
       });
@@ -1534,6 +1620,7 @@ export async function saveBalancePayment(
             moduleLink: "FREIGHT_CHALLAN",
             partyId: chalan.brokerId,
             bankPartyId: data.paymentHeadId || null,
+            chequeNo: data.reference || null,
             amount: round2(paidAmount + data.shortage),
             deduction: data.shortage,
             netAmount: paidAmount,

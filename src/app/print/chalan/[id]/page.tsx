@@ -26,6 +26,8 @@ export default async function ChalanPrintPage({
     mode?: string;
     head?: string;
     rem?: string;
+    /** UTR / cheque no. of the unsaved balance payment */
+    ref?: string;
   };
 }) {
   const session = requireSession();
@@ -52,6 +54,7 @@ export default async function ChalanPrintPage({
           balRemarks: searchParams.rem || null,
         }
       : null;
+  const previewRef = preview ? searchParams.ref?.trim() || "" : "";
 
   const data = await withTenant(session.tenantId, async (tx) => {
     // firm scoped: another firm's chalan must never print under this session
@@ -111,6 +114,7 @@ export default async function ChalanPrintPage({
               voucherDate: true,
               type: true,
               bankPartyId: true,
+              chequeNo: true,
             },
           },
         },
@@ -517,6 +521,7 @@ export default async function ChalanPrintPage({
                   {chalan.balPaymentMode
                     ? ` (${chalan.balPaymentMode.replace("_", "/")})`
                     : ""}
+                  {previewRef ? ` · Ref ${previewRef}` : ""}
                   {chalan.balRemarks ? ` — ${chalan.balRemarks}` : ""}
                 </td>
                 <td className="border border-black px-1 py-0.5">
@@ -549,6 +554,7 @@ export default async function ChalanPrintPage({
                 <td className="border border-black px-1 py-0.5">
                   {a.voucher.type === "JOURNAL" ? "Journal" : "Payment"} voucher{" "}
                   {a.voucher.voucherNo}
+                  {a.voucher.chequeNo ? ` · Ref ${a.voucher.chequeNo}` : ""}
                 </td>
                 <td className="border border-black px-1 py-0.5">
                   {a.voucher.bankPartyId

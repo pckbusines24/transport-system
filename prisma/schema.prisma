@@ -248,6 +248,10 @@ model Firm {
   defaultTdsPct      Decimal  @default(1) @db.Decimal(5, 2)
   /// POD follow-up: an LR enters the pending list this many days after LR date
   podFollowUpDays    Int      @default(15)
+  /// Balance Paid Follow-up: a broker chalan's unpaid balance is listed this
+  /// many days after its LAST POD was entered (software entry, not POD date)
+  balanceFollowUpEnabled Boolean @default(true)
+  balanceFollowUpDays    Int     @default(15)
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

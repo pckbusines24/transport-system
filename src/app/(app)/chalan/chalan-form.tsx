@@ -6,14 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -25,7 +17,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { DateInput, IsoDateInput } from "@/components/data/date-input";
 import { MasterCombobox, type MasterOption } from "@/components/data/master-combobox";
-import { Field, NumInput, PartyCombobox, VehicleCombobox, enterAdvances, BankCashCombobox } from "@/components/fleet/fields";
+import { Field, NumInput, PartyCombobox, VehicleCombobox, enterAdvances } from "@/components/fleet/fields";
 import { LrPicker, SelectedLrList, type PendingLrRow } from "@/components/fleet/lr-picker";
 import { computeChalan, dieselAdvanceAmount } from "@/lib/calc/chalan";
 import { round2, tdsPctFromPan, type TdsMode } from "@/lib/calc/tds";
@@ -35,10 +27,10 @@ import {
   advanceAdjustError,
   advanceAdjustLines,
 } from "@/components/chalan/advance-adjust-grid";
+import { BalancePaymentPanel } from "@/components/chalan/balance-payment-panel";
 import type { OpenAdvance } from "@/lib/party-advance";
 import {
   finalizeChalan,
-  saveBalancePayment,
   getBrokerAdvances,
   getBrokerTdsInfo,
   getPendingLrsForVehicle,
@@ -112,6 +104,8 @@ export interface ChalanRecord {
   balAdvanceLines: { advanceId: string; amount: number }[];
   /** already settled against this chalan from a Payment Voucher */
   voucherSettled: number;
+  /** UTR / cheque no. on the saved settlement voucher */
+  balReference?: string;
   /** combined SAVED settlement (chalan-side legacy + settlement voucher) —
       display only, never used to prefill the payment inputs */
   settledPaid?: number;
@@ -257,27 +251,6 @@ export function ChalanForm({
   const [advOptions, setAdvOptions] = React.useState<OpenAdvance[]>([]);
   const [balAdvOptions, setBalAdvOptions] = React.useState<OpenAdvance[]>([]);
   const [advLoading, setAdvLoading] = React.useState(false);
-  const [balAdjValues, setBalAdjValues] = React.useState<Record<string, number>>(() => {
-    const v: Record<string, number> = {};
-    for (const l of record?.balAdvanceLines ?? []) v[l.advanceId] = l.amount;
-    return v;
-  });
-
-  // ------- balance payment (PENDING -> PAID) -------
-  const [balRoundOff, setBalRoundOff] = React.useState(record?.balRoundOff ?? 0);
-  const [balShortage, setBalShortage] = React.useState(record?.balShortage ?? 0);
-  const [balDateText, setBalDateText] = React.useState(
-    record?.balPaymentDate ? formatDate(new Date(record.balPaymentDate)) : formatDate(new Date())
-  );
-  const [balHeadId, setBalHeadId] = React.useState<string | null>(record?.balPaymentHeadId ?? null);
-  const [balMode, setBalMode] = React.useState(record?.balPaymentMode ?? "BANK");
-  const [balRemarks, setBalRemarks] = React.useState(record?.balRemarks ?? "");
-  const [balSaving, setBalSaving] = React.useState(false);
-  const [balConfirmOpen, setBalConfirmOpen] = React.useState(false);
-  const [paymentStatus, setPaymentStatus] = React.useState(record?.paymentStatus ?? "PENDING");
-  const podTotal = record?.podTotal ?? 0;
-  const podDone = record?.podDone ?? 0;
-  const allPodDone = podTotal > 0 && podDone >= podTotal;
 
   const [saving, setSaving] = React.useState(false);
   const isFinal = record?.isFinal ?? false;
@@ -373,113 +346,6 @@ export function ChalanForm({
     advances: advances.map(advAmount),
   });
 
-  // balance section: only what a Payment Voucher has not already settled is
-  // available here — the two modules share one outstanding
-  const voucherSettled = record?.voucherSettled ?? 0;
-  const balOpen = Math.round((totals.balance - voucherSettled) * 100) / 100;
-  const balSettleable = Math.round((balOpen - balRoundOff - balShortage) * 100) / 100;
-  const balAdjTotal =
-    Math.round(Object.values(balAdjValues).reduce((s, n) => s + (n || 0), 0) * 100) / 100;
-  const balPaidPreview = Math.round((balSettleable - balAdjTotal) * 100) / 100;
-  const balAdjError = advanceAdjustError(balAdvOptions, balAdjValues, balSettleable);
-
-  const handleBalancePayment = async () => {
-    if (!id) return;
-    if (!allPodDone) {
-      toast({
-        variant: "destructive",
-        title: "POD not complete",
-        description: `POD is ${podDone}/${podTotal} — all LRs must have a confirmed POD first.`,
-      });
-      return;
-    }
-    const d = parseDdMmYyyy(balDateText);
-    if (!d) {
-      toast({ variant: "destructive", title: "Valid payment date is required" });
-      return;
-    }
-    if (balAdjError) {
-      toast({ variant: "destructive", title: "Advance adjustment invalid", description: balAdjError });
-      return;
-    }
-    // the head is only needed when money actually leaves the bank/cash book
-    if (balPaidPreview > 0.009 && !balHeadId) {
-      toast({ variant: "destructive", title: "Select the bank/cash payment head" });
-      return;
-    }
-    // print first, then save — the popup offers both
-    setBalConfirmOpen(true);
-  };
-
-  /** Print link carrying the typed (unsaved) balance payment, so the print
-      shows it as it will read once saved. */
-  const balancePrintHref = () => {
-    const d = parseDdMmYyyy(balDateText);
-    const q = new URLSearchParams({
-      preview: "1",
-      paid: String(balPaidPreview),
-      ro: String(balRoundOff || 0),
-      sh: String(balShortage || 0),
-      adv: String(balAdjTotal || 0),
-      mode: balMode,
-      head: balHeadId ?? "",
-      rem: balRemarks,
-    });
-    if (d) {
-      q.set(
-        "date",
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-      );
-    }
-    return `/print/chalan/${id}?${q.toString()}`;
-  };
-
-  const saveBalance = async () => {
-    if (!id) return;
-    const d = parseDdMmYyyy(balDateText);
-    if (!d) return;
-    setBalConfirmOpen(false);
-    setBalSaving(true);
-    try {
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      const res = await saveBalancePayment({
-        chalanId: id,
-        roundOff: balRoundOff,
-        shortage: balShortage,
-        paymentDate: `${d.getFullYear()}-${mm}-${dd}`,
-        paymentHeadId: balHeadId,
-        paymentMode: balMode as
-          | "CASH"
-          | "BANK"
-          | "CARD"
-          | "UPI"
-          | "CHEQUE"
-          | "NEFT_RTGS"
-          | "ADVANCE_ADJ",
-        remarks: balRemarks,
-        advanceLines: advanceAdjustLines(balAdvOptions, balAdjValues).map((l) => ({
-          advanceId: l.advanceId,
-          amount: l.amount,
-        })),
-      });
-      if (res.ok) {
-        setPaymentStatus("PAID");
-        toast({
-          title: "Balance settled — chalan marked PAID",
-          description: `Paid ${formatMoney(res.paidAmount)} — posted to the bank/cash book.`,
-        });
-        // back to the register WITH its filters, refreshed for the new status
-        router.push(registerReturn);
-        router.refresh();
-      } else {
-        toast({ variant: "destructive", title: "Balance payment failed", description: res.error });
-        setBalSaving(false);
-      }
-    } catch {
-      setBalSaving(false);
-    }
-  };
 
   const autoTdsPct = tdsPctFromPan(brokerTds?.pan, brokerTds?.tdsMode);
   const tdsBadge =
@@ -1173,166 +1039,44 @@ export function ChalanForm({
         </CardContent>
       </Card>
 
-      {/* balance payment — available once the chalan exists */}
+      {/* balance payment — available once the chalan exists; the same panel
+          the Balance Paid Follow-up dashboard uses */}
       {id && (
-        <Card id="balance" className={isFinal ? "border-primary/50" : "opacity-70"}>
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="flex items-center justify-between text-sm">
-              <span className="flex flex-wrap items-center gap-2">
-                Balance Payment
-                {paymentStatus === "PAID" ? (
-                  <Badge>PAID</Badge>
-                ) : (
-                  <Badge variant="destructive">Pending Balance</Badge>
-                )}
-              </span>
-              {!isFinal ? (
-                <span className="text-xs font-normal text-muted-foreground">
-                  Finalize the chalan first to settle its balance
-                </span>
-              ) : !allPodDone ? (
-                <Badge variant="destructive">POD {podDone}/{podTotal} — complete all PODs to pay balance</Badge>
-              ) : (
-                <Badge>POD {podDone}/{podTotal} complete</Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 p-4 pt-2 sm:grid-cols-2 lg:grid-cols-4">
-            {/* saved settlement at a glance — the money lives on the
-                settlement voucher, so the input previews below read 0 once
-                everything is settled */}
-            {paymentStatus === "PAID" && record && (
-              <div className="rounded-md border bg-muted/40 p-2 text-xs sm:col-span-2 lg:col-span-4">
-                <b>Settled:</b> Paid {formatMoney(record.settledPaid ?? 0)}
-                {(record.settledShortage ?? 0) > 0.009 && (
-                  <> · Shortage {formatMoney(record.settledShortage ?? 0)}</>
-                )}
-                {Math.abs(record.settledRoundOff ?? 0) > 0.009 && (
-                  <> · Round off {formatMoney(record.settledRoundOff ?? 0)}</>
-                )}
-                {(record.settledAdvanceAdj ?? 0) > 0.009 && (
-                  <> · Advance adjusted {formatMoney(record.settledAdvanceAdj ?? 0)}</>
-                )}
-                {record.balPaymentDate && <> — on {formatDate(record.balPaymentDate)}</>}
-                {record.balPaymentMode && <> ({record.balPaymentMode})</>}
-                <span className="text-muted-foreground"> · edit/delete: Voucher Register</span>
-              </div>
-            )}
-            <Field label="Balance Amount">
-              <div className="space-y-1">
-                <NumInput value={balOpen} readOnly />
-                {voucherSettled > 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    {formatMoney(voucherSettled)} of {formatMoney(totals.balance)} already settled
-                    by a payment voucher
-                  </div>
-                )}
-              </div>
-            </Field>
-            <Field label="Round Off (−)">
-              <NumInput value={balRoundOff} onChange={setBalRoundOff} />
-            </Field>
-            <Field label="Shortage (−)">
-              <div className="space-y-1">
-                <NumInput value={balShortage} onChange={setBalShortage} />
-                {(record?.podShortageWt ?? 0) > 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    POD shortage: {record?.podShortageWt} (wt) — enter the amount to deduct
-                  </div>
-                )}
-              </div>
-            </Field>
-            <Field label="Advance Adjusted (−)">
-              <NumInput value={balAdjTotal} readOnly />
-            </Field>
-            <Field label="Final Paid Amount">
-              <NumInput value={balPaidPreview} readOnly />
-            </Field>
-            <div className="sm:col-span-2 lg:col-span-4">
-              <div className="mb-1 text-xs text-muted-foreground">
-                Advance Adjustment — settle the balance against this party&apos;s advance vouchers
-              </div>
-              <AdvanceAdjustGrid
-                advances={balAdvOptions}
-                values={balAdjValues}
-                onChange={setBalAdjValues}
-                payable={balSettleable}
-                loading={advLoading}
-              />
-            </div>
-            <Field label="Payment Date">
-              <DateInput value={balDateText} onChange={(t) => setBalDateText(t)} />
-            </Field>
-            <Field label="Payment Head (Bank / Cash)">
-              <BankCashCombobox
-                options={banks}
-                value={balHeadId}
-                onChange={setBalHeadId}
-                placeholder="Select head..."
-              />
-            </Field>
-            <Field label="Payment Mode">
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                value={balMode}
-                onChange={(e) => setBalMode(e.target.value)}
-              >
-                <option value="BANK">Bank Transfer</option>
-                <option value="CASH">Cash</option>
-                <option value="CARD">Card</option>
-                <option value="UPI">UPI</option>
-                <option value="CHEQUE">Cheque</option>
-                <option value="NEFT_RTGS">NEFT / RTGS</option>
-                <option value="ADVANCE_ADJ">Advance Adjustment</option>
-              </select>
-            </Field>
-            <Field label="Remarks">
-              <Input value={balRemarks} onChange={(e) => setBalRemarks(e.target.value)} />
-            </Field>
-            <div className="flex items-end sm:col-span-2 lg:col-span-4">
-              <Button
-                type="button"
-                onClick={handleBalancePayment}
-                disabled={balSaving || !isFinal || !allPodDone || !!balAdjError}
-              >
-                {balSaving
-                  ? "Saving..."
-                  : paymentStatus === "PAID"
-                    ? "Print & Update"
-                    : "Print & Save"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <BalancePaymentPanel
+          info={{
+            chalanId: id,
+            chalanNo,
+            // live figure: the screen's own totals, as before
+            grossBalance: totals.balance,
+            voucherSettled: record?.voucherSettled ?? 0,
+            paymentStatus: record?.paymentStatus ?? "PENDING",
+            isFinal,
+            podTotal: record?.podTotal ?? 0,
+            podDone: record?.podDone ?? 0,
+            podShortageWt: record?.podShortageWt ?? 0,
+            balRoundOff: record?.balRoundOff ?? 0,
+            balShortage: record?.balShortage ?? 0,
+            balPaymentDate: record?.balPaymentDate ?? null,
+            balPaymentHeadId: record?.balPaymentHeadId ?? null,
+            balPaymentMode: record?.balPaymentMode ?? "BANK",
+            balRemarks: record?.balRemarks ?? "",
+            balReference: record?.balReference ?? "",
+            balAdvanceLines: record?.balAdvanceLines ?? [],
+            settledPaid: record?.settledPaid,
+            settledShortage: record?.settledShortage,
+            settledRoundOff: record?.settledRoundOff,
+            settledAdvanceAdj: record?.settledAdvanceAdj,
+          }}
+          banks={banks}
+          advOptions={balAdvOptions}
+          advLoading={advLoading}
+          onSaved={() => {
+            // back to the register WITH its filters, refreshed for the new status
+            router.push(registerReturn);
+            router.refresh();
+          }}
+        />
       )}
-
-      <Dialog open={balConfirmOpen} onOpenChange={setBalConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Balance payment — chalan {chalanNo}</DialogTitle>
-            <DialogDescription>
-              Print the chalan with this balance payment to check the figures, then save it.
-              Nothing is saved until you click Save.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="text-sm">
-            Paying <span className="font-semibold tabular-nums">{formatMoney(balPaidPreview)}</span>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button type="button" variant="outline" onClick={() => setBalConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button asChild type="button" variant="outline">
-              <Link href={balancePrintHref()} target="_blank">
-                Print
-              </Link>
-            </Button>
-            <Button type="button" onClick={() => void saveBalance()} disabled={balSaving}>
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </form>
   );
 }
