@@ -268,6 +268,9 @@ export function LrForm(props: LrFormProps) {
 
   const form = useForm<LrFormValues>({ defaultValues: props.defaults });
   const { register, setValue, watch, control, handleSubmit, reset, getValues } = form;
+  // row whose basis was just set to Fixed: the amount box takes the cursor
+  // once the basis dropdown closes (instead of focus returning to it)
+  const focusRateRow = React.useRef<number | null>(null);
   const items = useFieldArray({ control, name: "items" });
   const invoices = useFieldArray({ control, name: "invoices" });
 
@@ -1040,12 +1043,21 @@ export function LrForm(props: LrFormProps) {
                     onValueChange={(val) => {
                       reenableAutoFreight();
                       setValue(`items.${index}.rateBasis`, val as RateBasis);
+                      if (val === "FIXED") focusRateRow.current = index;
                     }}
                   >
                     <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent
+                      onCloseAutoFocus={(e) => {
+                        if (focusRateRow.current !== index) return;
+                        // Fixed: the amount is typed in this row's Rate box
+                        e.preventDefault();
+                        focusRateRow.current = null;
+                        form.setFocus(`items.${index}.rate`, { shouldSelect: true });
+                      }}
+                    >
                       {(["QTY", "ACTUAL_WT", "CHARGE_WT", "FIXED"] as const).map((b) => (
                         <SelectItem key={b} value={b} className={b === "FIXED" ? "font-semibold" : undefined}>
                           {RATE_BASIS_LABELS[b]}

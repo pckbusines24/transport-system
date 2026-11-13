@@ -96,12 +96,17 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
   const totalQty = lr.items.reduce((s, i) => s + Number(i.qty), 0);
   const totalActual = lr.items.reduce((s, i) => s + Number(i.actualWt), 0);
   const totalCharge = lr.items.reduce((s, i) => s + Number(i.chargeWt), 0);
-  const mainRate = lr.items.length ? Math.max(...lr.items.map((i) => Number(i.rate))) : 0;
+  // a Fixed item's "rate" IS its whole amount — printing it as a rate read
+  // as e.g. 50000.00/MT, so an all-Fixed LR prints FIXED and its freight;
+  // a mixed LR shows the highest real (per-unit) rate
+  const allFixed = lr.items.length > 0 && lr.items.every((i) => i.rateBasis === "FIXED");
+  const perUnit = lr.items.filter((i) => i.rateBasis !== "FIXED");
+  const mainRate = perUnit.length ? Math.max(...perUnit.map((i) => Number(i.rate))) : 0;
   const riskCharges =
     Number(lr.biltyCharge) + Number(lr.collCharge) + Number(lr.cpc) + Number(lr.preBhada);
 
-  const chargeRows: { label: string; rate?: number; amount: number | null }[] = [
-    { label: "Frieght", rate: mainRate || undefined, amount: Number(lr.freight) },
+  const chargeRows: { label: string; rate?: number | "FIXED"; amount: number | null }[] = [
+    { label: "Frieght", rate: allFixed ? "FIXED" : mainRate || undefined, amount: Number(lr.freight) },
     { label: "Mazdoor Char.", amount: Number(lr.hamali) },
     { label: "Risk Charges", amount: riskCharges },
     { label: "SGST", amount: Number(lr.sgstAmt) },
@@ -483,7 +488,11 @@ export default async function LrPrintPage({ params }: { params: { id: string } }
                       <tr key={row.label}>
                         <td className="border-r border-black px-1 py-[2px] font-bold">{row.label}</td>
                         <td className="border-r border-black px-1 py-[2px] text-right font-semibold tabular-nums">
-                          {showAmounts && row.rate ? row.rate.toFixed(2) : ""}
+                          {showAmounts && row.rate
+                            ? row.rate === "FIXED"
+                              ? "FIXED"
+                              : row.rate.toFixed(2)
+                            : ""}
                         </td>
                         <td className="px-1 py-[2px] text-right font-bold tabular-nums">
                           {showAmounts && row.amount ? formatMoney(row.amount) : ""}
