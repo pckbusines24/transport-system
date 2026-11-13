@@ -46,12 +46,24 @@ type FollowRow = {
   contactMobile: string;
   contactRole: string;
   delivered: boolean;
+  /** from the POD (BILL stage) — synced per chalan + consignee group */
+  unloadDate: Date | null;
+  remark: string;
 };
 
 export default async function PodFollowUpPage({
   searchParams,
 }: {
-  searchParams: { stage?: string; contact?: string; date_from?: string; date_to?: string; min_days?: string };
+  searchParams: {
+    stage?: string;
+    contact?: string;
+    date_from?: string;
+    date_to?: string;
+    min_days?: string;
+    /** BILL stage: POD remark blank / present, and a keyword in it */
+    remark?: string;
+    remark_q?: string;
+  };
 }) {
   const session = requireSession();
   await authorize(session, "pod", "view");
@@ -63,6 +75,10 @@ export default async function PodFollowUpPage({
   const minDaysRaw = parseInt(searchParams.min_days ?? "", 10);
   const minDays = Number.isFinite(minDaysRaw) && minDaysRaw >= 0 ? minDaysRaw : null;
   const todayIso = istIso(new Date());
+  const remarkMode = stage === "BILL" && (searchParams.remark === "BLANK" || searchParams.remark === "AVAILABLE")
+    ? searchParams.remark
+    : null;
+  const remarkQ = stage === "BILL" ? searchParams.remark_q?.trim() || "" : "";
 
   const data = await withTenant(session.tenantId, async (tx) => {
     const firm = await tx.firm.findUniqueOrThrow({ where: { id: session.firmId } });
@@ -87,9 +103,23 @@ export default async function PodFollowUpPage({
             {
               pods: { some: { status: "COMPLETED" } },
               invoiceLrs: { none: {} },
+              // POD remark filters — each its own `pods` condition
+              AND: [
+                ...(remarkMode === "BLANK"
+                  ? [{ pods: { some: { OR: [{ remarks: null }, { remarks: "" }] } } }]
+                  : remarkMode === "AVAILABLE"
+                    ? [{ pods: { some: { AND: [{ remarks: { not: null } }, { remarks: { not: "" } }] } } }]
+                    : []),
+                ...(remarkQ
+                  ? [{ pods: { some: { remarks: { contains: remarkQ, mode: "insensitive" as const } } } }]
+                  : []),
+              ],
             }),
       },
-      include: { chalanLrs: { include: { chalan: true } } },
+      include: {
+        chalanLrs: { include: { chalan: true } },
+        pods: { select: { unloadDate: true, remarks: true } },
+      },
       orderBy: { lrDate: "asc" },
       take: 500,
     });
@@ -164,6 +194,8 @@ export default async function PodFollowUpPage({
       contactMobile,
       contactRole,
       delivered: lr.status === "DELIVERED" || lr.status === "BILLED",
+      unloadDate: lr.pods[0]?.unloadDate ?? null,
+      remark: lr.pods[0]?.remarks?.trim() ?? "",
     };
   });
 
@@ -202,6 +234,20 @@ export default async function PodFollowUpPage({
     },
     { type: "daterange", key: "date", label: "LR Date" },
     { type: "text", key: "min_days", label: "Min Days (and above)" },
+    ...(stage === "BILL"
+      ? ([
+          {
+            type: "select",
+            key: "remark",
+            label: "Remark",
+            options: [
+              { value: "BLANK", label: "Blank Remark" },
+              { value: "AVAILABLE", label: "Remark Available" },
+            ],
+          },
+          { type: "text", key: "remark_q", label: "Search Remark" },
+        ] as FilterDef[])
+      : []),
     {
       type: "select",
       key: "contact",
@@ -224,10 +270,12 @@ export default async function PodFollowUpPage({
     delivered: rw.delivered ? "YES" : "NO",
     contact: rw.contactName ? `${rw.contactName} (${rw.contactRole})` : "",
     mobile: rw.contactMobile,
+    unloadDate: rw.unloadDate ? formatDate(rw.unloadDate) : "",
+    remark: rw.remark,
   }));
   // contact chips narrow the list without dropping the date / days filters
   const keepParams: Record<string, string> = {};
-  for (const k of ["date_from", "date_to", "min_days"] as const) {
+  for (const k of ["date_from", "date_to", "min_days", "remark", "remark_q"] as const) {
     const v = searchParams[k];
     if (v) keepParams[k] = v;
   }
@@ -295,6 +343,12 @@ export default async function PodFollowUpPage({
             { header: "Delivered?", key: "delivered" },
             { header: "Follow-up", key: "contact" },
             { header: "Mobile", key: "mobile" },
+            ...(stage === "BILL"
+              ? [
+                  { header: "Unloading Date", key: "unloadDate" as const },
+                  { header: "Remark", key: "remark" as const },
+                ]
+              : []),
           ]}
           summary={[
             { label: "LRs", value: filtered.length },
@@ -318,6 +372,7 @@ export default async function PodFollowUpPage({
                 "Delivered?",
                 "Follow-up",
                 "Mobile",
+                ...(stage === "BILL" ? ["Unloading Date", "Remark"] : []),
               ].map((h) => (
                 <th key={h} className={`${cell} bg-muted/60 text-left font-semibold`}>
                   {h}
@@ -386,11 +441,19 @@ export default async function PodFollowUpPage({
                     "—"
                   )}
                 </td>
+                {stage === "BILL" && (
+                  <>
+                    <td className={`${cell} whitespace-nowrap`}>{rw.unloadDate ? formatDate(rw.unloadDate) : ""}</td>
+                    <td className={`${cell} max-w-[16rem] whitespace-normal break-words`}>
+                      {rw.remark || <span className="text-muted-foreground">Blank</span>}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
             {!filtered.length && (
               <tr>
-                <td colSpan={10} className={`${cell} py-6 text-center text-muted-foreground`}>
+                <td colSpan={stage === "BILL" ? 12 : 10} className={`${cell} py-6 text-center text-muted-foreground`}>
                   {stage === "POD"
                     ? `No PODs pending — everything within ${days} days is clear.`
                     : "Every LR with a received POD has been billed."}

@@ -38,6 +38,11 @@ const STATUS_OPTIONS: MasterOption[] = [
   { value: "BILLED", label: "BILLED" },
 ];
 
+const REMARK_OPTIONS: MasterOption[] = [
+  { value: "BLANK", label: "Blank Remark" },
+  { value: "AVAILABLE", label: "Remark Available" },
+];
+
 const EMPTY: LrDetailFilters = {};
 
 export function LrDetailClient({
@@ -52,6 +57,8 @@ export function LrDetailClient({
   vehicles: Option[];
 }) {
   const meta = LR_VIEW_META[view];
+  // the POD Unloading Date / Remark columns and filter belong to this view
+  const showPod = view === "RECEIVED_UNBILLED";
   const [filters, setFilters] = React.useState<LrDetailFilters>(EMPTY);
   const [rows, setRows] = React.useState<LrDetailRow[]>([]);
   const [totals, setTotals] = React.useState({
@@ -122,6 +129,12 @@ export function LrDetailClient({
           columns={[
             { header: "LR No", key: "lrNo" },
             { header: "LR Date", accessor: (r) => formatDate(r.lrDate) },
+            ...(showPod
+              ? [
+                  { header: "Unloading Date", accessor: (r: LrDetailRow) => formatDate(r.unloadDate) },
+                  { header: "Remark", key: "remark" as const, width: 30 },
+                ]
+              : []),
             { header: "Party", key: "party", width: 24 },
             { header: "Consignor", key: "consignor", width: 24 },
             { header: "Consignee", key: "consignee", width: 24 },
@@ -216,6 +229,29 @@ export function LrDetailClient({
             placeholder="search"
           />
         </label>
+        {showPod && (
+          <>
+            <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+              Remark
+              <MasterCombobox
+                className="w-[170px] [&_input]:h-8 [&_input]:text-xs"
+                options={REMARK_OPTIONS}
+                value={filters.remarkMode ?? null}
+                onChange={(v) => set({ remarkMode: (sel(v ?? undefined) as LrDetailFilters["remarkMode"]) })}
+                placeholder="All"
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+              Search Remark
+              <Input
+                className="h-8 w-[140px] text-xs"
+                value={filters.remarkQ ?? ""}
+                onChange={(e) => set({ remarkQ: sel(e.target.value) })}
+                placeholder="keyword"
+              />
+            </label>
+          </>
+        )}
         <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase text-muted-foreground">
           Bill No
           <Input
@@ -245,6 +281,7 @@ export function LrDetailClient({
               {[
                 "LR No",
                 "LR Date",
+                ...(showPod ? ["Unloading Date", "Remark"] : []),
                 "Party",
                 "Consignor",
                 "Consignee",
@@ -270,6 +307,14 @@ export function LrDetailClient({
               <tr key={r.id} className="odd:bg-muted/20">
                 <td className={`${cell} font-medium`}>{r.lrNo}</td>
                 <td className={`${cell} whitespace-nowrap`}>{formatDate(r.lrDate)}</td>
+                {showPod && (
+                  <>
+                    <td className={`${cell} whitespace-nowrap`}>{r.unloadDate ? formatDate(r.unloadDate) : ""}</td>
+                    <td className={`${cell} max-w-[16rem] whitespace-normal break-words`}>
+                      {r.remark || <span className="text-muted-foreground">Blank</span>}
+                    </td>
+                  </>
+                )}
                 <td className={cell}>{r.party}</td>
                 <td className={cell}>{r.consignor}</td>
                 <td className={cell}>{r.consignee}</td>
@@ -295,7 +340,7 @@ export function LrDetailClient({
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={15} className={`${cell} py-6 text-center text-muted-foreground`}>
+                <td colSpan={showPod ? 17 : 15} className={`${cell} py-6 text-center text-muted-foreground`}>
                   No LRs match the applied filters.
                 </td>
               </tr>

@@ -158,12 +158,40 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
         if (prev[id]) return prev;
         const lr = pendingLrs.find((l) => l.id === id);
         const recWt = lr && lr.actualWt > 0 ? String(lr.actualWt) : "";
-        return { ...prev, [id]: { ...emptyLine(), recWt } };
+        // Unload Date / Remark start as the group's: a selected line of the
+        // same group (same chalan + consignee), else its saved PODs
+        const mate = lr
+          ? pendingLrs.find((l) => l.id !== id && l.groupKey === lr.groupKey && selected[l.id] && prev[l.id])
+          : undefined;
+        const fromMate = mate ? prev[mate.id] : undefined;
+        const groupDate = lr?.groupUnloadDate ? new Date(lr.groupUnloadDate) : null;
+        return {
+          ...prev,
+          [id]: {
+            ...emptyLine(),
+            recWt,
+            unloadDateText: fromMate?.unloadDateText ?? (groupDate ? formatDate(groupDate) : ""),
+            unloadDate: fromMate?.unloadDate ?? (groupDate ? groupDate.toISOString() : null),
+            remarks: fromMate?.remarks ?? lr?.groupRemarks ?? "",
+          },
+        };
       });
   };
 
   const setLine = (id: string, patch: Partial<LineState>) =>
     setLines((prev) => ({ ...prev, [id]: { ...(prev[id] ?? emptyLine()), ...patch } }));
+
+  /** Unload Date / Remark are shared by the LR's group (same chalan +
+   *  consignee): typing on one selected line fills the others of its group. */
+  const setGroupLine = (id: string, patch: Pick<Partial<LineState>, "unloadDateText" | "unloadDate" | "remarks">) => {
+    const key = pendingLrs.find((l) => l.id === id)?.groupKey;
+    const mates = pendingLrs.filter((l) => l.id === id || (key && l.groupKey === key && selected[l.id])).map((l) => l.id);
+    setLines((prev) => {
+      const next = { ...prev };
+      for (const m of mates) next[m] = { ...(prev[m] ?? emptyLine()), ...patch };
+      return next;
+    });
+  };
 
   const handleFile = async (lrId: string, file: File | null) => {
     if (!file) return;
@@ -407,6 +435,8 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
           <CardContent className="space-y-6">
             {selectedLrs.map((lr) => {
               const line = lines[lr.id] ?? emptyLine();
+              // other selected LRs sharing this line's Unload Date / Remark
+              const groupMates = selectedLrs.filter((l) => l.id !== lr.id && l.groupKey === lr.groupKey);
               const recWt = line.recWt === "" ? null : parseFloat(line.recWt);
               const shortage =
                 recWt === null || isNaN(recWt)
@@ -423,12 +453,18 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    {groupMates.length > 0 && (
+                      <div className="col-span-2 text-xs text-muted-foreground md:col-span-4">
+                        Same chalan &amp; consignee as LR {groupMates.map((l) => l.lrNo).join(", ")} — Unload Date
+                        and Remarks are shared.
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label>Unload Date</Label>
                       <DateInput
                         value={line.unloadDateText}
                         onChange={(text, d) =>
-                          setLine(lr.id, {
+                          setGroupLine(lr.id, {
                             unloadDateText: text,
                             unloadDate: d ? d.toISOString() : null,
                           })
@@ -473,7 +509,7 @@ export function PodForm({ defaultDocNo, vehicleOptions: initialVehicles, initial
                       <Textarea
                         rows={1}
                         value={line.remarks}
-                        onChange={(e) => setLine(lr.id, { remarks: e.target.value })}
+                        onChange={(e) => setGroupLine(lr.id, { remarks: e.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5 col-span-2 md:col-span-4">

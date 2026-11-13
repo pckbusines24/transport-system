@@ -40,6 +40,10 @@ export interface LrDetailFilters {
   billStatus?: "BILLED" | "PENDING";
   /** LR lifecycle status (PENDING | ON_CHALAN | ARRIVED | DELIVERED | BILLED) */
   status?: string;
+  /** POD remark (synced per chalan + consignee group): blank or present */
+  remarkMode?: "BLANK" | "AVAILABLE";
+  /** keyword inside the POD remark */
+  remarkQ?: string;
 }
 
 export interface LrDetailRow {
@@ -59,6 +63,9 @@ export interface LrDetailRow {
   podStatus: "RECEIVED" | "PENDING";
   billStatus: "BILLED" | "PENDING";
   status: string;
+  /** from the LR's POD */
+  unloadDate: string | null;
+  remark: string;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -272,6 +279,22 @@ export async function getLrDetail(input: {
               }
             : {}),
           ...(f.status && LR_STATUSES.has(f.status) ? { status: f.status as LrStatus } : {}),
+          // POD remark filters run in the query, so the totals and the 500-row
+          // cap stay true to them (AND: each is its own `pods` condition)
+          ...(f.remarkMode || f.remarkQ?.trim()
+            ? {
+                AND: [
+                  ...(f.remarkMode === "BLANK"
+                    ? [{ pods: { some: { OR: [{ remarks: null }, { remarks: "" }] } } }]
+                    : f.remarkMode === "AVAILABLE"
+                      ? [{ pods: { some: { AND: [{ remarks: { not: null } }, { remarks: { not: "" } }] } } }]
+                      : []),
+                  ...(f.remarkQ?.trim()
+                    ? [{ pods: { some: { remarks: { contains: f.remarkQ.trim(), mode: "insensitive" as const } } } }]
+                    : []),
+                ],
+              }
+            : {}),
         },
         orderBy: [{ lrDate: "desc" }, { id: "desc" }],
         select: {
@@ -305,7 +328,7 @@ export async function getLrDetail(input: {
       ]).slice(0, GRID_LIMIT);
 
       const pageIds = page.map((l) => l.id);
-      const [chalanRefs, invoiceRefs, parties, cities, vehicles] = await Promise.all([
+      const [chalanRefs, invoiceRefs, parties, cities, vehicles, podRefs] = await Promise.all([
         tx.chalanLr.findMany({
           where: { lrId: { in: pageIds }, chalan: { deletedAt: null, cancelledAt: null } },
           select: { lrId: true, chalan: { select: { chalanNo: true } } },
@@ -317,7 +340,12 @@ export async function getLrDetail(input: {
         tx.party.findMany({ select: { id: true, name: true } }),
         tx.city.findMany({ select: { id: true, name: true } }),
         tx.vehicle.findMany({ select: { id: true, number: true } }),
+        tx.pod.findMany({
+          where: { lrId: { in: pageIds } },
+          select: { lrId: true, unloadDate: true, remarks: true },
+        }),
       ]);
+      const podOf = new Map(podRefs.map((p) => [p.lrId as string, p]));
       const chalanNoOf = new Map(chalanRefs.map((c) => [c.lrId, c.chalan.chalanNo]));
       const billNoOf = new Map(invoiceRefs.map((i) => [i.lrId, i.invoice.invoiceNo]));
       const partyName = new Map(parties.map((p) => [p.id, p.name]));
@@ -341,6 +369,8 @@ export async function getLrDetail(input: {
         podStatus: sets.pod.has(l.id) ? "RECEIVED" : "PENDING",
         billStatus: sets.billed.has(l.id) ? "BILLED" : "PENDING",
         status: l.status,
+        unloadDate: podOf.get(l.id)?.unloadDate?.toISOString() ?? null,
+        remark: podOf.get(l.id)?.remarks?.trim() ?? "",
       }));
 
       return {

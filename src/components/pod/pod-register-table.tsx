@@ -21,7 +21,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { DateInput } from "@/components/data/date-input";
 import { DataTable, type DataTableColumnMeta } from "@/components/data/data-table";
 import { ExportButton } from "@/components/data/export-button";
-import { updatePod, deletePod } from "@/app/(app)/pod/actions";
+import { updatePod, deletePod, getPodGroupLrNos } from "@/app/(app)/pod/actions";
 
 export interface PodRegisterRow {
   id: string;
@@ -74,6 +74,8 @@ interface EditState {
   /** a file uploaded in this dialog — saved with the edit */
   newFile: { path: string; size: number; name: string } | null;
   uploading: boolean;
+  /** LRs sharing this POD's Unload Date / Remark (same chalan + consignee) */
+  groupLrNos: string[];
 }
 
 /** same limit as POD Confirmation and the server */
@@ -92,7 +94,11 @@ export function PodRegisterTable({
   const [toDelete, setToDelete] = React.useState<PodRegisterRow | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  const openEdit = React.useCallback((r: PodRegisterRow) =>
+  const openEdit = React.useCallback((r: PodRegisterRow) => {
+    // the group note loads in the background; the dialog opens at once
+    void getPodGroupLrNos(r.id).then((lrNos) =>
+      setEditing((e) => (e && e.id === r.id ? { ...e, groupLrNos: lrNos } : e))
+    );
     setEditing({
       id: r.id,
       docNo: r.docNo,
@@ -106,7 +112,9 @@ export function PodRegisterTable({
       filePath: r.filePath,
       newFile: null,
       uploading: false,
-    }), []);
+      groupLrNos: [],
+    });
+  }, []);
 
   // upload straight away (like POD Confirmation); the POD row changes on Save
   const handleFile = async (file: File | null) => {
@@ -160,7 +168,12 @@ export function PodRegisterTable({
         ...(editing.newFile ? { filePath: editing.newFile.path, fileSize: editing.newFile.size } : {}),
       });
       if (res.ok) {
-        toast({ title: `POD ${editing.docNo} updated` });
+        toast({
+          title: `POD ${editing.docNo} updated`,
+          description: res.syncedLrNos.length
+            ? `Unload Date / Remarks also updated on LR ${res.syncedLrNos.join(", ")}.`
+            : undefined,
+        });
         setEditing(null);
         router.refresh();
       } else {
@@ -373,6 +386,12 @@ export function PodRegisterTable({
                   onChange={(e) => setEditing({ ...editing, gateEntryNo: e.target.value })}
                 />
               </div>
+              {editing.groupLrNos.length > 0 && (
+                <div className="rounded-md border border-amber-500/60 bg-amber-50 px-2 py-1 text-xs dark:bg-amber-950/30 sm:col-span-2">
+                  Same chalan &amp; consignee as LR {editing.groupLrNos.join(", ")} — Unload Date and Remarks
+                  will also update there.
+                </div>
+              )}
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs">Remarks</Label>
                 <Input

@@ -8,6 +8,7 @@ import { authorize } from "@/lib/authz";
 import { audit } from "@/lib/audit";
 import { syncSequenceTo } from "@/lib/sequences";
 import { compareLrDateThenNo, toNum } from "@/lib/utils";
+import { podGroups, podGroupValues, syncPodGroup } from "@/lib/pod-group";
 
 export interface PodPendingLr {
   cargoType?: string;
@@ -25,6 +26,11 @@ export interface PodPendingLr {
   rate: number;
   /** remarks entered on the LR */
   remarks: string;
+  /** POD remark group (same chalan + consignee) — Unload Date / Remark are shared */
+  groupKey: string;
+  /** the group's current POD Unload Date / Remark, to prefill this LR */
+  groupUnloadDate: string | null;
+  groupRemarks: string;
 }
 
 function mapLr(lr: {
@@ -38,6 +44,9 @@ function mapLr(lr: {
   destCity?: { name: string } | null;
   billedName: string;
   cargoType?: string;
+  groupKey: string;
+  groupUnloadDate: Date | null;
+  groupRemarks: string;
 }): PodPendingLr {
   return {
     id: lr.id,
@@ -52,6 +61,9 @@ function mapLr(lr: {
     obdNo: lr.obdNo?.trim() || "0",
     rate: lr.items.length ? Math.max(...lr.items.map((i) => toNum(String(i.rate)))) : 0,
     remarks: lr.remarks?.trim() ?? "",
+    groupKey: lr.groupKey,
+    groupUnloadDate: lr.groupUnloadDate ? lr.groupUnloadDate.toISOString() : null,
+    groupRemarks: lr.groupRemarks,
   };
 }
 
@@ -129,7 +141,7 @@ export async function getChalanPodLrs(chalanId: string): Promise<PodPendingLr[]>
       orderBy: { lrDate: "asc" },
     })
   );
-  return withNames(session.tenantId, lrs.sort(compareLrDateThenNo));
+  return withNames(session.tenantId, session.firmId, lrs.sort(compareLrDateThenNo));
 }
 
 /** LRs on a vehicle that have no POD yet. */
@@ -154,11 +166,12 @@ export async function getVehiclePendingPodLrs(vehicleId: string): Promise<PodPen
       orderBy: { lrDate: "asc" },
     })
   );
-  return withNames(session.tenantId, lrs.sort(compareLrDateThenNo));
+  return withNames(session.tenantId, session.firmId, lrs.sort(compareLrDateThenNo));
 }
 
 async function withNames(
   tenantId: string,
+  firmId: string,
   lrs: {
     id: string;
     lrNo: string;
@@ -175,10 +188,15 @@ async function withNames(
 ): Promise<PodPendingLr[]> {
   const cityIds = Array.from(new Set(lrs.flatMap((l) => [l.sourceCityId, l.destCityId])));
   const partyIds = Array.from(new Set(lrs.map((l) => l.billToId ?? l.consignorId)));
-  const [cities, parties] = await withTenant(tenantId, async (tx) => [
-    await tx.city.findMany({ where: { id: { in: cityIds } } }),
-    await tx.party.findMany({ where: { id: { in: partyIds } } }),
-  ]);
+  const [cities, parties, groups, groupValues] = await withTenant(tenantId, async (tx) => {
+    const groups = await podGroups(tx, firmId, lrs.map((l) => l.id));
+    return [
+      await tx.city.findMany({ where: { id: { in: cityIds } } }),
+      await tx.party.findMany({ where: { id: { in: partyIds } } }),
+      groups,
+      await podGroupValues(tx, firmId, groups),
+    ] as const;
+  });
   const cityMap = new Map(cities.map((c) => [c.id, c.name]));
   const partyMap = new Map(parties.map((p) => [p.id, p.name]));
   return lrs.map((lr) =>
@@ -187,6 +205,9 @@ async function withNames(
       sourceCity: { name: cityMap.get(lr.sourceCityId) ?? "" },
       destCity: { name: cityMap.get(lr.destCityId) ?? "" },
       billedName: partyMap.get(lr.billToId ?? lr.consignorId) ?? "",
+      groupKey: groups.get(lr.id)?.key ?? `lr:${lr.id}`,
+      groupUnloadDate: groupValues.get(lr.id)?.unloadDate ?? null,
+      groupRemarks: groupValues.get(lr.id)?.remarks ?? "",
     })
   );
 }
@@ -225,7 +246,7 @@ export async function findLrForPod(
       error: `POD for LR ${lr.lrNo} has already been uploaded`,
     };
   }
-  const [mapped] = await withNames(session.tenantId, [lr]);
+  const [mapped] = await withNames(session.tenantId, session.firmId, [lr]);
   return { ok: true, lr: mapped };
 }
 
@@ -289,8 +310,18 @@ export async function savePodBatch(
   try {
     return await withTenant(session.tenantId, async (tx) => {
       const ids: string[] = [];
+      // a blank Unload Date / Remark takes the group's (same chalan + consignee)
+      const groupValues = await podGroupValues(
+        tx,
+        session.firmId,
+        await podGroups(tx, session.firmId, data.lines.map((l) => l.lrId))
+      );
+      const synced: { lrId: string; unloadDate: Date | null; remarks: string | null }[] = [];
       for (let i = 0; i < data.lines.length; i++) {
         const line = data.lines[i];
+        const gv = groupValues.get(line.lrId);
+        const unloadDate = line.unloadDate ? new Date(line.unloadDate) : (gv?.unloadDate ?? null);
+        const lineRemarks = line.remarks || gv?.remarks || null;
         const lr = await tx.lr.findFirst({
           where: { id: line.lrId, firmId: session.firmId, deletedAt: null },
           include: { items: true, pods: true },
@@ -329,7 +360,7 @@ export async function savePodBatch(
               lrId: lr.id,
               refNo: data.refNo || null,
               vehicleId: data.vehicleId || lr.vehicleId,
-              unloadDate: line.unloadDate ? new Date(line.unloadDate) : null,
+              unloadDate,
               ackNo: line.ackNo || null,
               actualWt,
               recWt,
@@ -338,7 +369,7 @@ export async function savePodBatch(
               gateEntryNo: line.gateEntryNo || null,
               filePath: line.filePath || null,
               fileSize: line.fileSize ?? null,
-              remarks: line.remarks || null,
+              remarks: lineRemarks,
               status: "COMPLETED",
               createdById: session.userId,
             },
@@ -367,6 +398,12 @@ export async function savePodBatch(
           after: pod,
         });
         ids.push(pod.id);
+        synced.push({ lrId: lr.id, unloadDate, remarks: lineRemarks });
+      }
+      // what was entered now applies to the rest of each LR's group (PODs
+      // confirmed earlier too); a blank is never pushed onto the group
+      for (const s of synced) {
+        await syncPodGroup(tx, session, s.lrId, s, { onlyFilled: true });
       }
       await syncSequenceTo(tx, {
         tenantId: session.tenantId,
@@ -406,7 +443,7 @@ const podUpdateSchema = z.object({
 /** Edit an existing POD's details, and optionally attach / replace its file. */
 export async function updatePod(
   input: unknown
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; syncedLrNos: string[] } | { ok: false; error: string }> {
   const session = requireSession();
   await authorize(session, "pod", "edit");
   const parsed = podUpdateSchema.safeParse(input);
@@ -452,11 +489,40 @@ export async function updatePod(
         before,
         after,
       });
-      return { ok: true as const };
+      // an edit (clearing included) applies to the LR's whole POD group
+      const syncedLrNos = after.lrId
+        ? await syncPodGroup(
+            tx,
+            session,
+            after.lrId,
+            { unloadDate: after.unloadDate, remarks: after.remarks },
+            { onlyFilled: false }
+          )
+        : [];
+      return { ok: true as const, syncedLrNos };
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Update failed" };
   }
+}
+
+/** The other LRs whose POD shares this POD's Unload Date / Remark — for the
+ *  edit dialog's "will also update" note. */
+export async function getPodGroupLrNos(podId: string): Promise<string[]> {
+  const session = requireSession();
+  await authorize(session, "pod", "view");
+  return withTenant(session.tenantId, async (tx) => {
+    const pod = await tx.pod.findFirst({ where: { id: podId, firmId: session.firmId }, select: { lrId: true } });
+    if (!pod?.lrId) return [];
+    const group = (await podGroups(tx, session.firmId, [pod.lrId])).get(pod.lrId);
+    const others = (group?.lrIds ?? []).filter((id) => id !== pod.lrId);
+    if (!others.length) return [];
+    const pods = await tx.pod.findMany({
+      where: { firmId: session.firmId, lrId: { in: others } },
+      select: { lr: { select: { lrNo: true } } },
+    });
+    return pods.map((p) => p.lr?.lrNo ?? "").filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  });
 }
 
 /** Delete a POD; the LR returns to ON_CHALAN so a fresh POD can be uploaded. */
