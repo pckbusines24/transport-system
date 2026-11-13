@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Poppins, Roboto_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
@@ -15,8 +15,10 @@ import { NumberInputGuard } from "@/components/app/number-input-guard";
  * Anything not listed here would silently synthesise a faux-bold, which looks
  * muddy at large sizes.
  *
- * next/font self-hosts the files at build time — no runtime request to Google,
- * and no layout shift.
+ * The files live in ./fonts (latin subset, from Fontsource) and load through
+ * next/font/local: no request to Google at build OR run time, and no layout
+ * shift. next/font/google broke the build when Google Fonts started serving
+ * file URLs its loader could not parse ("Cannot read properties of null").
  */
 /**
  * Figures only. Poppins ships NO tabular figure set — measured in a browser,
@@ -28,16 +30,22 @@ import { NumberInputGuard } from "@/components/app/number-input-guard";
  * tabular figures. Scoped to tables and .tabular in globals.css — prose keeps
  * Poppins numerals, which look better inline.
  */
-const robotoMono = Roboto_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const robotoMono = localFont({
+  src: [
+    { path: "./fonts/roboto-mono-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/roboto-mono-latin-500-normal.woff2", weight: "500", style: "normal" },
+  ],
   variable: "--font-numeric",
   display: "swap",
 });
 
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+const poppins = localFont({
+  src: [
+    { path: "./fonts/poppins-latin-300-normal.woff2", weight: "300", style: "normal" },
+    { path: "./fonts/poppins-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/poppins-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/poppins-latin-600-normal.woff2", weight: "600", style: "normal" },
+  ],
   variable: "--font-sans",
   display: "swap",
 });
