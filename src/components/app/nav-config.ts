@@ -33,7 +33,15 @@ export interface NavGroup {
 }
 
 export const NAV: NavGroup[] = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  {
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    items: [
+      // the main dashboard stays first — and is still where login lands
+      { label: "Main Dashboard", href: "/dashboard" },
+      { label: "Balance Paid Follow-up", href: "/dashboard/balance-follow-up" },
+    ],
+  },
   {
     label: "Masters",
     icon: Database,
@@ -68,7 +76,6 @@ export const NAV: NavGroup[] = [
       { label: "Chalan Entry", href: "/chalan" },
       { label: "Chalan Register", href: "/chalan/register" },
       { label: "Chalan Cancel Advances", href: "/chalan/cancel-advances" },
-      { label: "Balance Paid Follow-up", href: "/chalan/balance-follow-up" },
       // the less-used fleet screens sit behind one flyout so the day-to-day
       // chalan entries stay at the top of the menu
       {

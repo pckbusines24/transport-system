@@ -238,7 +238,7 @@ export default async function BalanceFollowUpPage({
         page={current}
         pageSize={PAGE_SIZE}
         total={filtered.length}
-        basePath="/chalan/balance-follow-up"
+        basePath="/dashboard/balance-follow-up"
         searchParams={searchParams}
         hideSinglePage
       />
